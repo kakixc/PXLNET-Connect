@@ -1,0 +1,66 @@
+{
+  "log": { "level": "info", "timestamp": true },
+  "dns": {
+    "servers": [{ "type": "local", "tag": "local" }],
+    "final": "local"
+  },
+  "inbounds": [{
+    "type": "tun",
+    "tag": "tun-in",
+    "address": ["172.19.0.1/30"],
+    "auto_route": true,
+    "strict_route": true,
+    "stack": "mixed"
+  }],
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "PXLNET",
+      "outbounds": ["AUTO", "🇩🇪 Germany · VLESS", "🇫🇮 Finland · Hysteria2"],
+      "default": "AUTO",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "urltest",
+      "tag": "AUTO",
+      "outbounds": ["🇩🇪 Germany · VLESS", "🇫🇮 Finland · Hysteria2"],
+      "url": "https://www.gstatic.com/generate_204",
+      "interval": "3m",
+      "tolerance": 50,
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "vless",
+      "tag": "🇩🇪 Germany · VLESS",
+      "server": "de.example.com",
+      "server_port": 443,
+      "uuid": "11111111-1111-1111-1111-111111111111",
+      "flow": "xtls-rprx-vision",
+      "packet_encoding": "xudp",
+      "tls": {
+        "enabled": true,
+        "server_name": "www.microsoft.com",
+        "utls": { "enabled": true, "fingerprint": "chrome" },
+        "reality": {
+          "enabled": true,
+          "public_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "short_id": "abcd"
+        }
+      }
+    },
+    {
+      "type": "hysteria2",
+      "tag": "🇫🇮 Finland · Hysteria2",
+      "server": "fi.example.com",
+      "server_port": 8443,
+      "password": "secret",
+      "tls": {
+        "enabled": true,
+        "server_name": "fi.example.com",
+        "insecure": true
+      }
+    },
+    { "type": "direct", "tag": "DIRECT" }
+  ],
+  "route": { "auto_detect_interface": true, "final": "PXLNET" }
+}

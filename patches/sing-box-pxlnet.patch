@@ -1,0 +1,40 @@
+diff --git a/cmd/internal/build_libbox/main.go b/cmd/internal/build_libbox/main.go
+index 5b2d9e2..110cc10 100644
+--- a/cmd/internal/build_libbox/main.go
++++ b/cmd/internal/build_libbox/main.go
+@@ -63,7 +63,11 @@ func init() {
+ 	sharedFlags = append(sharedFlags, "-ldflags", build_shared.LinkerFlags(currentTag, false))
+ 	debugFlags = append(debugFlags, "-ldflags", build_shared.LinkerFlags(currentTag, true))
+ 
+-	sharedTags = append(sharedTags, "with_gvisor", "with_quic", "with_wireguard", "with_utls", "with_naive_outbound", "with_clash_api", "with_usbip", "with_openvpn", "with_openconnect", "badlinkname", "tfogo_checklinkname0")
++	// PXLNET Connect only needs the regular Android tunnel stack, VLESS/Reality
++	// and Hysteria2. NaiveProxy pulls a prebuilt Cronet archive that requires a
++	// newer NDK than the local alpha build environment, so keep it out of this
++	// branded build. The protocols used by PXLNET are unaffected.
++	sharedTags = append(sharedTags, "with_gvisor", "with_quic", "with_wireguard", "with_utls", "with_clash_api", "with_usbip", "with_openvpn", "with_openconnect", "badlinkname", "tfogo_checklinkname0")
+ 	darwinTags = append(darwinTags, "with_dhcp", "grpcnotrace")
+ 	// memcTags = append(memcTags, "with_tailscale")
+ 	sharedTags = append(sharedTags, "with_tailscale", "ts_omit_logtail", "ts_omit_ssh", "ts_omit_drive", "ts_omit_taildrop", "ts_omit_webclient", "ts_omit_doctor", "ts_omit_capture", "ts_omit_kube", "ts_omit_aws", "ts_omit_synology", "ts_omit_bird")
+diff --git a/experimental/libbox/http.go b/experimental/libbox/http.go
+index c9ee378..4480931 100644
+--- a/experimental/libbox/http.go
++++ b/experimental/libbox/http.go
+@@ -54,6 +54,7 @@ type HTTPRequest interface {
+ 
+ type HTTPResponse interface {
+ 	GetContent() (*StringBox, error)
++	GetHeader(name string) string
+ 	WriteTo(path string) error
+ 	WriteToWithProgress(path string, handler HTTPResponseWriteToProgressHandler) error
+ }
+@@ -249,6 +250,10 @@ func (h *httpResponse) GetContent() (*StringBox, error) {
+ 	return wrapString(string(h.content)), nil
+ }
+ 
++func (h *httpResponse) GetHeader(name string) string {
++	return h.Header.Get(name)
++}
++
+ func (h *httpResponse) WriteTo(path string) error {
+ 	defer h.Body.Close()
+ 	file, err := os.Create(path)
