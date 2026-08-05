@@ -74,7 +74,7 @@ android {
         versionCode = getVersionProps("VERSION_CODE").toInt()
         versionName = getVersionProps("VERSION_NAME")
         base.archivesName.set("PXLNET-Connect-${versionName}")
-        val pxlApiBaseUrl = getProps("PXL_API_BASE_URL").ifBlank { "https://pxlnet.duckdns.org/app-api" }
+        val pxlApiBaseUrl = getProps("PXL_API_BASE_URL").ifBlank { "https://pxlnet.duckdns.org:8443/app-api" }
         buildConfigField("String", "PXL_API_BASE_URL", "\"$pxlApiBaseUrl\"")
     }
 
