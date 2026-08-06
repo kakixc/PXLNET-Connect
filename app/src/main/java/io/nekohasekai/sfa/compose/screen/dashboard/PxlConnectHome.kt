@@ -3,6 +3,7 @@ package io.nekohasekai.sfa.compose.screen.dashboard
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -67,6 +68,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -86,6 +90,7 @@ import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.utils.PxlLocalPreferences
 import io.nekohasekai.sfa.utils.PxlGuard
+import io.nekohasekai.sfa.utils.PxlMascotSettings
 import io.nekohasekai.sfa.utils.PxlQuickTile
 import io.nekohasekai.sfa.utils.SubscriptionInfoStore
 import kotlinx.coroutines.delay
@@ -122,6 +127,7 @@ fun DashboardScreen(
     val clipboard = LocalClipboardManager.current
     val resolvedGroupsViewModel = groupsViewModel ?: viewModel<GroupsViewModel>()
     val groupsState by resolvedGroupsViewModel.uiState.collectAsState()
+    val mascotEnabled by PxlMascotSettings.enabled.collectAsState()
     var showServerPicker by remember { mutableStateOf(false) }
     var showOnboarding by remember { mutableStateOf(PxlLocalPreferences.shouldShowOnboarding(context)) }
     var showAccountHelp by remember { mutableStateOf(false) }
@@ -328,6 +334,17 @@ fun DashboardScreen(
             }
         }
 
+        if (mascotEnabled) {
+            item {
+                PxlMascotCard(
+                    health = connectionHealth,
+                    hasProfile = hasProfile,
+                    serverName = serverTitle(context, selectedServer),
+                    delay = selectedItem?.delay,
+                )
+            }
+        }
+
         item {
             ConnectionControl(
                 serviceStatus = serviceStatus,
@@ -527,6 +544,149 @@ private fun SubscriptionCard(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PxlMascotCard(
+    health: ConnectionHealth,
+    hasProfile: Boolean,
+    serverName: String,
+    delay: Int?,
+) {
+    val message = when {
+        !hasProfile -> stringResource(R.string.pxlnet_mascot_no_subscription)
+        health == ConnectionHealth.Online -> stringResource(
+            R.string.pxlnet_mascot_online,
+            serverName,
+            delay ?: 0,
+        )
+        health == ConnectionHealth.Offline -> stringResource(R.string.pxlnet_mascot_offline)
+        health == ConnectionHealth.Checking -> stringResource(R.string.pxlnet_mascot_checking)
+        health == ConnectionHealth.Transitioning -> stringResource(R.string.pxlnet_mascot_transitioning)
+        else -> stringResource(R.string.pxlnet_mascot_ready)
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            PxlCatAvatar(health)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    stringResource(R.string.pxlnet_mascot_name),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PxlCatAvatar(health: ConnectionHealth) {
+    val ink = MaterialTheme.colorScheme.onPrimaryContainer
+    val face = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+    Canvas(
+        modifier = Modifier
+            .size(56.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.primaryContainer)
+            .padding(8.dp),
+    ) {
+        val stroke = 1.8.dp.toPx()
+        val earLeft = Path().apply {
+            moveTo(size.width * 0.18f, size.height * 0.33f)
+            lineTo(size.width * 0.22f, size.height * 0.06f)
+            lineTo(size.width * 0.43f, size.height * 0.25f)
+            close()
+        }
+        val earRight = Path().apply {
+            moveTo(size.width * 0.57f, size.height * 0.25f)
+            lineTo(size.width * 0.78f, size.height * 0.06f)
+            lineTo(size.width * 0.82f, size.height * 0.33f)
+            close()
+        }
+        drawPath(earLeft, face)
+        drawPath(earRight, face)
+        drawPath(earLeft, ink, style = Stroke(stroke, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+        drawPath(earRight, ink, style = Stroke(stroke, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+        drawOval(
+            color = face,
+            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.12f, size.height * 0.20f),
+            size = androidx.compose.ui.geometry.Size(size.width * 0.76f, size.height * 0.68f),
+        )
+        drawOval(
+            color = ink,
+            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.12f, size.height * 0.20f),
+            size = androidx.compose.ui.geometry.Size(size.width * 0.76f, size.height * 0.68f),
+            style = Stroke(stroke),
+        )
+
+        val leftEye = androidx.compose.ui.geometry.Offset(size.width * 0.36f, size.height * 0.49f)
+        val rightEye = androidx.compose.ui.geometry.Offset(size.width * 0.64f, size.height * 0.49f)
+        if (health == ConnectionHealth.Offline) {
+            drawLine(ink, leftEye.copy(x = leftEye.x - stroke), leftEye.copy(x = leftEye.x + stroke), stroke, StrokeCap.Round)
+            drawLine(ink, rightEye.copy(x = rightEye.x - stroke), rightEye.copy(x = rightEye.x + stroke), stroke, StrokeCap.Round)
+        } else {
+            drawCircle(ink, radius = stroke * 1.15f, center = leftEye)
+            if (health == ConnectionHealth.Transitioning) {
+                drawLine(ink, rightEye.copy(x = rightEye.x - stroke), rightEye.copy(x = rightEye.x + stroke), stroke, StrokeCap.Round)
+            } else {
+                drawCircle(ink, radius = stroke * 1.15f, center = rightEye)
+            }
+        }
+
+        val nose = androidx.compose.ui.geometry.Offset(size.width * 0.50f, size.height * 0.62f)
+        drawCircle(ink, radius = stroke * 0.9f, center = nose)
+        drawLine(ink, nose, nose.copy(y = nose.y + stroke * 2.2f), stroke, StrokeCap.Round)
+        drawArc(
+            color = ink,
+            startAngle = 5f,
+            sweepAngle = 170f,
+            useCenter = false,
+            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.38f, size.height * 0.61f),
+            size = androidx.compose.ui.geometry.Size(size.width * 0.12f, size.height * 0.16f),
+            style = Stroke(stroke, cap = StrokeCap.Round),
+        )
+        drawArc(
+            color = ink,
+            startAngle = 5f,
+            sweepAngle = 170f,
+            useCenter = false,
+            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.50f, size.height * 0.61f),
+            size = androidx.compose.ui.geometry.Size(size.width * 0.12f, size.height * 0.16f),
+            style = Stroke(stroke, cap = StrokeCap.Round),
+        )
+        listOf(0.62f, 0.70f).forEach { y ->
+            drawLine(
+                ink,
+                androidx.compose.ui.geometry.Offset(size.width * 0.08f, size.height * y),
+                androidx.compose.ui.geometry.Offset(size.width * 0.32f, size.height * (y - 0.02f)),
+                stroke * 0.75f,
+                StrokeCap.Round,
+            )
+            drawLine(
+                ink,
+                androidx.compose.ui.geometry.Offset(size.width * 0.68f, size.height * (y - 0.02f)),
+                androidx.compose.ui.geometry.Offset(size.width * 0.92f, size.height * y),
+                stroke * 0.75f,
+                StrokeCap.Round,
+            )
         }
     }
 }

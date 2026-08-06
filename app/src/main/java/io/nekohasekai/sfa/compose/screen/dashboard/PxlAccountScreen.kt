@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.Button
@@ -266,22 +267,17 @@ fun PxlAccountScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                EcosystemRow(
-                    icon = when (uiState.accountServiceAvailable) {
-                        true -> Icons.Default.CheckCircle
-                        false -> Icons.Default.CloudOff
-                        null -> Icons.Default.Public
-                    },
-                    title = stringResource(R.string.pxlnet_services_title),
-                    description = when (uiState.accountServiceAvailable) {
-                        true -> stringResource(R.string.pxlnet_services_online)
-                        false -> stringResource(R.string.pxlnet_services_offline)
-                        null -> stringResource(R.string.pxlnet_services_checking)
-                    } + " · " + stringResource(
-                        R.string.pxlnet_servers_available,
-                        uiState.availableServerTags.count { !it.equals("AUTO", true) },
-                    ),
+                PxlPulsePanel(
+                    serviceAvailable = uiState.accountServiceAvailable,
+                    isLoggedIn = isLoggedIn,
+                    subscriptionActive = uiState.telegramSubscriptionActive,
+                    hasLocalSubscription = uiState.selectedProfileId > 0,
+                    serverCount = uiState.availableServerTags.count { !it.equals("AUTO", true) },
+                    checking = uiState.ecosystemCheckPending,
+                    checked = uiState.ecosystemLastCheckedAt != null,
+                    onRefresh = viewModel::refreshEcosystem,
                 )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 EcosystemRow(
                     icon = Icons.Default.Campaign,
                     title = stringResource(R.string.pxlnet_news_title),
@@ -305,6 +301,131 @@ fun PxlAccountScreen(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun PxlPulsePanel(
+    serviceAvailable: Boolean?,
+    isLoggedIn: Boolean,
+    subscriptionActive: Boolean,
+    hasLocalSubscription: Boolean,
+    serverCount: Int,
+    checking: Boolean,
+    checked: Boolean,
+    onRefresh: () -> Unit,
+) {
+    val summary = when {
+        checking -> stringResource(R.string.pxlnet_pulse_checking)
+        serviceAvailable == false -> stringResource(R.string.pxlnet_pulse_offline)
+        serverCount == 0 -> stringResource(R.string.pxlnet_pulse_no_servers)
+        isLoggedIn && !subscriptionActive -> stringResource(R.string.pxlnet_pulse_renew)
+        else -> stringResource(R.string.pxlnet_pulse_ready)
+    }
+    val statusIcon = when {
+        serviceAvailable == false -> Icons.Default.CloudOff
+        serviceAvailable == true && serverCount > 0 -> Icons.Default.CheckCircle
+        else -> Icons.Default.Public
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(
+                statusIcon,
+                contentDescription = null,
+                tint = if (serviceAvailable == false) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(28.dp),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    stringResource(R.string.pxlnet_pulse_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            PulseMetric(
+                label = stringResource(R.string.pxlnet_pulse_account),
+                value = stringResource(
+                    if (isLoggedIn) R.string.pxlnet_pulse_connected else R.string.pxlnet_pulse_guest,
+                ),
+                modifier = Modifier.weight(1f),
+            )
+            PulseMetric(
+                label = stringResource(R.string.pxlnet_pulse_access),
+                value = stringResource(
+                    when {
+                        subscriptionActive -> R.string.pxlnet_pulse_active
+                        hasLocalSubscription -> R.string.pxlnet_pulse_by_link
+                        else -> R.string.pxlnet_pulse_inactive
+                    },
+                ),
+                modifier = Modifier.weight(1f),
+            )
+            PulseMetric(
+                label = stringResource(R.string.pxlnet_pulse_servers),
+                value = serverCount.toString(),
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        OutlinedButton(
+            onClick = onRefresh,
+            enabled = !checking,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+        ) {
+            if (checking) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            } else {
+                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+            }
+            Spacer(Modifier.size(8.dp))
+            Text(stringResource(R.string.pxlnet_pulse_check_now))
+        }
+        if (checked && !checking) {
+            Text(
+                stringResource(R.string.pxlnet_pulse_checked_now),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PulseMetric(label: String, value: String, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+            Text(value, style = MaterialTheme.typography.labelLarge, maxLines = 1)
         }
     }
 }

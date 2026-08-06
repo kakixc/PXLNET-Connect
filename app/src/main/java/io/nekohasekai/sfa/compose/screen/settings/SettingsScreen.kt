@@ -20,6 +20,7 @@ import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.FilterAlt
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Pets
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SettingsRemote
@@ -58,6 +59,7 @@ import io.nekohasekai.sfa.update.UpdateState
 import io.nekohasekai.sfa.utils.PxlDeveloperMode
 import io.nekohasekai.sfa.utils.PxlDiagnostics
 import io.nekohasekai.sfa.utils.PxlLinks
+import io.nekohasekai.sfa.utils.PxlMascotSettings
 import io.nekohasekai.sfa.utils.PxlSupportReport
 import kotlinx.coroutines.launch
 
@@ -76,6 +78,7 @@ fun SettingsScreen(navController: NavController) {
     var diagnosticReport by remember { mutableStateOf<PxlSupportReport?>(null) }
     var checkingDiagnostics by remember { mutableStateOf(false) }
     val developerMode by PxlDeveloperMode.enabled.collectAsState()
+    val mascotEnabled by PxlMascotSettings.enabled.collectAsState()
     val hasUpdate by UpdateState.hasUpdate
 
     if (showAlwaysOnHelp) {
@@ -247,6 +250,26 @@ fun SettingsScreen(navController: NavController) {
                     ListItemDefaults.colors(
                         containerColor = Color.Transparent,
                     ),
+                )
+
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.pxlnet_mascot_setting_title)) },
+                    supportingContent = { Text(stringResource(R.string.pxlnet_mascot_setting_description)) },
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.Outlined.Pets,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    },
+                    trailingContent = {
+                        Switch(
+                            checked = mascotEnabled,
+                            onCheckedChange = PxlMascotSettings::setEnabled,
+                        )
+                    },
+                    modifier = Modifier.clickable { PxlMascotSettings.setEnabled(!mascotEnabled) },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 )
 
                 ListItem(

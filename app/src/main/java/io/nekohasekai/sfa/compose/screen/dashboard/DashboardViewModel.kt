@@ -136,6 +136,8 @@ data class DashboardUiState(
     val accountServiceAvailable: Boolean? = null,
     val availableServerTags: List<String> = emptyList(),
     val preferredServerTag: String = "AUTO",
+    val ecosystemCheckPending: Boolean = false,
+    val ecosystemLastCheckedAt: Long? = null,
 ) {
     data class DeprecatedNote(val message: String, val migrationLink: String?)
 }
@@ -578,6 +580,69 @@ class DashboardViewModel :
                     )
                 }
             }
+        }
+    }
+
+    fun refreshEcosystem() {
+        if (currentState.ecosystemCheckPending || currentState.telegramLoginPending) return
+        updateState { copy(ecosystemCheckPending = true, telegramLoginError = null) }
+        viewModelScope.launch(Dispatchers.IO) {
+            val client = PxlAuthClient()
+            val serviceAvailable = runCatching { client.health() }.getOrDefault(false)
+            val token = PxlSecureTokenStore.read(Application.application)
+            var account: PxlAuthClient.Account? = null
+            var accountError: Exception? = null
+            var invalidToken = false
+
+            if (serviceAvailable && token != null) {
+                try {
+                    val refreshedAccount = client.account(token)
+                    account = refreshedAccount
+                    if (refreshedAccount.subscriptionActive) {
+                        installAuthenticatedSubscription(client.subscriptionUrl(token))
+                    }
+                } catch (error: Exception) {
+                    invalidToken = error.message.orEmpty().contains("HTTP 401")
+                    if (invalidToken) {
+                        PxlSecureTokenStore.clear(Application.application)
+                    } else {
+                        accountError = error
+                    }
+                }
+            }
+
+            val refreshedAccount = account
+            updateState {
+                copy(
+                    accountServiceAvailable = serviceAvailable,
+                    telegramAccountName = when {
+                        invalidToken -> null
+                        refreshedAccount != null -> refreshedAccount.displayName
+                        else -> telegramAccountName
+                    },
+                    telegramUsername = when {
+                        invalidToken -> null
+                        refreshedAccount != null -> refreshedAccount.username
+                        else -> telegramUsername
+                    },
+                    telegramSubscriptionActive = when {
+                        invalidToken -> false
+                        refreshedAccount != null -> refreshedAccount.subscriptionActive
+                        else -> telegramSubscriptionActive
+                    },
+                    telegramSubscriptionExpiresAt = when {
+                        invalidToken -> null
+                        refreshedAccount != null -> refreshedAccount.subscriptionExpiresAt
+                        else -> telegramSubscriptionExpiresAt
+                    },
+                    telegramLoginError = accountError?.let {
+                        accountErrorMessage(it, R.string.pxlnet_account_refresh_failed)
+                    },
+                    ecosystemCheckPending = false,
+                    ecosystemLastCheckedAt = System.currentTimeMillis(),
+                )
+            }
+            loadProfiles()
         }
     }
 
