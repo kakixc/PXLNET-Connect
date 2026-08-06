@@ -415,6 +415,10 @@ fun AppSettingsScreen(
             updateInfo = updateInfo!!,
             onDismiss = { showUpdateAvailableDialog = false },
             onUpdate = {
+                if (!Vendor.ensureUpdateInstallPermission(context)) {
+                    return@UpdateAvailableDialog
+                }
+                showUpdateAvailableDialog = false
                 showDownloadDialog = true
                 downloadError = null
                 downloadJob = scope.launch {

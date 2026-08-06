@@ -3,6 +3,8 @@ package io.nekohasekai.sfa.vendor
 import android.content.Context
 import io.nekohasekai.sfa.bg.RootClient
 import io.nekohasekai.sfa.database.Settings
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 
 enum class InstallMethod {
@@ -22,7 +24,9 @@ object ApkInstaller {
     suspend fun install(context: Context, apkFile: File, method: InstallMethod = getConfiguredMethod()) {
         when (method) {
             InstallMethod.ROOT -> RootInstaller.install(apkFile)
-            InstallMethod.PACKAGE_INSTALLER -> SystemPackageInstaller.install(context, apkFile)
+            InstallMethod.PACKAGE_INSTALLER -> withContext(Dispatchers.Main) {
+                SystemPackageInstaller.install(context, apkFile)
+            }
         }
     }
 

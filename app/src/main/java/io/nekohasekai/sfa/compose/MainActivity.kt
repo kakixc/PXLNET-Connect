@@ -648,6 +648,11 @@ class MainActivity :
                     showUpdateDialog = false
                 },
                 onUpdate = {
+                    if (!Vendor.ensureUpdateInstallPermission(this@MainActivity)) {
+                        return@UpdateAvailableDialog
+                    }
+                    Settings.lastShownUpdateVersion = updateInfo!!.versionCode
+                    showUpdateDialog = false
                     showDownloadDialog = true
                     downloadError = null
                     downloadJob = scope.launch {

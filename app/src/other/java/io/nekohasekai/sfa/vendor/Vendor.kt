@@ -133,6 +133,9 @@ object Vendor : VendorInterface {
         }
     }
 
+    override fun ensureUpdateInstallPermission(context: android.content.Context): Boolean =
+        SystemPackageInstaller.ensureInstallPermission(context)
+
     override suspend fun downloadAndInstall(context: android.content.Context, downloadUrl: String) {
         val cachedApk = UpdateState.cachedApkFile.value
         val apkFile = if (cachedApk != null && cachedApk.exists() && cachedApk.length() > 0) {

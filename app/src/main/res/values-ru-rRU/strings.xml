@@ -759,4 +759,7 @@
     <string name="pxlnet_unsafe_subscription_url">Сервер вернул небезопасную ссылку подписки</string>
     <string name="pxlnet_login_too_many_attempts">Слишком много попыток входа. Попробуйте через несколько минут.</string>
     <string name="pxlnet_account_error_guest">%1$s. Сервис аккаунтов временно недоступен, гостевой режим по ссылке продолжает работать.</string>
+    <string name="pxlnet_update_apk_missing">Скачанный файл обновления не найден</string>
+    <string name="pxlnet_update_install_permission">Разрешите PXLNET Connect устанавливать обновления и нажмите «Обновить» ещё раз</string>
+    <string name="pxlnet_update_installer_missing">Системный установщик Android недоступен</string>
 </resources>

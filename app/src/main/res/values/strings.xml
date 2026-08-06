@@ -131,6 +131,9 @@
     <string name="pxlnet_unsafe_subscription_url">The server returned an unsafe subscription link</string>
     <string name="pxlnet_login_too_many_attempts">Too many sign-in attempts. Try again in a few minutes.</string>
     <string name="pxlnet_account_error_guest">%1$s. The account service is temporarily unavailable; guest mode by link keeps working.</string>
+    <string name="pxlnet_update_apk_missing">The downloaded update file is missing</string>
+    <string name="pxlnet_update_install_permission">Allow PXLNET Connect to install updates, then tap Update again</string>
+    <string name="pxlnet_update_installer_missing">Android package installer is unavailable</string>
     <string name="app_version_title">App version</string>
     <string name="language">Language</string>
     <string name="system_default">System default</string>

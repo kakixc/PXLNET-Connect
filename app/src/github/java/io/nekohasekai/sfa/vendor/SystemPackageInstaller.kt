@@ -1,45 +1,66 @@
 package io.nekohasekai.sfa.vendor
 
-import android.app.PendingIntent
+import android.app.Activity
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
+import androidx.core.content.FileProvider
+import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.update.UpdateState
 import java.io.File
-import java.io.FileInputStream
-import android.content.pm.PackageInstaller as AndroidPackageInstaller
 
 object SystemPackageInstaller {
+    private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
 
-    fun canSystemSilentInstall(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    // A regular sideloaded app cannot silently install updates with PackageInstaller.
+    fun canSystemSilentInstall(): Boolean = false
+
+    /**
+     * Android 8+ requires a per-source permission before our app can open the package installer.
+     * Keep the update dialog visible while the settings screen is open so the user can tap Update
+     * again after granting the permission; the already downloaded APK is reused.
+     */
+    fun ensureInstallPermission(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls()) {
+            return true
+        }
+
+        val intent = Intent(
+            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+            Uri.parse("package:${context.packageName}"),
+        )
+        if (context !is Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+        return false
+    }
 
     fun install(context: Context, apkFile: File) {
-        val packageInstaller = context.packageManager.packageInstaller
-        val params = AndroidPackageInstaller.SessionParams(AndroidPackageInstaller.SessionParams.MODE_FULL_INSTALL)
-        params.setAppPackageName(context.packageName)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            params.setRequireUserAction(AndroidPackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+        require(apkFile.isFile && apkFile.length() > 0L) {
+            context.getString(R.string.pxlnet_update_apk_missing)
+        }
+        check(ensureInstallPermission(context)) {
+            context.getString(R.string.pxlnet_update_install_permission)
         }
 
-        val sessionId = packageInstaller.createSession(params)
-        packageInstaller.openSession(sessionId).use { session ->
-            session.openWrite("update.apk", 0, apkFile.length()).use { outputStream ->
-                FileInputStream(apkFile).use { inputStream ->
-                    inputStream.copyTo(outputStream)
-                }
-                session.fsync(outputStream)
-            }
-
-            val intent = Intent(context, InstallResultReceiver::class.java).apply {
-                action = InstallResultReceiver.ACTION_INSTALL_COMPLETE
-            }
-            val pendingIntent = PendingIntent.getBroadcast(
-                context,
-                sessionId,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
-            )
-
-            session.commit(pendingIntent.intentSender)
+        val apkUri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.cache",
+            apkFile,
+        )
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(apkUri, APK_MIME_TYPE)
+            clipData = ClipData.newRawUri("PXLNET update", apkUri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            if (context !is Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
+        check(intent.resolveActivity(context.packageManager) != null) {
+            context.getString(R.string.pxlnet_update_installer_missing)
+        }
+
+        UpdateState.setInstallStatus(UpdateState.InstallStatus.Installing)
+        context.startActivity(intent)
     }
 }

@@ -60,7 +60,6 @@ fun UpdateAvailableDialog(updateInfo: UpdateInfo, onDismiss: () -> Unit, onUpdat
         confirmButton = {
             TextButton(
                 onClick = {
-                    onDismiss()
                     onUpdate()
                 },
             ) {

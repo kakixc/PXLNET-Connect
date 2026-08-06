@@ -1,6 +1,7 @@
 package io.nekohasekai.sfa.vendor
 
 import android.app.Activity
+import android.content.Context
 import androidx.camera.core.ImageAnalysis
 import io.nekohasekai.sfa.compose.screen.qrscan.QRCodeCropArea
 import io.nekohasekai.sfa.update.UpdateInfo
@@ -26,6 +27,9 @@ interface VendorInterface {
     fun scheduleAutoUpdate() {}
 
     suspend fun verifySilentInstallMethod(method: String): Boolean = false
+
+    /** Returns false after opening Android's per-app install permission screen. */
+    fun ensureUpdateInstallPermission(context: Context): Boolean = true
 
     suspend fun downloadAndInstall(context: android.content.Context, downloadUrl: String): Unit = throw UnsupportedOperationException("Not supported in this flavor")
 }

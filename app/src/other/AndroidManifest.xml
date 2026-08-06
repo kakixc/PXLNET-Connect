@@ -8,6 +8,7 @@
 
     <!-- Required only by the direct-distribution build for the local app-routing picker. -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application>
         <meta-data
