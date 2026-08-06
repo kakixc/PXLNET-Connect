@@ -74,8 +74,8 @@ class BoxService(private val service: Service, private val platformInterface: Pl
 
     private val status = MutableLiveData(Status.Stopped)
     private val widgetStatusObserver = Observer<Status> { currentStatus ->
-        PxlConnectWidgetProvider.updateAll(service, currentStatus)
-    }
+    PxlConnectWidgetProvider.updateAll(Application.application, currentStatus)
+}
     private val binder = ServiceBinder(status)
     private val notification = ServiceNotification(status, service)
     private lateinit var commandServer: CommandServer
