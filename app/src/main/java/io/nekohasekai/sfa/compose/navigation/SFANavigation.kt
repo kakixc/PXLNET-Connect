@@ -21,6 +21,7 @@ import io.nekohasekai.sfa.compose.screen.dashboard.DashboardScreen
 import io.nekohasekai.sfa.compose.screen.dashboard.DashboardViewModel
 import io.nekohasekai.sfa.compose.screen.dashboard.GroupsCard
 import io.nekohasekai.sfa.compose.screen.dashboard.PxlAccountScreen
+import io.nekohasekai.sfa.compose.screen.dashboard.PxlAppRoutingScreen
 import io.nekohasekai.sfa.compose.screen.dashboard.groups.GroupsViewModel
 import io.nekohasekai.sfa.compose.screen.log.LogScreen
 import io.nekohasekai.sfa.compose.screen.log.LogViewModel
@@ -113,6 +114,7 @@ fun SFANavHost(
                     showStartFab = showStartFab,
                     showStatusBar = showStatusBar,
                     onOpenNewProfile = onOpenNewProfile,
+                    onOpenAppRouting = { navController.navigate("pxlnet/app_routing") },
                     viewModel = dashboardViewModel,
                     groupsViewModel = groupsViewModel,
                 )
@@ -122,6 +124,7 @@ fun SFANavHost(
                     showStartFab = showStartFab,
                     showStatusBar = showStatusBar,
                     onOpenNewProfile = onOpenNewProfile,
+                    onOpenAppRouting = { navController.navigate("pxlnet/app_routing") },
                     groupsViewModel = groupsViewModel,
                 )
             }
@@ -131,6 +134,21 @@ fun SFANavHost(
             PxlAccountScreen(
                 onOpenNewProfile = onOpenNewProfile,
                 viewModel = dashboardViewModel ?: viewModel(),
+            )
+        }
+
+        composable(
+            route = "pxlnet/app_routing",
+            enterTransition = slideInFromRight,
+            exitTransition = slideOutToLeft,
+            popEnterTransition = slideInFromLeft,
+            popExitTransition = slideOutToRight,
+        ) {
+            PxlAppRoutingScreen(
+                serviceStatus = serviceStatus,
+                viewModel = dashboardViewModel ?: viewModel(),
+                onBack = { navController.navigateUp() },
+                onManageApps = { navController.navigate("settings/profile_override/manage") },
             )
         }
 

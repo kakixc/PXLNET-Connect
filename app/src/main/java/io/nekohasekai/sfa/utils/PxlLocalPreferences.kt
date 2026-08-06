@@ -7,6 +7,7 @@ object PxlLocalPreferences {
     private const val KEY_GUARD_ENABLED = "guard_enabled"
     private const val KEY_ONBOARDING_COMPLETE = "onboarding_complete"
     private const val KEY_UPDATE_DEFAULTS_INITIALIZED = "update_defaults_initialized"
+    private const val KEY_QUICK_TILE_ADDED = "quick_tile_added"
 
     private fun preferences(context: Context) =
         context.applicationContext.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
@@ -23,6 +24,13 @@ object PxlLocalPreferences {
 
     fun finishOnboarding(context: Context) {
         preferences(context).edit().putBoolean(KEY_ONBOARDING_COMPLETE, true).apply()
+    }
+
+    fun isQuickTileAdded(context: Context): Boolean =
+        preferences(context).getBoolean(KEY_QUICK_TILE_ADDED, false)
+
+    fun setQuickTileAdded(context: Context, added: Boolean) {
+        preferences(context).edit().putBoolean(KEY_QUICK_TILE_ADDED, added).apply()
     }
 
     /** Returns true once, so branded update defaults do not overwrite a later user choice. */

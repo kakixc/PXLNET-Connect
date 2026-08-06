@@ -8,6 +8,7 @@ import android.service.quicksettings.TileService
 import androidx.annotation.RequiresApi
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.constant.Status
+import io.nekohasekai.sfa.utils.PxlLocalPreferences
 
 @RequiresApi(24)
 class TileService :
@@ -37,7 +38,18 @@ class TileService :
 
     override fun onStartListening() {
         super.onStartListening()
+        runCatching { PxlLocalPreferences.setQuickTileAdded(this, true) }
         connection.connect()
+    }
+
+    override fun onTileAdded() {
+        super.onTileAdded()
+        runCatching { PxlLocalPreferences.setQuickTileAdded(this, true) }
+    }
+
+    override fun onTileRemoved() {
+        runCatching { PxlLocalPreferences.setQuickTileAdded(this, false) }
+        super.onTileRemoved()
     }
 
     override fun onStopListening() {

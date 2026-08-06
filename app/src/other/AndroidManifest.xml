@@ -6,6 +6,9 @@
         android:name="moe.shizuku.manager.permission.API_V23"
         tools:node="remove" />
 
+    <!-- Required only by the direct-distribution build for the local app-routing picker. -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+
     <application>
         <meta-data
             android:name="moe.shizuku.client.V3_SUPPORT"

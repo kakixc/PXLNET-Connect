@@ -1,10 +1,12 @@
 package io.nekohasekai.sfa.compose.screen.dashboard
 
+import androidx.annotation.StringRes
 import androidx.lifecycle.viewModelScope
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.OutboundGroup
 import io.nekohasekai.libbox.StatusMessage
 import io.nekohasekai.sfa.Application
+import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.bg.BoxService
 import io.nekohasekai.sfa.bg.UpdateProfileWork
 import io.nekohasekai.sfa.compose.base.BaseViewModel
@@ -451,7 +453,9 @@ class DashboardViewModel :
                         break
                     }
                 }
-                check(!accessToken.isNullOrBlank()) { "Время подтверждения входа истекло" }
+                check(!accessToken.isNullOrBlank()) {
+                    Application.application.getString(R.string.pxlnet_login_timeout)
+                }
                 PxlSecureTokenStore.save(Application.application, accessToken)
                 val account = client.account(accessToken)
                 if (account.subscriptionActive) {
@@ -472,7 +476,7 @@ class DashboardViewModel :
                 updateState {
                     copy(
                         telegramLoginPending = false,
-                        telegramLoginError = accountErrorMessage(e, "Не удалось войти через Telegram"),
+                        telegramLoginError = accountErrorMessage(e, R.string.pxlnet_login_failed),
                     )
                 }
             }
@@ -570,7 +574,7 @@ class DashboardViewModel :
                         telegramSubscriptionActive = if (invalidToken) false else telegramSubscriptionActive,
                         telegramSubscriptionExpiresAt = if (invalidToken) null else telegramSubscriptionExpiresAt,
                         telegramLoginPending = false,
-                        telegramLoginError = accountErrorMessage(e, "Не удалось обновить аккаунт"),
+                        telegramLoginError = accountErrorMessage(e, R.string.pxlnet_account_refresh_failed),
                     )
                 }
             }
@@ -578,7 +582,9 @@ class DashboardViewModel :
     }
 
     private suspend fun installAuthenticatedSubscription(url: String) {
-        require(url.startsWith("https://")) { "Сервер вернул небезопасную ссылку подписки" }
+        require(url.startsWith("https://")) {
+            Application.application.getString(R.string.pxlnet_unsafe_subscription_url)
+        }
         val response = HTTPClient().use { it.get(url) }
         val content =
             PxlSubscriptionConverter.convert(
@@ -615,12 +621,13 @@ class DashboardViewModel :
         }
     }
 
-    private fun accountErrorMessage(error: Exception, fallback: String): String {
+    private fun accountErrorMessage(error: Exception, @StringRes fallbackRes: Int): String {
+        val context = Application.application
         val detail = error.message.orEmpty()
         return when {
-            detail.contains("Время подтверждения") -> detail
-            detail.contains("HTTP 429") -> "Слишком много попыток входа. Попробуйте через несколько минут."
-            else -> "$fallback: сервис аккаунтов временно недоступен. Гостевой режим по ссылке продолжает работать."
+            detail == context.getString(R.string.pxlnet_login_timeout) -> detail
+            detail.contains("HTTP 429") -> context.getString(R.string.pxlnet_login_too_many_attempts)
+            else -> context.getString(R.string.pxlnet_account_error_guest, context.getString(fallbackRes))
         }
     }
 

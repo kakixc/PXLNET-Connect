@@ -1,9 +1,11 @@
 package io.nekohasekai.sfa.compose.screen.dashboard
 
+import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,27 +15,30 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.DashboardCustomize
 import androidx.compose.material.icons.filled.HelpOutline
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -66,6 +71,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -77,7 +83,7 @@ import io.nekohasekai.sfa.compose.navigation.NewProfileArgs
 import io.nekohasekai.sfa.compose.screen.dashboard.groups.GroupsViewModel
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.constant.Status
-import io.nekohasekai.sfa.utils.PxlLinks
+import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.utils.PxlLocalPreferences
 import io.nekohasekai.sfa.utils.PxlGuard
 import io.nekohasekai.sfa.utils.PxlQuickTile
@@ -107,6 +113,7 @@ fun DashboardScreen(
     showStartFab: Boolean = false,
     showStatusBar: Boolean = false,
     onOpenNewProfile: (NewProfileArgs) -> Unit = {},
+    onOpenAppRouting: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel(),
     groupsViewModel: GroupsViewModel? = null,
 ) {
@@ -117,10 +124,10 @@ fun DashboardScreen(
     val groupsState by resolvedGroupsViewModel.uiState.collectAsState()
     var showServerPicker by remember { mutableStateOf(false) }
     var showOnboarding by remember { mutableStateOf(PxlLocalPreferences.shouldShowOnboarding(context)) }
-    var showAlwaysOnHelp by remember { mutableStateOf(false) }
     var showAccountHelp by remember { mutableStateOf(false) }
     var showGuestBanner by remember { mutableStateOf(true) }
     var guardEnabled by remember { mutableStateOf(PxlLocalPreferences.isGuardEnabled(context)) }
+    var quickTileAdded by remember { mutableStateOf(PxlLocalPreferences.isQuickTileAdded(context)) }
     var lastGuardSource by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(serviceStatus) {
@@ -151,7 +158,11 @@ fun DashboardScreen(
         if (serviceStatus == Status.Started && selector != null && (selectedItem?.delay ?: 0) <= 0) {
             delay(600)
             resolvedGroupsViewModel.urlTest(selector.tag)
-            delay(7_000)
+            delay(5_000)
+            if ((selectedItem?.delay ?: 0) <= 0) {
+                resolvedGroupsViewModel.urlTest(selector.tag)
+                delay(4_000)
+            }
             healthCheckTimedOut = true
         }
     }
@@ -185,7 +196,7 @@ fun DashboardScreen(
                 viewModel.selectPreferredServer(fallback.tag)
                 Toast.makeText(
                     context,
-                    "PXL Guard переключил на ${serverTitle(fallback.tag)}",
+                    context.getString(R.string.pxlnet_guard_switched, serverTitle(context, fallback.tag)),
                     Toast.LENGTH_LONG,
                 ).show()
             }
@@ -197,7 +208,7 @@ fun DashboardScreen(
         if (value.startsWith("https://") || value.startsWith("http://")) {
             onOpenNewProfile(NewProfileArgs(importName = "PXLNET", importUrl = value))
         } else {
-            Toast.makeText(context, "В буфере нет ссылки подписки", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, R.string.pxlnet_clipboard_no_subscription, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -207,10 +218,10 @@ fun DashboardScreen(
             subtitle = BuildConfig.VERSION_NAME,
             actions = {
                 IconButton(onClick = { showOnboarding = true }) {
-                    Icon(Icons.Default.HelpOutline, contentDescription = "Как подключиться")
+                    Icon(Icons.Default.HelpOutline, contentDescription = stringResource(R.string.pxlnet_how_to_connect))
                 }
                 IconButton(onClick = { onOpenNewProfile(NewProfileArgs()) }) {
-                    Icon(Icons.Default.Add, contentDescription = "Добавить подписку")
+                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.pxlnet_add_subscription))
                 }
             },
         )
@@ -241,16 +252,6 @@ fun DashboardScreen(
         )
     }
 
-    if (showAlwaysOnHelp) {
-        AlwaysOnVpnDialog(
-            onDismiss = { showAlwaysOnHelp = false },
-            onOpenSettings = {
-                showAlwaysOnHelp = false
-                context.startActivity(android.content.Intent(android.provider.Settings.ACTION_VPN_SETTINGS))
-            },
-        )
-    }
-
     if (showServerPicker && serverChoices.isNotEmpty()) {
         ModalBottomSheet(
             onDismissRequest = { showServerPicker = false },
@@ -261,14 +262,14 @@ fun DashboardScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Состояние PXLNET", style = MaterialTheme.typography.titleLarge)
+                    Text(stringResource(R.string.pxlnet_status_title), style = MaterialTheme.typography.titleLarge)
                     Text(
                         when (connectionHealth) {
-                            ConnectionHealth.Online -> "Подключение работает"
-                            ConnectionHealth.Offline -> "Выбранный сервер не отвечает"
-                            ConnectionHealth.Checking -> "Проверяем доступность"
-                            ConnectionHealth.Transitioning -> "Меняем состояние VPN"
-                            ConnectionHealth.Disconnected -> "VPN выключен · можно проверить задержку"
+                            ConnectionHealth.Online -> stringResource(R.string.pxlnet_connection_works)
+                            ConnectionHealth.Offline -> stringResource(R.string.pxlnet_server_not_responding)
+                            ConnectionHealth.Checking -> stringResource(R.string.pxlnet_checking_availability)
+                            ConnectionHealth.Transitioning -> stringResource(R.string.pxlnet_vpn_changing)
+                            ConnectionHealth.Disconnected -> stringResource(R.string.pxlnet_vpn_off_ping)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -278,7 +279,7 @@ fun DashboardScreen(
                     onClick = { selector?.let { resolvedGroupsViewModel.urlTest(it.tag) } },
                     enabled = selector != null,
                 ) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Проверить пинг")
+                    Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.pxlnet_check_ping))
                 }
             }
             serverChoices.forEachIndexed { index, item ->
@@ -294,57 +295,6 @@ fun DashboardScreen(
                 if (index != serverChoices.lastIndex) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
-            }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Box(
-                    Modifier
-                        .size(8.dp)
-                        .background(
-                            when (uiState.accountServiceAvailable) {
-                                true -> PxlGreen
-                                false -> MaterialTheme.colorScheme.error
-                                null -> MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                            CircleShape,
-                        ),
-                )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Аккаунты и подписки", style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        when (uiState.accountServiceAvailable) {
-                            true -> "Сервис доступен"
-                            false -> "Сервис сейчас не отвечает · гостевой режим работает"
-                            null -> "Проверяем сервис"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) }
-                    .padding(horizontal = 20.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Техработы", style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        "Объявления публикуются в @pxlnet_bot",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Icon(Icons.Default.OpenInNew, contentDescription = "Открыть Telegram")
             }
             Spacer(Modifier.height(24.dp))
         }
@@ -369,20 +319,7 @@ fun DashboardScreen(
             )
         }
 
-        if (uiState.telegramAccountName != null) {
-            item {
-                TelegramAccountCard(
-                    accountName = uiState.telegramAccountName.orEmpty(),
-                    username = uiState.telegramUsername,
-                    subscriptionActive = uiState.telegramSubscriptionActive,
-                    subscriptionExpiresAt = uiState.telegramSubscriptionExpiresAt,
-                    refreshing = uiState.telegramLoginPending,
-                    onRefresh = viewModel::refreshTelegramAccount,
-                    onRenew = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) },
-                    onLogout = viewModel::logoutTelegram,
-                )
-            }
-        } else if (showGuestBanner) {
+        if (uiState.telegramAccountName == null && showGuestBanner) {
             item {
                 GuestAccountBanner(
                     onClose = { showGuestBanner = false },
@@ -404,7 +341,7 @@ fun DashboardScreen(
         if (!hasProfile) {
             item {
                 Text(
-                    "Сначала добавьте ссылку подписки — серверы появятся автоматически.",
+                    stringResource(R.string.pxlnet_add_subscription_first),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
@@ -424,64 +361,71 @@ fun DashboardScreen(
         item {
             RoutingCard(
                 smartRouting = uiState.smartRoutingEnabled,
-                updating = uiState.updatingProfileId != null,
-                onChanged = viewModel::setSmartRouting,
+                appRoutingEnabled = Settings.perAppProxyEnabled,
+                onClick = onOpenAppRouting,
             )
         }
 
         item {
-            SafetyCard(
+            GuardCard(
                 guardEnabled = guardEnabled,
                 onGuardChanged = {
                     guardEnabled = it
                     PxlLocalPreferences.setGuardEnabled(context, it)
                 },
-                onAlwaysOnHelp = { showAlwaysOnHelp = true },
             )
         }
 
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                OutlinedButton(
-                    onClick = importFromClipboard,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        if (!hasProfile) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Icon(Icons.Default.ContentPaste, contentDescription = null)
-                    Spacer(Modifier.size(8.dp))
-                    Text("Из буфера")
-                }
-                OutlinedButton(
-                    onClick = { onOpenNewProfile(NewProfileArgs()) },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                ) {
-                    Icon(Icons.Default.Description, contentDescription = null)
-                    Spacer(Modifier.size(8.dp))
-                    Text("Ссылка / CFG")
+                    OutlinedButton(
+                        onClick = importFromClipboard,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    ) {
+                        Icon(Icons.Default.ContentPaste, contentDescription = null)
+                        Spacer(Modifier.size(8.dp))
+                        Text(stringResource(R.string.pxlnet_from_clipboard))
+                    }
+                    OutlinedButton(
+                        onClick = { onOpenNewProfile(NewProfileArgs()) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    ) {
+                        Icon(Icons.Default.Description, contentDescription = null)
+                        Spacer(Modifier.size(8.dp))
+                        Text(stringResource(R.string.pxlnet_link_cfg))
+                    }
                 }
             }
         }
 
-        item {
-            QuickTileCard(
-                onAdd = {
-                    PxlQuickTile.requestAdd(context) { result ->
-                        val message = when (result) {
-                            PxlQuickTile.Result.Added -> "Плитка PXLNET добавлена"
-                            PxlQuickTile.Result.AlreadyAdded -> "Плитка PXLNET уже добавлена"
-                            PxlQuickTile.Result.OpenQuickSettings -> "Откройте редактирование шторки и добавьте PXLNET VPN"
-                            PxlQuickTile.Result.Rejected -> "Плитка не добавлена"
+        if (!quickTileAdded) {
+            item {
+                QuickTileCard(
+                    onAdd = {
+                        PxlQuickTile.requestAdd(context) { result ->
+                            if (result == PxlQuickTile.Result.Added || result == PxlQuickTile.Result.AlreadyAdded) {
+                                quickTileAdded = true
+                                PxlLocalPreferences.setQuickTileAdded(context, true)
+                            }
+                            val message = when (result) {
+                                PxlQuickTile.Result.Added -> context.getString(R.string.pxlnet_tile_added)
+                                PxlQuickTile.Result.AlreadyAdded -> context.getString(R.string.pxlnet_tile_already_added)
+                                PxlQuickTile.Result.OpenQuickSettings -> context.getString(R.string.pxlnet_tile_add_manually)
+                                PxlQuickTile.Result.Rejected -> context.getString(R.string.pxlnet_tile_not_added)
+                            }
+                            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
                         }
-                        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-                    }
-                },
-            )
+                    },
+                )
+            }
         }
 
         if (serviceStatus == Status.Started) {
@@ -490,8 +434,8 @@ fun DashboardScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    MetricCard("Приём", uiState.downlink, Modifier.weight(1f))
-                    MetricCard("Отдача", uiState.uplink, Modifier.weight(1f))
+                    MetricCard(stringResource(R.string.pxlnet_download), uiState.downlink, Modifier.weight(1f))
+                    MetricCard(stringResource(R.string.pxlnet_upload), uiState.uplink, Modifier.weight(1f))
                 }
             }
         }
@@ -511,82 +455,22 @@ private fun GuestAccountBanner(onClose: () -> Unit, onLearnMore: () -> Unit) {
             Row(verticalAlignment = Alignment.Top) {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
-                        "Войдите в аккаунт для полного функционала. Это просто!",
+                        stringResource(R.string.pxlnet_guest_banner_title),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        "Без входа VPN продолжит работать по обычной ссылке подписки.",
+                        stringResource(R.string.pxlnet_guest_banner_description),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
                     )
                 }
                 IconButton(onClick = onClose) {
-                    Icon(Icons.Default.Close, contentDescription = "Закрыть")
+                    Icon(Icons.Default.Close, contentDescription = stringResource(R.string.close))
                 }
             }
             TextButton(onClick = onLearnMore) {
-                Text("Узнать, как войти")
-            }
-        }
-    }
-}
-
-@Composable
-private fun TelegramAccountCard(
-    accountName: String,
-    username: String?,
-    subscriptionActive: Boolean,
-    subscriptionExpiresAt: String?,
-    refreshing: Boolean,
-    onRefresh: () -> Unit,
-    onRenew: () -> Unit,
-    onLogout: () -> Unit,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
-        Column {
-            Row(
-                modifier = Modifier.padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(
-                        accountName.ifBlank { username?.let { "@$it" } ?: "Аккаунт PXLNET" },
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        if (subscriptionActive) {
-                            "Подписка активна${formatSubscriptionExpiry(subscriptionExpiresAt)?.let { " до $it" }.orEmpty()}"
-                        } else {
-                            "Подписка не активна"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (subscriptionActive) PxlGreen else MaterialTheme.colorScheme.error,
-                    )
-                }
-                IconButton(onClick = onRefresh, enabled = !refreshing) {
-                    if (refreshing) {
-                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                    } else {
-                        Icon(Icons.Default.Refresh, contentDescription = "Обновить аккаунт и подписку")
-                    }
-                }
-            }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(onClick = onLogout) { Text("Выйти") }
-                TextButton(onClick = onRenew) { Text(if (subscriptionActive) "Продлить" else "Активировать") }
+                Text(stringResource(R.string.pxlnet_learn_login))
             }
         }
     }
@@ -619,14 +503,17 @@ private fun SubscriptionCard(
             )
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(
-                    profileName ?: "Подписка не добавлена",
+                    profileName ?: stringResource(R.string.pxlnet_subscription_missing),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    summary ?: if (profileName == null) "Добавьте ссылку или CFG" else "Подписка активна",
+                    summary ?: stringResource(
+                        if (profileName == null) R.string.pxlnet_add_link_hint
+                        else R.string.pxlnet_subscription_active,
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -636,7 +523,7 @@ private fun SubscriptionCard(
                     if (updating) {
                         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                     } else {
-                        Icon(Icons.Default.Refresh, contentDescription = "Обновить подписку")
+                        Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.pxlnet_refresh_subscription))
                     }
                 }
             }
@@ -653,11 +540,13 @@ private fun ConnectionControl(
     onClick: () -> Unit,
 ) {
     val label = when (health) {
-        ConnectionHealth.Online -> "Защищено · ${delay} мс"
-        ConnectionHealth.Checking -> "Проверяем интернет…"
-        ConnectionHealth.Offline -> "VPN запущен, доступа нет"
-        ConnectionHealth.Transitioning -> if (serviceStatus == Status.Starting) "Подключаемся…" else "Отключаемся…"
-        ConnectionHealth.Disconnected -> "Подключиться"
+        ConnectionHealth.Online -> stringResource(R.string.pxlnet_protected_delay, delay ?: 0)
+        ConnectionHealth.Checking -> stringResource(R.string.pxlnet_checking_internet)
+        ConnectionHealth.Offline -> stringResource(R.string.pxlnet_vpn_no_access)
+        ConnectionHealth.Transitioning -> stringResource(
+            if (serviceStatus == Status.Starting) R.string.pxlnet_connecting else R.string.pxlnet_disconnecting,
+        )
+        ConnectionHealth.Disconnected -> stringResource(R.string.pxlnet_connect)
     }
     val containerColor = when (health) {
         ConnectionHealth.Online -> PxlGreen
@@ -706,7 +595,7 @@ private fun ConnectionControl(
         Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
         if (health == ConnectionHealth.Offline) {
             Text(
-                "Откройте список и выберите другой сервер",
+                stringResource(R.string.pxlnet_choose_another_server),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
@@ -735,15 +624,15 @@ private fun QuickTileCard(onAdd: () -> Unit) {
                 modifier = Modifier.size(30.dp),
             )
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Плитка в шторке", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.pxlnet_quick_tile_title), style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "Включайте VPN без открытия приложения",
+                    stringResource(R.string.pxlnet_quick_tile_description),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             OutlinedButton(onClick = onAdd, shape = RoundedCornerShape(8.dp)) {
-                Text("Добавить")
+                Text(stringResource(R.string.pxlnet_add))
             }
         }
     }
@@ -751,6 +640,7 @@ private fun QuickTileCard(onAdd: () -> Unit) {
 
 @Composable
 private fun ServerCard(serverTag: String, delay: Int?, enabled: Boolean, onClick: () -> Unit) {
+    val context = LocalContext.current
     Card(
         modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick),
         shape = RoundedCornerShape(12.dp),
@@ -763,21 +653,25 @@ private fun ServerCard(serverTag: String, delay: Int?, enabled: Boolean, onClick
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(serverFlag(serverTag), style = MaterialTheme.typography.headlineSmall)
+            ServerLocationIcon(serverTag)
             Column(modifier = Modifier.weight(1f)) {
-                Text("Сервер", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(serverTitle(serverTag), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.pxlnet_server_label), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(serverTitle(context, serverTag), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
             }
-            Text(formatDelay(delay), style = MaterialTheme.typography.labelMedium, color = delayColor(delay))
+            Text(formatDelay(context, delay), style = MaterialTheme.typography.labelMedium, color = delayColor(delay))
             Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
         }
     }
 }
 
 @Composable
-private fun RoutingCard(smartRouting: Boolean, updating: Boolean, onChanged: (Boolean) -> Unit) {
+private fun RoutingCard(
+    smartRouting: Boolean,
+    appRoutingEnabled: Boolean,
+    onClick: () -> Unit,
+) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -786,25 +680,30 @@ private fun RoutingCard(smartRouting: Boolean, updating: Boolean, onChanged: (Bo
         Row(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            Icon(Icons.Default.Apps, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text("Smart Routing", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.pxlnet_app_routing_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
                 Text(
-                    if (smartRouting) "Локальная сеть и российские домены — напрямую" else "Весь интернет через VPN, локальная сеть доступна",
+                    when {
+                        appRoutingEnabled -> stringResource(R.string.pxlnet_route_selected_title)
+                        smartRouting -> stringResource(R.string.pxlnet_route_smart_title)
+                        else -> stringResource(R.string.pxlnet_route_all_title)
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Switch(checked = smartRouting, onCheckedChange = onChanged, enabled = !updating)
+            Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
         }
     }
 }
 
 @Composable
-private fun SafetyCard(
+private fun GuardCard(
     guardEnabled: Boolean,
     onGuardChanged: (Boolean) -> Unit,
-    onAlwaysOnHelp: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -822,31 +721,12 @@ private fun SafetyCard(
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text("PXL Guard", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
                 Text(
-                    "Переключит на самый быстрый рабочий сервер при сбое",
+                    stringResource(R.string.pxlnet_guard_description),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Switch(checked = guardEnabled, onCheckedChange = onGuardChanged)
-        }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onAlwaysOnHelp)
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text("Always-on VPN", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
-                Text(
-                    "Автозапуск и блокировка трафика без VPN настраиваются в Android",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Icon(Icons.Default.OpenInNew, contentDescription = "Открыть инструкцию")
         }
     }
 }
@@ -863,10 +743,10 @@ private fun PxlOnboardingSheet(
 ) {
     var step by remember { mutableIntStateOf(0) }
     val titles = listOf(
-        "Добавьте подписку",
-        "Выберите режим",
-        "Разрешите VPN",
-        "Подключитесь",
+        stringResource(R.string.pxlnet_onboarding_add),
+        stringResource(R.string.pxlnet_onboarding_mode),
+        stringResource(R.string.pxlnet_onboarding_permission),
+        stringResource(R.string.pxlnet_onboarding_connect),
     )
     ModalBottomSheet(
         onDismissRequest = onFinish,
@@ -877,7 +757,7 @@ private fun PxlOnboardingSheet(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
-                "Шаг ${step + 1} из ${titles.size}",
+                stringResource(R.string.pxlnet_onboarding_step, step + 1, titles.size),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -885,7 +765,7 @@ private fun PxlOnboardingSheet(
             when (step) {
                 0 -> {
                     Text(
-                        "Войдите через @pxlnet_bot, чтобы приложение само получало статус и синхронизировало подписку. Либо продолжите в гостевом режиме по ссылке.",
+                        stringResource(R.string.pxlnet_onboarding_subscription_text),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -894,20 +774,20 @@ private fun PxlOnboardingSheet(
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(10.dp),
                         ) {
-                            Text("Войти")
+                            Text(stringResource(R.string.pxlnet_login_telegram))
                         }
                         OutlinedButton(
                             onClick = onImportClipboard,
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(10.dp),
                         ) {
-                            Text("Из буфера")
+                            Text(stringResource(R.string.pxlnet_from_clipboard))
                         }
                     }
                 }
                 1 -> {
                     Text(
-                        "Smart Routing оставляет локальную сеть и российские ресурсы напрямую. Полный туннель отправляет остальной трафик через VPN.",
+                        stringResource(R.string.pxlnet_onboarding_routing_text),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -925,22 +805,22 @@ private fun PxlOnboardingSheet(
                             enabled = smartRouting,
                             shape = RoundedCornerShape(10.dp),
                         ) {
-                            Text("Полный туннель")
+                            Text(stringResource(R.string.pxlnet_full_tunnel))
                         }
                     }
                 }
                 2 -> {
                     Text(
-                        "При первом нажатии «Подключиться» Android покажет системный запрос. Разрешите PXLNET Connect создать VPN-подключение.",
+                        stringResource(R.string.pxlnet_onboarding_permission_text),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     OutlinedButton(onClick = onOpenVpnSettings, shape = RoundedCornerShape(10.dp)) {
-                        Text("Открыть настройки VPN")
+                        Text(stringResource(R.string.pxlnet_open_vpn_settings))
                     }
                 }
                 else -> {
                     Text(
-                        "Нажмите большую кнопку. Когда проверка покажет задержку, соединение работает. PXL Guard автоматически сменит отказавший сервер.",
+                        stringResource(R.string.pxlnet_onboarding_finish_text),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -951,13 +831,13 @@ private fun PxlOnboardingSheet(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 TextButton(onClick = { if (step > 0) step-- else onFinish() }) {
-                    Text(if (step > 0) "Назад" else "Пропустить")
+                    Text(stringResource(if (step > 0) R.string.pxlnet_back else R.string.pxlnet_skip))
                 }
                 Button(
                     onClick = { if (step < titles.lastIndex) step++ else onFinish() },
                     shape = RoundedCornerShape(10.dp),
                 ) {
-                    Text(if (step < titles.lastIndex) "Далее" else "Готово")
+                    Text(stringResource(if (step < titles.lastIndex) R.string.pxlnet_next else R.string.pxlnet_done))
                 }
             }
             Spacer(Modifier.height(16.dp))
@@ -974,20 +854,20 @@ private fun AccountLoginDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Аккаунт PXLNET") },
+        title = { Text(stringResource(R.string.pxlnet_account_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("1. Приложение создаст одноразовую сессию и откроет @pxlnet_bot.")
-                Text("2. Подтвердите вход в Telegram.")
-                Text("3. Вернитесь в PXLNET Connect — статус и действующая подписка загрузятся автоматически.")
+                Text(stringResource(R.string.pxlnet_login_step_session))
+                Text(stringResource(R.string.pxlnet_login_step_confirm))
+                Text(stringResource(R.string.pxlnet_login_step_return))
                 Text(
-                    "Пароль Telegram и токен бота приложению не передаются.",
+                    stringResource(R.string.pxlnet_login_security),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (serviceAvailable == false) {
                     Text(
-                        "Сервис аккаунтов сейчас не отвечает. Можно закрыть окно и пользоваться VPN по ссылке подписки.",
+                        stringResource(R.string.pxlnet_login_service_offline),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -998,62 +878,36 @@ private fun AccountLoginDialog(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Text("Ожидаем подтверждение в Telegram…")
+                        Text(stringResource(R.string.pxlnet_login_waiting_telegram))
                     }
                 }
             }
         },
         confirmButton = {
             TextButton(onClick = onLogin, enabled = !pending) {
-                Text("Войти через Telegram")
+                Text(stringResource(R.string.pxlnet_login_telegram))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Позже") }
-        },
-    )
-}
-
-@Composable
-private fun AlwaysOnVpnDialog(onDismiss: () -> Unit, onOpenSettings: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Always-on VPN") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("1. Откройте системные настройки VPN.")
-                Text("2. Нажмите настройки рядом с PXLNET Connect.")
-                Text("3. Включите «Постоянная VPN».")
-                Text("4. Для строгой защиты включите «Блокировать соединения без VPN».")
-                Text(
-                    "Важно: при недоступности всех серверов строгая блокировка полностью отключит интернет.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onOpenSettings) { Text("Открыть настройки") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Закрыть") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.pxlnet_later)) }
         },
     )
 }
 
 @Composable
 private fun ServerPickerRow(item: ServerChoice, selected: Boolean, onClick: () -> Unit) {
+    val context = LocalContext.current
     Row(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(serverFlag(item.tag), style = MaterialTheme.typography.titleLarge)
+        ServerLocationIcon(item.tag)
         Column(modifier = Modifier.weight(1f)) {
-            Text(serverTitle(item.tag), fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+            Text(serverTitle(context, item.tag), fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
             Text(item.type, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Text(formatDelay(item.delay), color = delayColor(item.delay), style = MaterialTheme.typography.labelMedium)
+        Text(formatDelay(context, item.delay), color = delayColor(item.delay), style = MaterialTheme.typography.labelMedium)
         if (selected) {
             Box(Modifier.size(8.dp).background(PxlGreen, CircleShape))
         }
@@ -1076,10 +930,12 @@ private fun MetricCard(label: String, value: String, modifier: Modifier = Modifi
     }
 }
 
-private fun serverTitle(tag: String): String = when {
-    tag.equals("AUTO", true) -> "Автовыбор"
-    tag.contains("germany", true) || tag.contains("deutsch", true) -> "Германия · ${protocolName(tag)}"
-    tag.contains("finland", true) || tag.contains("finn", true) -> "Финляндия · ${protocolName(tag)}"
+private fun serverTitle(context: Context, tag: String): String = when {
+    tag.equals("AUTO", true) -> context.getString(R.string.pxlnet_server_auto)
+    tag.contains("germany", true) || tag.contains("deutsch", true) ->
+        context.getString(R.string.pxlnet_server_germany, protocolName(tag))
+    tag.contains("finland", true) || tag.contains("finn", true) ->
+        context.getString(R.string.pxlnet_server_finland, protocolName(tag))
     else -> tag
 }
 
@@ -1089,19 +945,66 @@ private fun protocolName(tag: String): String = when {
     else -> tag
 }
 
-private fun formatSubscriptionExpiry(value: String?): String? {
-    val parts = value?.take(10)?.split('-') ?: return null
-    return if (parts.size == 3) "${parts[2]}.${parts[1]}.${parts[0]}" else value
+@Composable
+private fun ServerLocationIcon(tag: String) {
+    when {
+        tag.equals("AUTO", true) -> {
+            Icon(
+                Icons.Default.Speed,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(30.dp),
+            )
+        }
+        tag.contains("germany", true) || tag.contains("deutsch", true) -> {
+            Column(
+                modifier = Modifier
+                    .size(width = 32.dp, height = 22.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(3.dp)),
+            ) {
+                Box(Modifier.fillMaxWidth().weight(1f).background(Color.Black))
+                Box(Modifier.fillMaxWidth().weight(1f).background(Color(0xFFDD0000)))
+                Box(Modifier.fillMaxWidth().weight(1f).background(Color(0xFFFFCE00)))
+            }
+        }
+        tag.contains("finland", true) || tag.contains("finn", true) -> {
+            Box(
+                modifier = Modifier
+                    .size(width = 32.dp, height = 22.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(Color.White)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(3.dp)),
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxHeight()
+                        .width(5.dp)
+                        .align(Alignment.Center)
+                        .background(Color(0xFF003580)),
+                )
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(5.dp)
+                        .align(Alignment.Center)
+                        .background(Color(0xFF003580)),
+                )
+            }
+        }
+        else -> {
+            Icon(
+                Icons.Default.Public,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(30.dp),
+            )
+        }
+    }
 }
 
-private fun serverFlag(tag: String): String = when {
-    tag.equals("AUTO", true) -> "A"
-    tag.contains("germany", true) || tag.contains("deutsch", true) -> "🇩🇪"
-    tag.contains("finland", true) || tag.contains("finn", true) -> "🇫🇮"
-    else -> "P"
-}
-
-private fun formatDelay(delay: Int?): String = if (delay != null && delay > 0) "$delay мс" else "—"
+private fun formatDelay(context: Context, delay: Int?): String =
+    if (delay != null && delay > 0) context.getString(R.string.pxlnet_delay_ms, delay) else "—"
 
 @Composable
 private fun delayColor(delay: Int?): Color = when {
