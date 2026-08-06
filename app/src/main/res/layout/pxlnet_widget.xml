@@ -32,11 +32,12 @@
             android:textSize="14sp"
             android:textStyle="bold" />
 
-        <View
-            android:id="@+id/widget_state_dot"
-            android:layout_width="9dp"
-            android:layout_height="9dp"
-            android:background="@drawable/pxlnet_widget_dot_idle" />
+		<ImageView
+			android:id="@+id/widget_state_dot"
+			android:layout_width="9dp"
+			android:layout_height="9dp"
+			android:background="@drawable/pxlnet_widget_dot_idle"
+			android:contentDescription="@null" />
     </LinearLayout>
 
     <TextView
