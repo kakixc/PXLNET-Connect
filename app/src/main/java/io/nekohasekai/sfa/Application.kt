@@ -38,7 +38,6 @@ class Application : Application() {
     override fun onCreate() {
         super.onCreate()
         AppLifecycleObserver.register(this)
-        PxlSubscriptionReminderWork.schedule(this)
 
 //        Seq.setContext(this)
         runCatching {
@@ -61,6 +60,7 @@ class Application : Application() {
         GlobalScope.launch(Dispatchers.IO) {
             initialize(baseDir, workingDir, tempDir)
             UpdateProfileWork.reconfigureUpdater()
+            PxlSubscriptionReminderWork.schedule(this@Application)
         }
 
         if (Vendor.isPerAppProxyAvailable()) {

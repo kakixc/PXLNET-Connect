@@ -593,7 +593,7 @@ private fun PxlCatCharacter(health: ConnectionHealth, animationsEnabled: Boolean
     val tail = if (animationsEnabled) animatedTail else 0f
     Canvas(
         modifier = Modifier
-            .size(width = 104.dp, height = 126.dp)
+            .size(width = 72.dp, height = 86.dp)
             .graphicsLayer { translationY = bob },
     ) {
         val stroke = 2.dp.toPx()
@@ -815,7 +815,7 @@ private fun ConnectionControl(
             }
             if (showMascot) {
                 Column(
-                    modifier = Modifier.width(118.dp),
+                    modifier = Modifier.width(88.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     AnimatedVisibility(
@@ -830,10 +830,10 @@ private fun ConnectionControl(
                         ) {
                             Text(
                                 mascotMessage,
-                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 6.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 4,
+                                maxLines = 3,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }

@@ -32,17 +32,19 @@ object PxlSubscriptionReminderWork {
 
     fun schedule(context: Context) {
         if (!Settings.pxlnetSubscriptionReminders) return
-        val workManager = WorkManager.getInstance(context.applicationContext)
-        workManager.enqueueUniquePeriodicWork(
-            PERIODIC_WORK,
-            ExistingPeriodicWorkPolicy.UPDATE,
-            PeriodicWorkRequestBuilder<ReminderWorker>(12, TimeUnit.HOURS).build(),
-        )
-        workManager.enqueueUniqueWork(
-            IMMEDIATE_WORK,
-            ExistingWorkPolicy.REPLACE,
-            OneTimeWorkRequestBuilder<ReminderWorker>().build(),
-        )
+        runCatching {
+            val workManager = WorkManager.getInstance(context.applicationContext)
+            workManager.enqueueUniquePeriodicWork(
+                PERIODIC_WORK,
+                ExistingPeriodicWorkPolicy.UPDATE,
+                PeriodicWorkRequestBuilder<ReminderWorker>(12, TimeUnit.HOURS).build(),
+            )
+            workManager.enqueueUniqueWork(
+                IMMEDIATE_WORK,
+                ExistingWorkPolicy.REPLACE,
+                OneTimeWorkRequestBuilder<ReminderWorker>().build(),
+            )
+        }
     }
 
     fun cancel(context: Context) {
@@ -103,8 +105,11 @@ object PxlSubscriptionReminderWork {
                 .addAction(0, applicationContext.getString(R.string.pxlnet_renew), renewIntent)
                 .addAction(0, applicationContext.getString(R.string.pxlnet_account_title), accountIntent)
                 .build()
-            NotificationManagerCompat.from(applicationContext).notify(NOTIFICATION_ID, notification)
-            preferences.edit().putString(LAST_NOTIFICATION, notificationKey).apply()
+            runCatching {
+                NotificationManagerCompat.from(applicationContext).notify(NOTIFICATION_ID, notification)
+            }.onSuccess {
+                preferences.edit().putString(LAST_NOTIFICATION, notificationKey).apply()
+            }
             return Result.success()
         }
     }
