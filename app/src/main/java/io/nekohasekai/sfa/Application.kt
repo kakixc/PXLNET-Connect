@@ -20,6 +20,7 @@ import io.nekohasekai.sfa.bg.UpdateProfileWork
 import io.nekohasekai.sfa.constant.Bugs
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.utils.AppLifecycleObserver
+import io.nekohasekai.sfa.utils.PxlSubscriptionReminderWork
 import io.nekohasekai.sfa.vendor.Vendor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -37,6 +38,7 @@ class Application : Application() {
     override fun onCreate() {
         super.onCreate()
         AppLifecycleObserver.register(this)
+        PxlSubscriptionReminderWork.schedule(this)
 
 //        Seq.setContext(this)
         runCatching {

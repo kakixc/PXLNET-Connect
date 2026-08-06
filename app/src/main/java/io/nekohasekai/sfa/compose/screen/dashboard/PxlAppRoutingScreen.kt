@@ -15,8 +15,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Route
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -46,15 +50,12 @@ import io.nekohasekai.sfa.compose.component.PxlRootTopBar
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Settings
+import io.nekohasekai.sfa.utils.PxlRoutingPreset
+import io.nekohasekai.sfa.utils.PxlRoutingPresets
+import io.nekohasekai.sfa.utils.PxlRoutingPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-private enum class PxlRoutingMode {
-    All,
-    Smart,
-    SelectedApps,
-}
 
 @Composable
 fun PxlAppRoutingScreen(
@@ -66,25 +67,43 @@ fun PxlAppRoutingScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val notifyApplyChange = rememberApplyServiceChangeNotifier(serviceStatus)
-    var mode by remember {
-        mutableStateOf(
-            when {
-                Settings.perAppProxyEnabled -> PxlRoutingMode.SelectedApps
-                viewModel.uiState.value.smartRoutingEnabled -> PxlRoutingMode.Smart
-                else -> PxlRoutingMode.All
-            },
+    val savedPreset = remember {
+        PxlRoutingPreset.fromKey(Settings.pxlnetRoutingPreset).let { preset ->
+            if (preset != PxlRoutingPreset.Smart) {
+                preset
+            } else if (Settings.perAppProxyEnabled) {
+                PxlRoutingPreset.SelectedApps
+            } else if (PxlRoutingPreferences.isSmartRouting(context)) {
+                PxlRoutingPreset.Smart
+            } else {
+                PxlRoutingPreset.Full
+            }
+        }
+    }
+    var mode by remember { mutableStateOf(savedPreset) }
+    val presetPackages = remember {
+        mapOf(
+            PxlRoutingPreset.Games to PxlRoutingPresets.matchedPackages(context, PxlRoutingPreset.Games),
+            PxlRoutingPreset.Video to PxlRoutingPresets.matchedPackages(context, PxlRoutingPreset.Video),
+            PxlRoutingPreset.Banks to PxlRoutingPresets.matchedPackages(context, PxlRoutingPreset.Banks),
         )
     }
 
-    fun applyMode(next: PxlRoutingMode) {
+    fun applyMode(next: PxlRoutingPreset) {
         if (mode == next) return
+        val packages = presetPackages[next].orEmpty()
+        if (next in setOf(PxlRoutingPreset.Games, PxlRoutingPreset.Video, PxlRoutingPreset.Banks) && packages.isEmpty()) {
+            PxlRoutingPresets.apply(context, PxlRoutingPreset.SelectedApps)
+            viewModel.setSmartRouting(false)
+            mode = PxlRoutingPreset.SelectedApps
+            Toast.makeText(context, R.string.pxlnet_preset_no_matches, Toast.LENGTH_LONG).show()
+            onManageApps()
+            return
+        }
         mode = next
-        viewModel.setSmartRouting(next == PxlRoutingMode.Smart)
+        PxlRoutingPresets.apply(context, next, packages)
+        viewModel.setSmartRouting(next == PxlRoutingPreset.Smart)
         coroutineScope.launch(Dispatchers.IO) {
-            Settings.perAppProxyEnabled = next == PxlRoutingMode.SelectedApps
-            if (next == PxlRoutingMode.SelectedApps) {
-                Settings.perAppProxyMode = Settings.PER_APP_PROXY_INCLUDE
-            }
             withContext(Dispatchers.Main) {
                 notifyApplyChange(UiEvent.ApplyServiceChange.Mode.Reload)
                 Toast.makeText(context, R.string.pxlnet_mode_applied, Toast.LENGTH_SHORT).show()
@@ -120,12 +139,19 @@ fun PxlAppRoutingScreen(
             )
         }
         item {
+            Text(
+                stringResource(R.string.pxlnet_ready_profiles),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        item {
             RoutingModeCard(
-                icon = Icons.Default.Public,
+                icon = Icons.Default.Security,
                 title = stringResource(R.string.pxlnet_route_all_title),
                 description = stringResource(R.string.pxlnet_route_all_description),
-                selected = mode == PxlRoutingMode.All,
-                onClick = { applyMode(PxlRoutingMode.All) },
+                selected = mode == PxlRoutingPreset.Full,
+                onClick = { applyMode(PxlRoutingPreset.Full) },
             )
         }
         item {
@@ -133,8 +159,44 @@ fun PxlAppRoutingScreen(
                 icon = Icons.Default.Route,
                 title = stringResource(R.string.pxlnet_route_smart_title),
                 description = stringResource(R.string.pxlnet_route_smart_description),
-                selected = mode == PxlRoutingMode.Smart,
-                onClick = { applyMode(PxlRoutingMode.Smart) },
+                selected = mode == PxlRoutingPreset.Smart,
+                onClick = { applyMode(PxlRoutingPreset.Smart) },
+            )
+        }
+        item {
+            RoutingModeCard(
+                icon = Icons.Default.SportsEsports,
+                title = stringResource(R.string.pxlnet_route_games_title),
+                description = stringResource(
+                    R.string.pxlnet_route_games_description,
+                    presetPackages[PxlRoutingPreset.Games].orEmpty().size,
+                ),
+                selected = mode == PxlRoutingPreset.Games,
+                onClick = { applyMode(PxlRoutingPreset.Games) },
+            )
+        }
+        item {
+            RoutingModeCard(
+                icon = Icons.Default.PlayCircle,
+                title = stringResource(R.string.pxlnet_route_video_title),
+                description = stringResource(
+                    R.string.pxlnet_route_video_description,
+                    presetPackages[PxlRoutingPreset.Video].orEmpty().size,
+                ),
+                selected = mode == PxlRoutingPreset.Video,
+                onClick = { applyMode(PxlRoutingPreset.Video) },
+            )
+        }
+        item {
+            RoutingModeCard(
+                icon = Icons.Default.AccountBalance,
+                title = stringResource(R.string.pxlnet_route_banks_title),
+                description = stringResource(
+                    R.string.pxlnet_route_banks_description,
+                    presetPackages[PxlRoutingPreset.Banks].orEmpty().size,
+                ),
+                selected = mode == PxlRoutingPreset.Banks,
+                onClick = { applyMode(PxlRoutingPreset.Banks) },
             )
         }
         item {
@@ -142,11 +204,17 @@ fun PxlAppRoutingScreen(
                 icon = Icons.Default.Apps,
                 title = stringResource(R.string.pxlnet_route_selected_title),
                 description = stringResource(R.string.pxlnet_route_selected_description),
-                selected = mode == PxlRoutingMode.SelectedApps,
-                onClick = { applyMode(PxlRoutingMode.SelectedApps) },
+                selected = mode == PxlRoutingPreset.SelectedApps,
+                onClick = { applyMode(PxlRoutingPreset.SelectedApps) },
             )
         }
-        if (mode == PxlRoutingMode.SelectedApps) {
+        if (mode in setOf(
+                PxlRoutingPreset.SelectedApps,
+                PxlRoutingPreset.Games,
+                PxlRoutingPreset.Video,
+                PxlRoutingPreset.Banks,
+            )
+        ) {
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -165,13 +233,22 @@ fun PxlAppRoutingScreen(
                         ) {
                             Icon(Icons.Default.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                             Text(
-                                stringResource(R.string.pxlnet_selected_apps_count, Settings.perAppProxyList.size),
+                                stringResource(
+                                    R.string.pxlnet_selected_apps_count,
+                                    Settings.getEffectivePerAppProxyList().size,
+                                ),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Medium,
                             )
                         }
                         Button(
-                            onClick = onManageApps,
+                            onClick = {
+                                if (Settings.perAppProxyManagedMode) {
+                                    PxlRoutingPresets.copyPresetToManualSelection()
+                                    mode = PxlRoutingPreset.SelectedApps
+                                }
+                                onManageApps()
+                            },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(10.dp),
                         ) {

@@ -18,6 +18,7 @@ import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.Observer
 import go.Seq
 import io.nekohasekai.libbox.CommandServer
 import io.nekohasekai.libbox.CommandServerHandler
@@ -36,6 +37,7 @@ import io.nekohasekai.sfa.database.ProfileManager
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.ktx.hasPermission
 import io.nekohasekai.sfa.vendor.Vendor
+import io.nekohasekai.sfa.widget.PxlConnectWidgetProvider
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -71,11 +73,18 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     var fileDescriptor: ParcelFileDescriptor? = null
 
     private val status = MutableLiveData(Status.Stopped)
+    private val widgetStatusObserver = Observer<Status> { currentStatus ->
+        PxlConnectWidgetProvider.updateAll(service, currentStatus)
+    }
     private val binder = ServiceBinder(status)
     private val notification = ServiceNotification(status, service)
     private lateinit var commandServer: CommandServer
 
     private var receiverRegistered = false
+
+    init {
+        status.observeForever(widgetStatusObserver)
+    }
     private val receiver =
         object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
@@ -370,6 +379,7 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     internal fun onBind(): IBinder = binder
 
     internal fun onDestroy() {
+        status.removeObserver(widgetStatusObserver)
         binder.close()
     }
 

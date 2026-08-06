@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="pxlnet_widget_surface">#F7F6F3</color>
+    <color name="pxlnet_widget_on_surface">#1B191C</color>
+    <color name="pxlnet_widget_muted">#716C73</color>
+    <color name="pxlnet_widget_outline">#DED9E0</color>
+    <color name="pxlnet_widget_accent">#67507F</color>
+    <color name="pxlnet_widget_active">#277A4A</color>
+</resources>

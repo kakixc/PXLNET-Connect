@@ -14,12 +14,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.outlined.Animation
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Campaign
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.FilterAlt
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Pets
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Settings
@@ -60,6 +63,7 @@ import io.nekohasekai.sfa.utils.PxlDeveloperMode
 import io.nekohasekai.sfa.utils.PxlDiagnostics
 import io.nekohasekai.sfa.utils.PxlLinks
 import io.nekohasekai.sfa.utils.PxlMascotSettings
+import io.nekohasekai.sfa.utils.PxlSubscriptionReminderSettings
 import io.nekohasekai.sfa.utils.PxlSupportReport
 import kotlinx.coroutines.launch
 
@@ -79,6 +83,9 @@ fun SettingsScreen(navController: NavController) {
     var checkingDiagnostics by remember { mutableStateOf(false) }
     val developerMode by PxlDeveloperMode.enabled.collectAsState()
     val mascotEnabled by PxlMascotSettings.enabled.collectAsState()
+    val mascotAnimationsEnabled by PxlMascotSettings.animationsEnabled.collectAsState()
+    val mascotTipsEnabled by PxlMascotSettings.tipsEnabled.collectAsState()
+    val subscriptionRemindersEnabled by PxlSubscriptionReminderSettings.enabled.collectAsState()
     val hasUpdate by UpdateState.hasUpdate
 
     if (showAlwaysOnHelp) {
@@ -269,6 +276,67 @@ fun SettingsScreen(navController: NavController) {
                         )
                     },
                     modifier = Modifier.clickable { PxlMascotSettings.setEnabled(!mascotEnabled) },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                )
+
+                if (mascotEnabled) {
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.pxlnet_mascot_animations_title)) },
+                        supportingContent = { Text(stringResource(R.string.pxlnet_mascot_animations_description)) },
+                        leadingContent = {
+                            Icon(Icons.Outlined.Animation, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = mascotAnimationsEnabled,
+                                onCheckedChange = PxlMascotSettings::setAnimationsEnabled,
+                            )
+                        },
+                        modifier = Modifier.clickable {
+                            PxlMascotSettings.setAnimationsEnabled(!mascotAnimationsEnabled)
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    )
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.pxlnet_mascot_tips_title)) },
+                        supportingContent = { Text(stringResource(R.string.pxlnet_mascot_tips_description)) },
+                        leadingContent = {
+                            Icon(
+                                Icons.Outlined.ChatBubbleOutline,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = mascotTipsEnabled,
+                                onCheckedChange = PxlMascotSettings::setTipsEnabled,
+                            )
+                        },
+                        modifier = Modifier.clickable { PxlMascotSettings.setTipsEnabled(!mascotTipsEnabled) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    )
+                }
+
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.pxlnet_subscription_reminders_title)) },
+                    supportingContent = { Text(stringResource(R.string.pxlnet_subscription_reminders_description)) },
+                    leadingContent = {
+                        Icon(
+                            Icons.Outlined.NotificationsActive,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    },
+                    trailingContent = {
+                        Switch(
+                            checked = subscriptionRemindersEnabled,
+                            onCheckedChange = { PxlSubscriptionReminderSettings.setEnabled(context, it) },
+                        )
+                    },
+                    modifier = Modifier.clickable {
+                        PxlSubscriptionReminderSettings.setEnabled(context, !subscriptionRemindersEnabled)
+                    },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 )
 

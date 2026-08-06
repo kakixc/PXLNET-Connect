@@ -460,6 +460,7 @@ class DashboardViewModel :
                 }
                 PxlSecureTokenStore.save(Application.application, accessToken)
                 val account = client.account(accessToken)
+                SubscriptionInfoStore.saveAccountExpiry(Application.application, account.subscriptionExpiresAt)
                 if (account.subscriptionActive) {
                     installAuthenticatedSubscription(client.subscriptionUrl(accessToken))
                 }
@@ -491,6 +492,7 @@ class DashboardViewModel :
                 runCatching { PxlAuthClient().logout(token) }
             }
             PxlSecureTokenStore.clear(Application.application)
+            SubscriptionInfoStore.clearAccountExpiry(Application.application)
             updateState {
                 copy(
                     telegramAccountName = null,
@@ -510,6 +512,7 @@ class DashboardViewModel :
             val client = PxlAuthClient()
             runCatching {
                 val account = client.account(token)
+                SubscriptionInfoStore.saveAccountExpiry(Application.application, account.subscriptionExpiresAt)
                 if (account.subscriptionActive) {
                     installAuthenticatedSubscription(client.subscriptionUrl(token))
                 }
@@ -551,6 +554,7 @@ class DashboardViewModel :
             try {
                 val client = PxlAuthClient()
                 val account = client.account(token)
+                SubscriptionInfoStore.saveAccountExpiry(Application.application, account.subscriptionExpiresAt)
                 if (account.subscriptionActive) {
                     installAuthenticatedSubscription(client.subscriptionUrl(token))
                 }
@@ -598,6 +602,10 @@ class DashboardViewModel :
                 try {
                     val refreshedAccount = client.account(token)
                     account = refreshedAccount
+                    SubscriptionInfoStore.saveAccountExpiry(
+                        Application.application,
+                        refreshedAccount.subscriptionExpiresAt,
+                    )
                     if (refreshedAccount.subscriptionActive) {
                         installAuthenticatedSubscription(client.subscriptionUrl(token))
                     }

@@ -2,12 +2,18 @@ package io.nekohasekai.sfa.utils
 
 import android.content.Context
 import java.text.DateFormat
+import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.util.Date
 import kotlin.math.ln
 import kotlin.math.pow
 
 object SubscriptionInfoStore {
     private const val PREFERENCES = "pxlnet_subscription_info"
+    private const val ACCOUNT_EXPIRY = "account_expiry"
 
     data class Info(
         val upload: Long = 0,
@@ -45,6 +51,28 @@ object SubscriptionInfoStore {
         )
     }
 
+    fun saveAccountExpiry(context: Context, value: String?) {
+        val epochSeconds = value?.let(::parseExpiry) ?: 0L
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .edit()
+            .putLong(ACCOUNT_EXPIRY, epochSeconds)
+            .apply()
+        if (epochSeconds > 0) PxlSubscriptionReminderWork.schedule(context)
+    }
+
+    fun clearAccountExpiry(context: Context) {
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .edit()
+            .remove(ACCOUNT_EXPIRY)
+            .apply()
+    }
+
+    fun effectiveExpiry(context: Context, profileId: Long): Long {
+        val accountExpiry = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .getLong(ACCOUNT_EXPIRY, 0L)
+        return accountExpiry.takeIf { it > 0 } ?: read(context, profileId)?.expire ?: 0L
+    }
+
     fun summary(context: Context, profileId: Long): String? {
         val info = read(context, profileId) ?: return null
         val parts = mutableListOf<String>()
@@ -65,4 +93,14 @@ object SubscriptionInfoStore {
         val value = bytes / 1024.0.pow(unit.toDouble())
         return if (value >= 10) "%.0f %s".format(value, suffix) else "%.1f %s".format(value, suffix)
     }
+
+    private fun parseExpiry(value: String): Long = runCatching {
+        Instant.parse(value).epochSecond
+    }.recoverCatching {
+        OffsetDateTime.parse(value).toEpochSecond()
+    }.recoverCatching {
+        LocalDateTime.parse(value).atZone(ZoneId.systemDefault()).toEpochSecond()
+    }.recoverCatching {
+        LocalDate.parse(value).atStartOfDay(ZoneId.systemDefault()).toEpochSecond()
+    }.getOrDefault(0L)
 }

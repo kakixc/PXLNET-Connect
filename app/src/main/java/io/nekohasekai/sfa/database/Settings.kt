@@ -72,6 +72,9 @@ object Settings {
     var disableDeprecatedWarnings by dataStore.boolean(SettingsKey.DISABLE_DEPRECATED_WARNINGS) { false }
     var developerMode by dataStore.boolean(SettingsKey.DEVELOPER_MODE) { false }
     var pxlnetMascotEnabled by dataStore.boolean(SettingsKey.PXLNET_MASCOT_ENABLED) { true }
+    var pxlnetMascotAnimations by dataStore.boolean(SettingsKey.PXLNET_MASCOT_ANIMATIONS) { true }
+    var pxlnetMascotTips by dataStore.boolean(SettingsKey.PXLNET_MASCOT_TIPS) { true }
+    var pxlnetSubscriptionReminders by dataStore.boolean(SettingsKey.PXLNET_SUBSCRIPTION_REMINDERS) { true }
 
     const val PER_APP_PROXY_DISABLED = 0
     const val PER_APP_PROXY_EXCLUDE = 1
@@ -82,14 +85,18 @@ object Settings {
     var perAppProxyMode by dataStore.int(SettingsKey.PER_APP_PROXY_MODE) { PER_APP_PROXY_EXCLUDE }
     var perAppProxyList by dataStore.stringSet(SettingsKey.PER_APP_PROXY_LIST) { emptySet() }
     var perAppProxyManagedMode by dataStore.boolean(SettingsKey.PER_APP_PROXY_MANAGED_MODE) { false }
+    var perAppProxyManagedModeType by dataStore.int(SettingsKey.PER_APP_PROXY_MANAGED_MODE_TYPE) {
+        PER_APP_PROXY_EXCLUDE
+    }
     var perAppProxyManagedList by dataStore.stringSet(SettingsKey.PER_APP_PROXY_MANAGED_LIST) { emptySet() }
+    var pxlnetRoutingPreset by dataStore.string(SettingsKey.PXLNET_ROUTING_PRESET) { "smart" }
 
     const val PACKAGE_QUERY_MODE_SHIZUKU = "SHIZUKU"
     const val PACKAGE_QUERY_MODE_ROOT = "ROOT"
     var perAppProxyPackageQueryMode by dataStore.string(SettingsKey.PER_APP_PROXY_PACKAGE_QUERY_MODE) { PACKAGE_QUERY_MODE_SHIZUKU }
 
     fun getEffectivePerAppProxyMode(): Int = if (perAppProxyManagedMode) {
-        PER_APP_PROXY_EXCLUDE
+        perAppProxyManagedModeType
     } else {
         perAppProxyMode
     }

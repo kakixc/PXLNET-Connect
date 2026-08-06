@@ -17,13 +17,18 @@ object SettingsKey {
     const val DISABLE_DEPRECATED_WARNINGS = "disable_deprecated_warnings"
     const val DEVELOPER_MODE = "pxlnet_developer_mode"
     const val PXLNET_MASCOT_ENABLED = "pxlnet_mascot_enabled"
+    const val PXLNET_MASCOT_ANIMATIONS = "pxlnet_mascot_animations"
+    const val PXLNET_MASCOT_TIPS = "pxlnet_mascot_tips"
+    const val PXLNET_SUBSCRIPTION_REMINDERS = "pxlnet_subscription_reminders"
 
     const val AUTO_REDIRECT = "auto_redirect"
     const val PER_APP_PROXY_ENABLED = "per_app_proxy_enabled"
     const val PER_APP_PROXY_MODE = "per_app_proxy_mode"
     const val PER_APP_PROXY_LIST = "per_app_proxy_list"
     const val PER_APP_PROXY_MANAGED_MODE = "per_app_proxy_managed_mode"
+    const val PER_APP_PROXY_MANAGED_MODE_TYPE = "per_app_proxy_managed_mode_type"
     const val PER_APP_PROXY_MANAGED_LIST = "per_app_proxy_managed_list"
+    const val PXLNET_ROUTING_PRESET = "pxlnet_routing_preset"
     const val PER_APP_PROXY_PACKAGE_QUERY_MODE = "per_app_proxy_package_query_mode"
 
     const val ALLOW_BYPASS = "allow_bypass"

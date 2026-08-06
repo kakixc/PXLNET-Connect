@@ -55,6 +55,10 @@
     <string name="pxlnet_pulse_checked_now">Checked just now</string>
     <string name="pxlnet_mascot_setting_title">Pix mascot</string>
     <string name="pxlnet_mascot_setting_description">Show the connection assistant on the home screen</string>
+    <string name="pxlnet_mascot_animations_title">Pix animations</string>
+    <string name="pxlnet_mascot_animations_description">Subtle movement and reactions to connection changes</string>
+    <string name="pxlnet_mascot_tips_title">Pix tips</string>
+    <string name="pxlnet_mascot_tips_description">Occasional short connection hints</string>
     <string name="pxlnet_mascot_name">Pix</string>
     <string name="pxlnet_mascot_no_subscription">I will help with the connection after you add a subscription</string>
     <string name="pxlnet_mascot_online">All quiet: %1$s responds in %2$d ms</string>
@@ -62,6 +66,29 @@
     <string name="pxlnet_mascot_checking">Checking whether the tunnel can reach the internet</string>
     <string name="pxlnet_mascot_transitioning">One moment, I am switching the VPN state</string>
     <string name="pxlnet_mascot_ready">Ready. Tap the connect button</string>
+    <string name="pxlnet_home_account_until">%1$s · active until %2$s</string>
+    <string name="pxlnet_home_account_active">%1$s · subscription active</string>
+    <string name="pxlnet_home_account_inactive">%1$s · no active subscription</string>
+    <string name="pxlnet_subscription_reminders_title">Subscription reminders</string>
+    <string name="pxlnet_subscription_reminders_description">Notify 7, 3 and 1 day before access expires</string>
+    <string name="pxlnet_subscription_reminder_title">PXLNET subscription</string>
+    <string name="pxlnet_subscription_expired_notification">Access has expired. Renew it in Telegram to restore account sync.</string>
+    <string name="pxlnet_subscription_channel">Subscription reminders</string>
+    <string name="pxlnet_subscription_channel_description">Expiry and renewal reminders for PXLNET access</string>
+    <plurals name="pxlnet_subscription_days_notification">
+        <item quantity="one">Access expires in %d day</item>
+        <item quantity="other">Access expires in %d days</item>
+    </plurals>
+    <string name="pxlnet_widget_description">PXLNET connection, server and subscription status</string>
+    <string name="pxlnet_widget_protected">Protected</string>
+    <string name="pxlnet_widget_switching">Switching…</string>
+    <string name="pxlnet_widget_off">VPN off</string>
+    <string name="pxlnet_widget_no_subscription">Add subscription</string>
+    <string name="pxlnet_widget_open_account">Open account</string>
+    <plurals name="pxlnet_widget_days_left">
+        <item quantity="one">%d day left</item>
+        <item quantity="other">%d days left</item>
+    </plurals>
     <string name="pxlnet_tariff_title">Plan</string>
     <string name="pxlnet_tariff_access">PXLNET access</string>
     <string name="pxlnet_services_title">Service status</string>
@@ -83,6 +110,14 @@
     <string name="pxlnet_route_smart_description">Local network and Russian resources connect directly</string>
     <string name="pxlnet_route_selected_title">Selected apps only</string>
     <string name="pxlnet_route_selected_description">Only apps you choose use the VPN</string>
+    <string name="pxlnet_ready_profiles">Ready profiles</string>
+    <string name="pxlnet_route_games_title">Games</string>
+    <string name="pxlnet_route_games_description">Selected games use the VPN · found: %1$d</string>
+    <string name="pxlnet_route_video_title">Video</string>
+    <string name="pxlnet_route_video_description">Video and streaming apps use the VPN · found: %1$d</string>
+    <string name="pxlnet_route_banks_title">Banks directly</string>
+    <string name="pxlnet_route_banks_description">Banking apps bypass the VPN · found: %1$d</string>
+    <string name="pxlnet_preset_no_matches">No matching apps were found. Choose the required apps manually.</string>
     <string name="pxlnet_choose_apps">Choose apps</string>
     <string name="pxlnet_selected_apps_count">Selected: %1$d</string>
     <string name="pxlnet_routing_privacy">The app list and your selection stay on this device and are not sent to PXLNET.</string>

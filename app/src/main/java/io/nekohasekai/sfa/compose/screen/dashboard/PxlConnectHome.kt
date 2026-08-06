@@ -2,6 +2,14 @@ package io.nekohasekai.sfa.compose.screen.dashboard
 
 import android.content.Context
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -54,6 +62,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -67,6 +76,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -128,6 +138,8 @@ fun DashboardScreen(
     val resolvedGroupsViewModel = groupsViewModel ?: viewModel<GroupsViewModel>()
     val groupsState by resolvedGroupsViewModel.uiState.collectAsState()
     val mascotEnabled by PxlMascotSettings.enabled.collectAsState()
+    val mascotAnimationsEnabled by PxlMascotSettings.animationsEnabled.collectAsState()
+    val mascotTipsEnabled by PxlMascotSettings.tipsEnabled.collectAsState()
     var showServerPicker by remember { mutableStateOf(false) }
     var showOnboarding by remember { mutableStateOf(PxlLocalPreferences.shouldShowOnboarding(context)) }
     var showAccountHelp by remember { mutableStateOf(false) }
@@ -318,6 +330,10 @@ fun DashboardScreen(
             SubscriptionCard(
                 profileName = uiState.selectedProfileName,
                 summary = SubscriptionInfoStore.summary(context, uiState.selectedProfileId),
+                accountName = uiState.telegramAccountName
+                    ?: uiState.telegramUsername?.let { "@$it" },
+                accountActive = uiState.telegramSubscriptionActive,
+                accountExpiry = formatPxlAccountExpiry(uiState.telegramSubscriptionExpiresAt),
                 updating = uiState.updatingProfileId != null,
                 onRefresh = {
                     uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }?.let(viewModel::updateProfile)
@@ -334,23 +350,17 @@ fun DashboardScreen(
             }
         }
 
-        if (mascotEnabled) {
-            item {
-                PxlMascotCard(
-                    health = connectionHealth,
-                    hasProfile = hasProfile,
-                    serverName = serverTitle(context, selectedServer),
-                    delay = selectedItem?.delay,
-                )
-            }
-        }
-
         item {
             ConnectionControl(
                 serviceStatus = serviceStatus,
                 health = connectionHealth,
                 delay = selectedItem?.delay,
                 enabled = hasProfile && !isTransitioning,
+                showMascot = mascotEnabled,
+                animateMascot = mascotAnimationsEnabled,
+                showMascotTips = mascotTipsEnabled,
+                hasProfile = hasProfile,
+                serverName = serverTitle(context, selectedServer),
                 onClick = viewModel::toggleService,
             )
         }
@@ -497,9 +507,24 @@ private fun GuestAccountBanner(onClose: () -> Unit, onLearnMore: () -> Unit) {
 private fun SubscriptionCard(
     profileName: String?,
     summary: String?,
+    accountName: String?,
+    accountActive: Boolean,
+    accountExpiry: String?,
     updating: Boolean,
     onRefresh: () -> Unit,
 ) {
+    val compactSummary = when {
+        accountName != null && accountActive && accountExpiry != null -> stringResource(
+            R.string.pxlnet_home_account_until,
+            accountName,
+            accountExpiry,
+        )
+        accountName != null && accountActive -> stringResource(R.string.pxlnet_home_account_active, accountName)
+        accountName != null -> stringResource(R.string.pxlnet_home_account_inactive, accountName)
+        else -> summary ?: stringResource(
+            if (profileName == null) R.string.pxlnet_add_link_hint else R.string.pxlnet_subscription_active,
+        )
+    }
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -527,12 +552,11 @@ private fun SubscriptionCard(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    summary ?: stringResource(
-                        if (profileName == null) R.string.pxlnet_add_link_hint
-                        else R.string.pxlnet_subscription_active,
-                    ),
+                    compactSummary,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             if (profileName != null) {
@@ -549,76 +573,60 @@ private fun SubscriptionCard(
 }
 
 @Composable
-private fun PxlMascotCard(
-    health: ConnectionHealth,
-    hasProfile: Boolean,
-    serverName: String,
-    delay: Int?,
-) {
-    val message = when {
-        !hasProfile -> stringResource(R.string.pxlnet_mascot_no_subscription)
-        health == ConnectionHealth.Online -> stringResource(
-            R.string.pxlnet_mascot_online,
-            serverName,
-            delay ?: 0,
-        )
-        health == ConnectionHealth.Offline -> stringResource(R.string.pxlnet_mascot_offline)
-        health == ConnectionHealth.Checking -> stringResource(R.string.pxlnet_mascot_checking)
-        health == ConnectionHealth.Transitioning -> stringResource(R.string.pxlnet_mascot_transitioning)
-        else -> stringResource(R.string.pxlnet_mascot_ready)
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            PxlCatAvatar(health)
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    stringResource(R.string.pxlnet_mascot_name),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Text(
-                    message,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun PxlCatAvatar(health: ConnectionHealth) {
+private fun PxlCatCharacter(health: ConnectionHealth, animationsEnabled: Boolean) {
     val ink = MaterialTheme.colorScheme.onPrimaryContainer
     val face = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+    val transition = rememberInfiniteTransition(label = "pix-motion")
+    val animatedBob by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = -5f,
+        animationSpec = infiniteRepeatable(tween(1500), RepeatMode.Reverse),
+        label = "pix-bob",
+    )
+    val animatedTail by transition.animateFloat(
+        initialValue = -8f,
+        targetValue = 10f,
+        animationSpec = infiniteRepeatable(tween(1200), RepeatMode.Reverse),
+        label = "pix-tail",
+    )
+    val bob = if (animationsEnabled && health != ConnectionHealth.Offline) animatedBob else 0f
+    val tail = if (animationsEnabled) animatedTail else 0f
     Canvas(
         modifier = Modifier
-            .size(56.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.primaryContainer)
-            .padding(8.dp),
+            .size(width = 104.dp, height = 126.dp)
+            .graphicsLayer { translationY = bob },
     ) {
-        val stroke = 1.8.dp.toPx()
+        val stroke = 2.dp.toPx()
+        drawArc(
+            color = ink,
+            startAngle = -45f + tail,
+            sweepAngle = 155f,
+            useCenter = false,
+            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.58f, size.height * 0.49f),
+            size = androidx.compose.ui.geometry.Size(size.width * 0.38f, size.height * 0.43f),
+            style = Stroke(stroke * 4f, cap = StrokeCap.Round),
+        )
+        drawOval(
+            color = face,
+            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.27f, size.height * 0.43f),
+            size = androidx.compose.ui.geometry.Size(size.width * 0.50f, size.height * 0.48f),
+        )
+        drawOval(
+            color = ink,
+            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.27f, size.height * 0.43f),
+            size = androidx.compose.ui.geometry.Size(size.width * 0.50f, size.height * 0.48f),
+            style = Stroke(stroke),
+        )
         val earLeft = Path().apply {
-            moveTo(size.width * 0.18f, size.height * 0.33f)
-            lineTo(size.width * 0.22f, size.height * 0.06f)
-            lineTo(size.width * 0.43f, size.height * 0.25f)
+            moveTo(size.width * 0.20f, size.height * 0.27f)
+            lineTo(size.width * 0.24f, size.height * 0.04f)
+            lineTo(size.width * 0.43f, size.height * 0.20f)
             close()
         }
         val earRight = Path().apply {
-            moveTo(size.width * 0.57f, size.height * 0.25f)
-            lineTo(size.width * 0.78f, size.height * 0.06f)
-            lineTo(size.width * 0.82f, size.height * 0.33f)
+            moveTo(size.width * 0.57f, size.height * 0.20f)
+            lineTo(size.width * 0.76f, size.height * 0.04f)
+            lineTo(size.width * 0.80f, size.height * 0.27f)
             close()
         }
         drawPath(earLeft, face)
@@ -627,18 +635,18 @@ private fun PxlCatAvatar(health: ConnectionHealth) {
         drawPath(earRight, ink, style = Stroke(stroke, join = androidx.compose.ui.graphics.StrokeJoin.Round))
         drawOval(
             color = face,
-            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.12f, size.height * 0.20f),
-            size = androidx.compose.ui.geometry.Size(size.width * 0.76f, size.height * 0.68f),
+            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.14f, size.height * 0.15f),
+            size = androidx.compose.ui.geometry.Size(size.width * 0.72f, size.height * 0.46f),
         )
         drawOval(
             color = ink,
-            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.12f, size.height * 0.20f),
-            size = androidx.compose.ui.geometry.Size(size.width * 0.76f, size.height * 0.68f),
+            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.14f, size.height * 0.15f),
+            size = androidx.compose.ui.geometry.Size(size.width * 0.72f, size.height * 0.46f),
             style = Stroke(stroke),
         )
 
-        val leftEye = androidx.compose.ui.geometry.Offset(size.width * 0.36f, size.height * 0.49f)
-        val rightEye = androidx.compose.ui.geometry.Offset(size.width * 0.64f, size.height * 0.49f)
+        val leftEye = androidx.compose.ui.geometry.Offset(size.width * 0.37f, size.height * 0.35f)
+        val rightEye = androidx.compose.ui.geometry.Offset(size.width * 0.63f, size.height * 0.35f)
         if (health == ConnectionHealth.Offline) {
             drawLine(ink, leftEye.copy(x = leftEye.x - stroke), leftEye.copy(x = leftEye.x + stroke), stroke, StrokeCap.Round)
             drawLine(ink, rightEye.copy(x = rightEye.x - stroke), rightEye.copy(x = rightEye.x + stroke), stroke, StrokeCap.Round)
@@ -651,7 +659,7 @@ private fun PxlCatAvatar(health: ConnectionHealth) {
             }
         }
 
-        val nose = androidx.compose.ui.geometry.Offset(size.width * 0.50f, size.height * 0.62f)
+        val nose = androidx.compose.ui.geometry.Offset(size.width * 0.50f, size.height * 0.43f)
         drawCircle(ink, radius = stroke * 0.9f, center = nose)
         drawLine(ink, nose, nose.copy(y = nose.y + stroke * 2.2f), stroke, StrokeCap.Round)
         drawArc(
@@ -659,8 +667,8 @@ private fun PxlCatAvatar(health: ConnectionHealth) {
             startAngle = 5f,
             sweepAngle = 170f,
             useCenter = false,
-            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.38f, size.height * 0.61f),
-            size = androidx.compose.ui.geometry.Size(size.width * 0.12f, size.height * 0.16f),
+            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.38f, size.height * 0.42f),
+            size = androidx.compose.ui.geometry.Size(size.width * 0.12f, size.height * 0.10f),
             style = Stroke(stroke, cap = StrokeCap.Round),
         )
         drawArc(
@@ -668,11 +676,11 @@ private fun PxlCatAvatar(health: ConnectionHealth) {
             startAngle = 5f,
             sweepAngle = 170f,
             useCenter = false,
-            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.50f, size.height * 0.61f),
-            size = androidx.compose.ui.geometry.Size(size.width * 0.12f, size.height * 0.16f),
+            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.50f, size.height * 0.42f),
+            size = androidx.compose.ui.geometry.Size(size.width * 0.12f, size.height * 0.10f),
             style = Stroke(stroke, cap = StrokeCap.Round),
         )
-        listOf(0.62f, 0.70f).forEach { y ->
+        listOf(0.43f, 0.48f).forEach { y ->
             drawLine(
                 ink,
                 androidx.compose.ui.geometry.Offset(size.width * 0.08f, size.height * y),
@@ -688,6 +696,31 @@ private fun PxlCatAvatar(health: ConnectionHealth) {
                 StrokeCap.Round,
             )
         }
+        drawLine(
+            ink,
+            androidx.compose.ui.geometry.Offset(size.width * 0.37f, size.height * 0.89f),
+            androidx.compose.ui.geometry.Offset(size.width * 0.32f, size.height * 0.97f),
+            stroke * 2f,
+            StrokeCap.Round,
+        )
+        drawLine(
+            ink,
+            androidx.compose.ui.geometry.Offset(size.width * 0.63f, size.height * 0.89f),
+            androidx.compose.ui.geometry.Offset(size.width * 0.68f, size.height * 0.97f),
+            stroke * 2f,
+            StrokeCap.Round,
+        )
+        val pixel = size.width * 0.045f
+        listOf(-1 to 0, 0 to 0, 1 to 0, -1 to 1, 1 to 1, 0 to 2).forEach { (x, y) ->
+            drawRect(
+                color = ink,
+                topLeft = androidx.compose.ui.geometry.Offset(
+                    size.width * 0.50f + x * pixel - pixel / 2,
+                    size.height * 0.61f + y * pixel,
+                ),
+                size = androidx.compose.ui.geometry.Size(pixel, pixel),
+            )
+        }
     }
 }
 
@@ -697,6 +730,11 @@ private fun ConnectionControl(
     health: ConnectionHealth,
     delay: Int?,
     enabled: Boolean,
+    showMascot: Boolean,
+    animateMascot: Boolean,
+    showMascotTips: Boolean,
+    hasProfile: Boolean,
+    serverName: String,
     onClick: () -> Unit,
 ) {
     val label = when (health) {
@@ -720,36 +758,88 @@ private fun ConnectionControl(
         ConnectionHealth.Checking, ConnectionHealth.Transitioning -> MaterialTheme.colorScheme.onSecondaryContainer
         ConnectionHealth.Disconnected -> MaterialTheme.colorScheme.onPrimary
     }
+    val mascotMessage = when {
+        !hasProfile -> stringResource(R.string.pxlnet_mascot_no_subscription)
+        health == ConnectionHealth.Online -> stringResource(R.string.pxlnet_mascot_online, serverName, delay ?: 0)
+        health == ConnectionHealth.Offline -> stringResource(R.string.pxlnet_mascot_offline)
+        health == ConnectionHealth.Checking -> stringResource(R.string.pxlnet_mascot_checking)
+        health == ConnectionHealth.Transitioning -> stringResource(R.string.pxlnet_mascot_transitioning)
+        else -> stringResource(R.string.pxlnet_mascot_ready)
+    }
+    var mascotTipVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(health, showMascotTips, hasProfile) {
+        mascotTipVisible = false
+        if (showMascot && showMascotTips) {
+            delay(250)
+            mascotTipVisible = true
+            delay(4_000)
+            mascotTipVisible = false
+        }
+    }
     Column(
         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Button(
-            onClick = onClick,
-            enabled = enabled,
-            modifier = Modifier.size(164.dp),
-            shape = CircleShape,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = containerColor,
-                contentColor = contentColor,
-                disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            ),
-            contentPadding = PaddingValues(0.dp),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.Bottom,
         ) {
-            if (serviceStatus == Status.Starting || serviceStatus == Status.Stopping) {
-                CircularProgressIndicator(
-                    color = contentColor,
-                    modifier = Modifier.size(42.dp),
-                    strokeWidth = 3.dp,
-                )
-            } else {
-                Icon(
-                    if (health == ConnectionHealth.Offline) Icons.Default.CloudOff else Icons.Default.PowerSettingsNew,
-                    contentDescription = label,
-                    modifier = Modifier.size(54.dp),
-                )
+            Button(
+                onClick = onClick,
+                enabled = enabled,
+                modifier = Modifier.size(164.dp),
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = containerColor,
+                    contentColor = contentColor,
+                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+                contentPadding = PaddingValues(0.dp),
+            ) {
+                if (serviceStatus == Status.Starting || serviceStatus == Status.Stopping) {
+                    CircularProgressIndicator(
+                        color = contentColor,
+                        modifier = Modifier.size(42.dp),
+                        strokeWidth = 3.dp,
+                    )
+                } else {
+                    Icon(
+                        if (health == ConnectionHealth.Offline) Icons.Default.CloudOff else Icons.Default.PowerSettingsNew,
+                        contentDescription = label,
+                        modifier = Modifier.size(54.dp),
+                    )
+                }
+            }
+            if (showMascot) {
+                Column(
+                    modifier = Modifier.width(118.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    AnimatedVisibility(
+                        visible = mascotTipVisible,
+                        enter = fadeIn(),
+                        exit = fadeOut(),
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        ) {
+                            Text(
+                                mascotMessage,
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 4,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    PxlCatCharacter(health, animateMascot)
+                }
             }
         }
         Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
@@ -1161,6 +1251,11 @@ private fun ServerLocationIcon(tag: String) {
             )
         }
     }
+}
+
+private fun formatPxlAccountExpiry(value: String?): String? {
+    val parts = value?.take(10)?.split('-') ?: return null
+    return if (parts.size == 3) "${parts[2]}.${parts[1]}.${parts[0]}" else value
 }
 
 private fun formatDelay(context: Context, delay: Int?): String =
