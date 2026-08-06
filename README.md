@@ -1,6 +1,6 @@
 # PXLNET Connect
 
-Beta-версия Android-клиента для VPN-сервиса PXLNET. Поддерживаемая цель — Android 11–16, включая Honor 400 / MagicOS 10.
+Beta-версия Android-клиента для VPN-сервиса PXLNET. Поддерживаемая цель — Android 11–16
 
 ## Что уже работает
 
