@@ -71,7 +71,7 @@ object Settings {
     var dynamicNotification by dataStore.boolean(SettingsKey.DYNAMIC_NOTIFICATION) { true }
     var disableDeprecatedWarnings by dataStore.boolean(SettingsKey.DISABLE_DEPRECATED_WARNINGS) { false }
     var developerMode by dataStore.boolean(SettingsKey.DEVELOPER_MODE) { false }
-    var pxlnetMascotEnabled by dataStore.boolean(SettingsKey.PXLNET_MASCOT_ENABLED) { true }
+    var pxlnetMascotEnabled by dataStore.boolean(SettingsKey.PXLNET_MASCOT_ENABLED) { false }
     var pxlnetMascotAnimations by dataStore.boolean(SettingsKey.PXLNET_MASCOT_ANIMATIONS) { true }
     var pxlnetMascotTips by dataStore.boolean(SettingsKey.PXLNET_MASCOT_TIPS) { true }
     var pxlnetSubscriptionReminders by dataStore.boolean(SettingsKey.PXLNET_SUBSCRIPTION_REMINDERS) { true }
