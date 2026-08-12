@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://kakixc.github.io/PXLNET-Connect/sitemap.xml
