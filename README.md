@@ -1,6 +1,11 @@
-# PXLNET Connect
+# PXLNet Connect
 
-Beta-версия Android-клиента для VPN-сервиса PXLNET. Поддерживаемая цель — Android 11–16
+**PXLNet Connect** — Android VPN-клиент на базе sing-box для сервиса PXLNet.
+
+Поддерживает VLESS, Hysteria2, Smart Routing, автоматический выбор серверов,
+мониторинг состояния узлов и интеграцию с аккаунтом PXLNet.
+
+> Сейчас проект находится в Beta.
 
 ## Что уже работает
 
