@@ -65,6 +65,7 @@
 
     <nav class="nav-links" aria-label="Основная навигация">
       <a href="#features">Возможности</a>
+      <a href="#privacy">Приватность</a>
       <a href="#interface">Интерфейс</a>
       <a href="#download">Скачать</a>
       <a href="#opensource">Open source</a>
@@ -89,6 +90,7 @@
 
 <nav id="mobile-nav" class="mobile-nav" aria-label="Мобильная навигация">
   <a href="#features">Возможности</a>
+  <a href="#privacy">Приватность</a>
   <a href="#interface">Интерфейс</a>
   <a href="#download">Скачать</a>
   <a href="#opensource">Open source</a>
@@ -195,44 +197,150 @@
     </div>
   </section>
 
+  <!-- TRAFFIC MODES -->
+  <section id="modes">
+    <div class="container">
+      <div class="section-head reveal">
+        <span class="section-eyebrow">Маршрутизация</span>
+        <h2>Три режима — под любую задачу</h2>
+        <p>Можно направить через VPN весь трафик устройства, довериться Smart Routing или выбрать приложения вручную — выбор сохраняется локально на устройстве.</p>
+      </div>
+
+      <div class="feature-grid">
+        <article class="feature-card reveal">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12h8"/></svg>
+          </div>
+          <h3>Весь трафик</h3>
+          <p>Все подключения устройства идут через VPN — самый простой и предсказуемый режим.</p>
+        </article>
+
+        <article class="feature-card reveal">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8.3 6h7.2M18 8.5V16"/></svg>
+          </div>
+          <h3>Smart Routing</h3>
+          <p>Направляет трафик по правилам и оставляет локальные или нужные направления напрямую.</p>
+        </article>
+
+        <article class="feature-card reveal">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="14" y="4" width="7" height="7" rx="1.5"/><rect x="3" y="15" width="7" height="7" rx="1.5"/><rect x="14" y="15" width="7" height="7" rx="1.5"/></svg>
+          </div>
+          <h3>Выбранные приложения</h3>
+          <p>Через VPN идут только выбранные вами приложения — с поиском по списку и исключениями, которые хранятся локально на устройстве.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRIVACY -->
+  <section id="privacy">
+    <div class="container">
+      <div class="section-head reveal">
+        <span class="section-eyebrow">Приватность</span>
+        <h2>Приватность и доверие</h2>
+        <p>PXLNet Connect не скрывает наличие VPN от других приложений и не требует пароля — только то, что нужно для стабильной и прозрачной работы.</p>
+      </div>
+
+      <div class="feature-grid">
+        <article class="feature-card reveal">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4.5 6v6c0 4.5 3.1 7.4 7.5 9 4.4-1.6 7.5-4.5 7.5-9V6L12 3Z"/></svg>
+          </div>
+          <h3>Обезличенная диагностика</h3>
+          <p>Отчёты об ошибках очищаются от UUID, токенов и адресов перед отправкой в поддержку — вручную и по вашему запросу.</p>
+        </article>
+
+        <article class="feature-card reveal">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+          </div>
+          <h3>Без скрытия VPN</h3>
+          <p>Приложение не пытается спрятать факт подключения от других приложений или системы — работа остаётся прозрачной.</p>
+        </article>
+
+        <article class="feature-card reveal">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20c1.5-4 4.2-6 7.5-6s6 2 7.5 6"/></svg>
+          </div>
+          <h3>Вход без пароля</h3>
+          <p>Авторизация через <strong style="color:var(--text-primary);font-weight:500;">@pxlnet_bot</strong> в Telegram — без пароля и без токена внутри APK.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
   <!-- ONE SUBSCRIPTION -->
   <section class="sub-band">
     <div class="container">
       <div class="sub-card reveal">
         <h2>Одна подписка. Весь <span class="accent" style="background:var(--accent-gradient);-webkit-background-clip:text;background-clip:text;color:transparent;">PXLNet</span>.</h2>
         <p>Одна подписка открывает доступ ко всем доступным серверам и основным функциям PXLNet Connect. Новые обычные функции и серверные локации не требуют покупки отдельных пакетов.</p>
+        <p style="margin-top: var(--space-4); font-size: 14px; color: var(--text-tertiary);">Для входа не обязательно заводить аккаунт — можно продолжить в гостевом режиме по ссылке подписки, а синхронизировать с аккаунтом PXLNet позже, через <strong style="color:var(--text-secondary);font-weight:500;">@pxlnet_bot</strong>.</p>
       </div>
     </div>
   </section>
 
   <!-- SCREENSHOTS -->
-  <!--
-    Секция скрыта (атрибут hidden), пока в docs/assets/screenshots/ нет реальных
-    скриншотов приложения. Как только добавите файлы:
-      1. Положите изображения в docs/assets/screenshots/ (например screen-1.png).
-      2. Замените .screenshot-placeholder на <img src="assets/screenshots/screen-1.png" alt="…">.
-      3. Удалите атрибут hidden у <section id="interface">.
-  -->
-  <section id="interface" hidden>
+  <section id="interface">
     <div class="container">
       <div class="section-head reveal">
         <span class="section-eyebrow">Интерфейс</span>
         <h2>Как выглядит приложение</h2>
-        <p>Несколько экранов PXLNet Connect: подключение, серверы и аккаунт.</p>
+        <p>Несколько экранов PXLNet Connect: подключение, аккаунт и параметры.</p>
       </div>
       <div class="screenshots-grid">
-        <div class="screenshot-placeholder reveal">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg>
-          <span>Экран подключения</span>
-        </div>
-        <div class="screenshot-placeholder reveal">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg>
-          <span>Выбор сервера</span>
-        </div>
-        <div class="screenshot-placeholder reveal">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg>
-          <span>Аккаунт PXLNet</span>
-        </div>
+        <figure class="screenshot-frame reveal">
+          <img src="assets/screenshots/screen-onboarding.jpg" alt="Экран добавления подписки: вход через Telegram или гостевой режим по ссылке" loading="lazy">
+          <figcaption>Добавление подписки</figcaption>
+        </figure>
+        <figure class="screenshot-frame reveal">
+          <img src="assets/screenshots/screen-home.jpg" alt="Главный экран: кнопка подключения, автовыбор сервера и маршрутизация приложений" loading="lazy">
+          <figcaption>Главный экран</figcaption>
+        </figure>
+        <figure class="screenshot-frame reveal">
+          <img src="assets/screenshots/screen-account.jpg" alt="Экран аккаунта PXLNet: статус подписки и экосистема PXLNet" loading="lazy">
+          <figcaption>Аккаунт PXLNet</figcaption>
+        </figure>
+        <figure class="screenshot-frame reveal">
+          <img src="assets/screenshots/screen-settings.jpg" alt="Экран параметров: Always-on VPN, диагностика и режим разработчика" loading="lazy">
+          <figcaption>Параметры</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- QUICK START -->
+  <section id="quickstart">
+    <div class="container">
+      <div class="section-head reveal">
+        <span class="section-eyebrow">Быстрый старт</span>
+        <h2>От установки до подключения</h2>
+        <p>Так же, как устроен первый запуск в самом приложении — четыре шага, без лишних настроек.</p>
+      </div>
+
+      <div class="feature-grid cols-4">
+        <article class="feature-card reveal">
+          <div class="feature-icon" style="background:transparent;border-color:var(--border-strong);"><span style="font-family:var(--font-mono);color:var(--accent-blue);font-weight:600;">01</span></div>
+          <h3>Установите APK</h3>
+          <p>Скачайте последнюю версию из GitHub Releases и установите на Android 11–16.</p>
+        </article>
+        <article class="feature-card reveal">
+          <div class="feature-icon" style="background:transparent;border-color:var(--border-strong);"><span style="font-family:var(--font-mono);color:var(--accent-blue);font-weight:600;">02</span></div>
+          <h3>Добавьте подписку</h3>
+          <p>Войдите через <strong style="color:var(--text-primary);font-weight:500;">@pxlnet_bot</strong> для автосинхронизации или продолжите в гостевом режиме по ссылке.</p>
+        </article>
+        <article class="feature-card reveal">
+          <div class="feature-icon" style="background:transparent;border-color:var(--border-strong);"><span style="font-family:var(--font-mono);color:var(--accent-blue);font-weight:600;">03</span></div>
+          <h3>Выберите режим</h3>
+          <p>Оставьте автовыбор сервера и Smart Routing или настройте маршрутизацию приложений вручную.</p>
+        </article>
+        <article class="feature-card reveal">
+          <div class="feature-icon" style="background:transparent;border-color:var(--border-strong);"><span style="font-family:var(--font-mono);color:var(--accent-blue);font-weight:600;">04</span></div>
+          <h3>Подключитесь</h3>
+          <p>Нажмите кнопку подключения — PXL Guard сам переключит сервер при сбое.</p>
+        </article>
       </div>
     </div>
   </section>
@@ -283,12 +391,13 @@
       <div class="oss-copy reveal">
         <span class="section-eyebrow">Open source</span>
         <h2 style="margin-bottom: var(--space-3);">Открытый код на GitHub</h2>
-        <p>PXLNet Connect опубликован на GitHub и построен на базе sing-box — открытого движка для современных VPN-протоколов.</p>
+        <p>PXLNet Connect — форк <strong style="color:var(--text-primary);font-weight:500;">sing-box-for-android</strong>, вдохновлённый Happ Android, распространяется под лицензией <strong style="color:var(--text-primary);font-weight:500;">GPLv3</strong>.</p>
         <p>Исходный код, релизы и историю изменений можно посмотреть напрямую в репозитории.</p>
         <div class="oss-actions">
           <a class="btn btn-secondary" href="https://github.com/kakixc/PXLNET-Connect" target="_blank" rel="noopener">Source Code</a>
           <a class="btn btn-secondary" href="https://github.com/kakixc/PXLNET-Connect/releases" target="_blank" rel="noopener">Releases</a>
           <a class="btn btn-secondary" href="https://github.com/kakixc/PXLNET-Connect/commits/main" target="_blank" rel="noopener">Changelog</a>
+          <a class="btn btn-secondary" href="https://github.com/kakixc/PXLNET-Connect/blob/main/LICENSE" target="_blank" rel="noopener">License</a>
         </div>
       </div>
 
