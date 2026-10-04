@@ -79,11 +79,12 @@ class UpdateProfileWork {
                 }
                 try {
                     val response = HTTPClient().use { it.get(profile.typed.remoteURL) }
-                    val content =
+                    val conversion =
                         PxlSubscriptionConverter.convert(
                             response.content,
                             PxlRoutingPreferences.isSmartRouting(applicationContext),
-                        ).config
+                        )
+                    val content = conversion.config
                     Libbox.checkConfig(content)
                     val file = File(profile.typed.path)
                     if (file.readText() != content) {
@@ -94,6 +95,7 @@ class UpdateProfileWork {
                     }
                     profile.typed.lastUpdated = Date()
                     SubscriptionInfoStore.save(applicationContext, profile.id, response.subscriptionUserInfo)
+                    SubscriptionInfoStore.saveSkippedXhttp(applicationContext, profile.id, conversion.skippedXhttpCount)
                     ProfileManager.update(profile)
                 } catch (e: Exception) {
                     Log.e(TAG, "update profile ${profile.name}", e)

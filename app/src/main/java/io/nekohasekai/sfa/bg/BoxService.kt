@@ -51,15 +51,8 @@ class BoxService(private val service: Service, private val platformInterface: Pl
         private const val PROFILE_UPDATE_INTERVAL = 15L * 60 * 1000 // 15 minutes in milliseconds
         private const val TAG = "BoxService"
 
-        fun start() {
-            val intent =
-                runBlocking {
-                    withContext(Dispatchers.IO) {
-                        Intent(Application.application, Settings.serviceClass())
-                    }
-                }
-            ContextCompat.startForegroundService(Application.application, intent)
-        }
+        internal fun start(source: StartServiceCoordinator.Source = StartServiceCoordinator.Source.BOOT): Boolean =
+            StartServiceCoordinator.start(source)
 
         fun stop() {
             Application.application.sendBroadcast(
@@ -74,8 +67,9 @@ class BoxService(private val service: Service, private val platformInterface: Pl
 
     private val status = MutableLiveData(Status.Stopped)
     private val widgetStatusObserver = Observer<Status> { currentStatus ->
-    PxlConnectWidgetProvider.updateAll(Application.application, currentStatus)
-}
+        StartServiceCoordinator.onServiceStatusChanged(currentStatus)
+        PxlConnectWidgetProvider.updateAll(Application.application, currentStatus)
+    }
     private val binder = ServiceBinder(status)
     private val notification = ServiceNotification(status, service)
     private lateinit var commandServer: CommandServer
@@ -317,6 +311,7 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     }
 
     private suspend fun stopAndAlert(type: Alert, message: String? = null) {
+        StartServiceCoordinator.onStartFailed("$type${message?.let { ": $it" } ?: ""}")
         Settings.startedByUser = false
         val pfd = fileDescriptor
         if (pfd != null) {
@@ -379,6 +374,8 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     internal fun onBind(): IBinder = binder
 
     internal fun onDestroy() {
+        StartServiceCoordinator.onServiceStatusChanged(Status.Stopped)
+        PxlConnectWidgetProvider.updateAll(Application.application, Status.Stopped)
         status.removeObserver(widgetStatusObserver)
         binder.close()
     }

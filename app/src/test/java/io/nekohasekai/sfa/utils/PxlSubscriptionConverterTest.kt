@@ -92,4 +92,30 @@ class PxlSubscriptionConverterTest {
         assertEquals(original, result.config)
         assertEquals(0, result.serverCount)
     }
+
+    @Test
+    fun rejectsXhttpInsteadOfSilentlyUsingTcp() {
+        val link =
+            "vless://11111111-1111-1111-1111-111111111111@example.invalid:443?type=xhttp&security=tls&sni=example.invalid&path=%2Ftest#XHTTP"
+
+        val failure = runCatching { PxlSubscriptionConverter.convert(link) }.exceptionOrNull()
+
+        assertTrue(failure is IllegalArgumentException)
+        assertTrue(failure?.message.orEmpty().contains("XHTTP"))
+    }
+
+    @Test
+    fun keepsCompatibleNodesWhenSubscriptionAlsoContainsXhttp() {
+        val links = listOf(
+            "vless://11111111-1111-1111-1111-111111111111@de.example.com:443?type=xhttp&security=tls#Germany",
+            "hysteria2://secret@fi.example.com:8443?insecure=1&sni=fi.example.com#Finland",
+        ).joinToString("\n")
+
+        val result = PxlSubscriptionConverter.convert(links)
+
+        assertEquals(1, result.serverCount)
+        assertEquals(1, result.skippedXhttpCount)
+        assertFalse(result.config.contains("de.example.com"))
+        assertTrue(result.config.contains("fi.example.com"))
+    }
 }

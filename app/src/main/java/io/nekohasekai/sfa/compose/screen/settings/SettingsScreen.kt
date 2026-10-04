@@ -237,6 +237,7 @@ fun SettingsScreen(navController: NavController) {
                             style = MaterialTheme.typography.bodyLarge,
                         )
                     },
+                    supportingContent = { Text(stringResource(R.string.pxlnet_app_settings_summary)) },
                     leadingContent = {
                         Icon(
                             imageVector = Icons.Outlined.Info,

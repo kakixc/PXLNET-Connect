@@ -1,6 +1,8 @@
 package io.nekohasekai.sfa.database
 
 import android.os.Build
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableStateOf
 import androidx.room.Room
 import io.nekohasekai.sfa.Application
 import io.nekohasekai.sfa.BuildConfig
@@ -75,6 +77,37 @@ object Settings {
     var pxlnetMascotAnimations by dataStore.boolean(SettingsKey.PXLNET_MASCOT_ANIMATIONS) { true }
     var pxlnetMascotTips by dataStore.boolean(SettingsKey.PXLNET_MASCOT_TIPS) { true }
     var pxlnetSubscriptionReminders by dataStore.boolean(SettingsKey.PXLNET_SUBSCRIPTION_REMINDERS) { true }
+    private var persistedThemeMode by dataStore.string(SettingsKey.PXLNET_THEME_MODE) { "system" }
+    private val _themeModeState = mutableStateOf(persistedThemeMode)
+    val themeModeState: State<String> get() = _themeModeState
+    var themeMode: String
+        get() = persistedThemeMode
+        set(value) {
+            persistedThemeMode = value
+            _themeModeState.value = value
+        }
+
+    private var persistedDynamicColor by dataStore.boolean(SettingsKey.PXLNET_DYNAMIC_COLOR) { true }
+    private val _dynamicColorState = mutableStateOf(persistedDynamicColor)
+    val dynamicColorState: State<Boolean> get() = _dynamicColorState
+    var dynamicColor: Boolean
+        get() = persistedDynamicColor
+        set(value) {
+            persistedDynamicColor = value
+            _dynamicColorState.value = value
+        }
+
+    private var persistedAccent by dataStore.string(SettingsKey.PXLNET_ACCENT) {
+        if (dynamicColor) "wallpaper" else "sky"
+    }
+    private val _accentState = mutableStateOf(persistedAccent)
+    val accentState: State<String> get() = _accentState
+    var accent: String
+        get() = persistedAccent
+        set(value) {
+            persistedAccent = value
+            _accentState.value = value
+        }
 
     const val PER_APP_PROXY_DISABLED = 0
     const val PER_APP_PROXY_EXCLUDE = 1

@@ -5,6 +5,7 @@ import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -12,7 +13,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -58,6 +59,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -81,10 +83,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -93,6 +94,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.component.PxlRootTopBar
+import io.nekohasekai.sfa.compose.theme.performPxlConfirmation
 import io.nekohasekai.sfa.compose.navigation.NewProfileArgs
 import io.nekohasekai.sfa.compose.screen.dashboard.groups.GroupsViewModel
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
@@ -113,14 +115,6 @@ private data class ServerChoice(
     val delay: Int? = null,
 )
 
-private enum class ConnectionHealth {
-    Disconnected,
-    Transitioning,
-    Checking,
-    Online,
-    Offline,
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
@@ -134,6 +128,7 @@ fun DashboardScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val hapticFeedback = LocalHapticFeedback.current
     val clipboard = LocalClipboardManager.current
     val resolvedGroupsViewModel = groupsViewModel ?: viewModel<GroupsViewModel>()
     val groupsState by resolvedGroupsViewModel.uiState.collectAsState()
@@ -164,11 +159,10 @@ fun DashboardScreen(
     val serverChoices = selector?.items
         ?.map { ServerChoice(it.tag, it.type, it.urlTestDelay) }
         ?.takeIf { it.isNotEmpty() }
-        ?: uiState.availableServerTags.map { ServerChoice(it, protocolName(it)) }
+        ?: uiState.availableServerTags.map { ServerChoice(it, type = "") }
     val selectedServer = selector?.selected ?: uiState.preferredServerTag
     val selectedItem = serverChoices.firstOrNull { it.tag == selectedServer }
     val hasProfile = uiState.selectedProfileId > 0
-    val isTransitioning = serviceStatus == Status.Starting || serviceStatus == Status.Stopping
     var healthCheckTimedOut by remember { mutableStateOf(false) }
 
     LaunchedEffect(serviceStatus, selector?.tag, selectedServer, selectedItem?.delay) {
@@ -185,20 +179,24 @@ fun DashboardScreen(
         }
     }
 
-    val connectionHealth = when {
-        isTransitioning -> ConnectionHealth.Transitioning
-        serviceStatus != Status.Started -> ConnectionHealth.Disconnected
-        (selectedItem?.delay ?: 0) > 0 -> ConnectionHealth.Online
-        healthCheckTimedOut -> ConnectionHealth.Offline
-        else -> ConnectionHealth.Checking
+    val reachability = when {
+        serviceStatus != Status.Started || selectedItem == null -> ConnectionReachability.Unknown
+        (selectedItem.delay ?: 0) > 0 -> ConnectionReachability.Reachable
+        healthCheckTimedOut -> ConnectionReachability.Unreachable
+        else -> ConnectionReachability.Checking
     }
+    val connectionState = connectionPresentationState(
+        serviceStatus = serviceStatus,
+        isSwitchingServer = uiState.switchingServerTag != null,
+        reachability = if (uiState.serverSwitchFailed) ConnectionReachability.Unreachable else reachability,
+    )
 
-    LaunchedEffect(connectionHealth, guardEnabled, selector?.tag, selectedServer, serverChoices) {
-        if (connectionHealth == ConnectionHealth.Online) {
+    LaunchedEffect(reachability, guardEnabled, selector?.tag, selectedServer, serverChoices) {
+        if (reachability == ConnectionReachability.Reachable) {
             lastGuardSource = null
         }
         if (
-            connectionHealth == ConnectionHealth.Offline &&
+            reachability == ConnectionReachability.Unreachable &&
             guardEnabled &&
             selector != null &&
             lastGuardSource != selectedServer
@@ -214,7 +212,7 @@ fun DashboardScreen(
                 viewModel.selectPreferredServer(fallback.tag)
                 Toast.makeText(
                     context,
-                    context.getString(R.string.pxlnet_guard_switched, serverTitle(context, fallback.tag)),
+                    context.getString(R.string.pxlnet_guard_switched, serverTitle(context, fallback.tag, fallback.type)),
                     Toast.LENGTH_LONG,
                 ).show()
             }
@@ -251,6 +249,7 @@ fun DashboardScreen(
             onSmartRoutingChanged = viewModel::setSmartRouting,
             onTelegramLogin = viewModel::startTelegramLogin,
             onImportClipboard = importFromClipboard,
+            onAddLink = { onOpenNewProfile(NewProfileArgs()) },
             onOpenVpnSettings = {
                 context.startActivity(android.content.Intent(android.provider.Settings.ACTION_VPN_SETTINGS))
             },
@@ -280,14 +279,19 @@ fun DashboardScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.pxlnet_status_title), style = MaterialTheme.typography.titleLarge)
+                    Text(stringResource(R.string.pxlnet_choose_server_title), style = MaterialTheme.typography.titleLarge)
                     Text(
-                        when (connectionHealth) {
-                            ConnectionHealth.Online -> stringResource(R.string.pxlnet_connection_works)
-                            ConnectionHealth.Offline -> stringResource(R.string.pxlnet_server_not_responding)
-                            ConnectionHealth.Checking -> stringResource(R.string.pxlnet_checking_availability)
-                            ConnectionHealth.Transitioning -> stringResource(R.string.pxlnet_vpn_changing)
-                            ConnectionHealth.Disconnected -> stringResource(R.string.pxlnet_vpn_off_ping)
+                        when (connectionState) {
+                            ConnectionPresentationState.Connected -> when (reachability) {
+                                ConnectionReachability.Reachable -> stringResource(R.string.pxlnet_connection_works)
+                                ConnectionReachability.Checking -> stringResource(R.string.pxlnet_checking_availability)
+                                else -> stringResource(R.string.pxlnet_vpn_changing)
+                            }
+                            ConnectionPresentationState.Error -> stringResource(R.string.pxlnet_server_not_responding)
+                            ConnectionPresentationState.Switching -> stringResource(R.string.pxlnet_vpn_changing)
+                            ConnectionPresentationState.Connecting,
+                            ConnectionPresentationState.Disconnecting -> stringResource(R.string.pxlnet_vpn_changing)
+                            ConnectionPresentationState.Disconnected -> stringResource(R.string.pxlnet_vpn_off_ping)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -305,7 +309,7 @@ fun DashboardScreen(
                     item = item,
                     selected = item.tag == selectedServer,
                     onClick = {
-                        selector?.let { resolvedGroupsViewModel.selectGroupItem(it.tag, item.tag) }
+                        hapticFeedback.performPxlConfirmation()
                         viewModel.selectPreferredServer(item.tag)
                         showServerPicker = false
                     },
@@ -326,42 +330,41 @@ fun DashboardScreen(
         contentPadding = PaddingValues(top = 16.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item {
-            SubscriptionCard(
-                profileName = uiState.selectedProfileName,
-                summary = SubscriptionInfoStore.summary(context, uiState.selectedProfileId),
-                accountName = uiState.telegramAccountName
-                    ?: uiState.telegramUsername?.let { "@$it" },
-                accountActive = uiState.telegramSubscriptionActive,
-                accountExpiry = formatPxlAccountExpiry(uiState.telegramSubscriptionExpiresAt),
-                updating = uiState.updatingProfileId != null,
-                onRefresh = {
-                    uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }?.let(viewModel::updateProfile)
-                },
-            )
-        }
-
-        if (uiState.telegramAccountName == null && showGuestBanner) {
+        if (hasProfile || uiState.telegramAccountName != null || uiState.telegramUsername != null) {
             item {
-                GuestAccountBanner(
-                    onClose = { showGuestBanner = false },
-                    onLearnMore = { showAccountHelp = true },
+                AccessStrip(
+                    profileName = uiState.selectedProfileName,
+                    summary = SubscriptionInfoStore.summary(context, uiState.selectedProfileId),
+                    accountName = uiState.telegramUsername?.let { "@$it" } ?: uiState.telegramAccountName,
+                    accountActive = uiState.telegramSubscriptionActive,
+                    accountExpiry = formatPxlAccountExpiry(uiState.telegramSubscriptionExpiresAt),
+                    updating = uiState.updatingProfileId != null,
+                    onRefresh = {
+                        uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }?.let(viewModel::updateProfile)
+                    },
                 )
             }
         }
-
         item {
             ConnectionControl(
                 serviceStatus = serviceStatus,
-                health = connectionHealth,
+                state = connectionState,
+                reachability = reachability,
                 delay = selectedItem?.delay,
-                enabled = hasProfile && !isTransitioning,
+                enabled = hasProfile && connectionState !in setOf(
+                    ConnectionPresentationState.Connecting,
+                    ConnectionPresentationState.Disconnecting,
+                    ConnectionPresentationState.Switching,
+                ),
                 showMascot = mascotEnabled,
                 animateMascot = mascotAnimationsEnabled,
                 showMascotTips = mascotTipsEnabled,
                 hasProfile = hasProfile,
-                serverName = serverTitle(context, selectedServer),
-                onClick = viewModel::toggleService,
+                serverName = serverTitle(context, selectedServer, selectedItem?.type.orEmpty()),
+                onClick = {
+                    hapticFeedback.performPxlConfirmation()
+                    viewModel.toggleService()
+                },
             )
         }
 
@@ -379,10 +382,42 @@ fun DashboardScreen(
         item {
             ServerCard(
                 serverTag = selectedServer,
+                serverType = selectedItem?.type.orEmpty(),
                 delay = selectedItem?.delay,
                 enabled = serverChoices.isNotEmpty(),
                 onClick = { if (serverChoices.isNotEmpty()) showServerPicker = true },
             )
+        }
+
+        if (uiState.skippedXhttpCount > 0) {
+            item {
+                Text(
+                    stringResource(R.string.pxlnet_xhttp_nodes_skipped, uiState.skippedXhttpCount),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                )
+            }
+        }
+
+        if (uiState.accountServiceAvailable == false) {
+            item {
+                Text(
+                    stringResource(if (hasProfile) R.string.pxlnet_saved_profile_offline else R.string.pxlnet_first_setup_offline),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                )
+            }
+        }
+
+        if (uiState.telegramAccountName == null && showGuestBanner) {
+            item {
+                GuestAccountBanner(
+                    onClose = { showGuestBanner = false },
+                    onLearnMore = { showAccountHelp = true },
+                )
+            }
         }
 
         item {
@@ -504,7 +539,7 @@ private fun GuestAccountBanner(onClose: () -> Unit, onLearnMore: () -> Unit) {
 }
 
 @Composable
-private fun SubscriptionCard(
+private fun AccessStrip(
     profileName: String?,
     summary: String?,
     accountName: String?,
@@ -513,46 +548,41 @@ private fun SubscriptionCard(
     updating: Boolean,
     onRefresh: () -> Unit,
 ) {
-    val compactSummary = when {
-        accountName != null && accountActive && accountExpiry != null -> stringResource(
-            R.string.pxlnet_home_account_until,
-            accountName,
-            accountExpiry,
-        )
-        accountName != null && accountActive -> stringResource(R.string.pxlnet_home_account_active, accountName)
-        accountName != null -> stringResource(R.string.pxlnet_home_account_inactive, accountName)
-        else -> summary ?: stringResource(
-            if (profileName == null) R.string.pxlnet_add_link_hint else R.string.pxlnet_subscription_active,
-        )
+    val accessSummary = when {
+        accountName != null && accountActive && accountExpiry != null ->
+            stringResource(R.string.pxlnet_subscription_active_until, accountExpiry)
+        accountName != null && accountActive -> stringResource(R.string.pxlnet_subscription_active)
+        accountName != null -> stringResource(R.string.pxlnet_subscription_inactive)
+        else -> summary ?: stringResource(R.string.pxlnet_access_by_link)
     }
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Row(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Image(
-                painter = painterResource(R.drawable.pxlnet_logo),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.size(50.dp).clip(RoundedCornerShape(9.dp)),
+            Box(
+                modifier = Modifier.size(9.dp).background(
+                    if (accountName != null && !accountActive) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.primary,
+                    CircleShape,
+                ),
             )
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                    profileName ?: stringResource(R.string.pxlnet_subscription_missing),
-                    style = MaterialTheme.typography.titleMedium,
+                    if (accountName != null) "PXLNET · $accountName" else profileName ?: "PXLNET",
+                    style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    compactSummary,
+                    accessSummary,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
@@ -573,7 +603,7 @@ private fun SubscriptionCard(
 }
 
 @Composable
-private fun PxlCatCharacter(health: ConnectionHealth, animationsEnabled: Boolean) {
+private fun PxlCatCharacter(state: ConnectionPresentationState, animationsEnabled: Boolean) {
     val ink = MaterialTheme.colorScheme.onPrimaryContainer
     val face = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
     val transition = rememberInfiniteTransition(label = "pix-motion")
@@ -589,7 +619,7 @@ private fun PxlCatCharacter(health: ConnectionHealth, animationsEnabled: Boolean
         animationSpec = infiniteRepeatable(tween(1200), RepeatMode.Reverse),
         label = "pix-tail",
     )
-    val bob = if (animationsEnabled && health != ConnectionHealth.Offline) animatedBob else 0f
+    val bob = if (animationsEnabled && state != ConnectionPresentationState.Error) animatedBob else 0f
     val tail = if (animationsEnabled) animatedTail else 0f
     Canvas(
         modifier = Modifier
@@ -647,12 +677,12 @@ private fun PxlCatCharacter(health: ConnectionHealth, animationsEnabled: Boolean
 
         val leftEye = androidx.compose.ui.geometry.Offset(size.width * 0.37f, size.height * 0.35f)
         val rightEye = androidx.compose.ui.geometry.Offset(size.width * 0.63f, size.height * 0.35f)
-        if (health == ConnectionHealth.Offline) {
+        if (state == ConnectionPresentationState.Error) {
             drawLine(ink, leftEye.copy(x = leftEye.x - stroke), leftEye.copy(x = leftEye.x + stroke), stroke, StrokeCap.Round)
             drawLine(ink, rightEye.copy(x = rightEye.x - stroke), rightEye.copy(x = rightEye.x + stroke), stroke, StrokeCap.Round)
         } else {
             drawCircle(ink, radius = stroke * 1.15f, center = leftEye)
-            if (health == ConnectionHealth.Transitioning) {
+            if (state in setOf(ConnectionPresentationState.Connecting, ConnectionPresentationState.Switching, ConnectionPresentationState.Disconnecting)) {
                 drawLine(ink, rightEye.copy(x = rightEye.x - stroke), rightEye.copy(x = rightEye.x + stroke), stroke, StrokeCap.Round)
             } else {
                 drawCircle(ink, radius = stroke * 1.15f, center = rightEye)
@@ -727,7 +757,8 @@ private fun PxlCatCharacter(health: ConnectionHealth, animationsEnabled: Boolean
 @Composable
 private fun ConnectionControl(
     serviceStatus: Status,
-    health: ConnectionHealth,
+    state: ConnectionPresentationState,
+    reachability: ConnectionReachability,
     delay: Int?,
     enabled: Boolean,
     showMascot: Boolean,
@@ -737,37 +768,44 @@ private fun ConnectionControl(
     serverName: String,
     onClick: () -> Unit,
 ) {
-    val label = when (health) {
-        ConnectionHealth.Online -> stringResource(R.string.pxlnet_protected_delay, delay ?: 0)
-        ConnectionHealth.Checking -> stringResource(R.string.pxlnet_checking_internet)
-        ConnectionHealth.Offline -> stringResource(R.string.pxlnet_vpn_no_access)
-        ConnectionHealth.Transitioning -> stringResource(
-            if (serviceStatus == Status.Starting) R.string.pxlnet_connecting else R.string.pxlnet_disconnecting,
-        )
-        ConnectionHealth.Disconnected -> stringResource(R.string.pxlnet_connect)
+    val label = when (state) {
+        ConnectionPresentationState.Connected -> when (reachability) {
+            ConnectionReachability.Reachable -> stringResource(R.string.pxlnet_protected_delay, delay ?: 0)
+            ConnectionReachability.Checking -> stringResource(R.string.pxlnet_checking_internet)
+            else -> stringResource(R.string.pxlnet_vpn_changing)
+        }
+        ConnectionPresentationState.Error -> stringResource(R.string.pxlnet_vpn_no_access)
+        ConnectionPresentationState.Connecting -> stringResource(R.string.pxlnet_connecting)
+        ConnectionPresentationState.Switching -> stringResource(R.string.pxlnet_vpn_changing)
+        ConnectionPresentationState.Disconnecting -> stringResource(R.string.pxlnet_disconnecting)
+        ConnectionPresentationState.Disconnected -> stringResource(R.string.pxlnet_connect)
     }
-    val containerColor = when (health) {
-        ConnectionHealth.Online -> PxlGreen
-        ConnectionHealth.Offline -> MaterialTheme.colorScheme.errorContainer
-        ConnectionHealth.Checking, ConnectionHealth.Transitioning -> MaterialTheme.colorScheme.secondaryContainer
-        ConnectionHealth.Disconnected -> MaterialTheme.colorScheme.primary
+    val containerColor = when (state) {
+        ConnectionPresentationState.Connected -> PxlGreen
+        ConnectionPresentationState.Error -> MaterialTheme.colorScheme.errorContainer
+        ConnectionPresentationState.Connecting,
+        ConnectionPresentationState.Switching,
+        ConnectionPresentationState.Disconnecting -> MaterialTheme.colorScheme.secondaryContainer
+        ConnectionPresentationState.Disconnected -> MaterialTheme.colorScheme.primary
     }
-    val contentColor = when (health) {
-        ConnectionHealth.Online -> Color.White
-        ConnectionHealth.Offline -> MaterialTheme.colorScheme.onErrorContainer
-        ConnectionHealth.Checking, ConnectionHealth.Transitioning -> MaterialTheme.colorScheme.onSecondaryContainer
-        ConnectionHealth.Disconnected -> MaterialTheme.colorScheme.onPrimary
+    val contentColor = when (state) {
+        ConnectionPresentationState.Connected -> Color.White
+        ConnectionPresentationState.Error -> MaterialTheme.colorScheme.onErrorContainer
+        ConnectionPresentationState.Connecting,
+        ConnectionPresentationState.Switching,
+        ConnectionPresentationState.Disconnecting -> MaterialTheme.colorScheme.onSecondaryContainer
+        ConnectionPresentationState.Disconnected -> MaterialTheme.colorScheme.onPrimary
     }
     val mascotMessage = when {
         !hasProfile -> stringResource(R.string.pxlnet_mascot_no_subscription)
-        health == ConnectionHealth.Online -> stringResource(R.string.pxlnet_mascot_online, serverName, delay ?: 0)
-        health == ConnectionHealth.Offline -> stringResource(R.string.pxlnet_mascot_offline)
-        health == ConnectionHealth.Checking -> stringResource(R.string.pxlnet_mascot_checking)
-        health == ConnectionHealth.Transitioning -> stringResource(R.string.pxlnet_mascot_transitioning)
+        state == ConnectionPresentationState.Connected && reachability == ConnectionReachability.Reachable -> stringResource(R.string.pxlnet_mascot_online, serverName, delay ?: 0)
+        state == ConnectionPresentationState.Error -> stringResource(R.string.pxlnet_mascot_offline)
+        state == ConnectionPresentationState.Connected && reachability == ConnectionReachability.Checking -> stringResource(R.string.pxlnet_mascot_checking)
+        state in setOf(ConnectionPresentationState.Connecting, ConnectionPresentationState.Switching, ConnectionPresentationState.Disconnecting) -> stringResource(R.string.pxlnet_mascot_transitioning)
         else -> stringResource(R.string.pxlnet_mascot_ready)
     }
     var mascotTipVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(health, showMascotTips, hasProfile) {
+    LaunchedEffect(state, reachability, showMascotTips, hasProfile) {
         mascotTipVisible = false
         if (showMascot && showMascotTips) {
             delay(250)
@@ -776,11 +814,38 @@ private fun ConnectionControl(
             mascotTipVisible = false
         }
     }
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+    val statusTitle = when (state) {
+        ConnectionPresentationState.Connected -> stringResource(R.string.pxlnet_status_connected)
+        ConnectionPresentationState.Connecting,
+        ConnectionPresentationState.Switching -> stringResource(R.string.pxlnet_status_connecting)
+        ConnectionPresentationState.Disconnecting -> stringResource(R.string.pxlnet_disconnecting)
+        ConnectionPresentationState.Error -> stringResource(R.string.pxlnet_vpn_no_access)
+        ConnectionPresentationState.Disconnected -> stringResource(R.string.pxlnet_status_disconnected)
+    }
+    var entered by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { entered = true }
+    val entranceScale by animateFloatAsState(
+        targetValue = if (entered) 1f else 0.94f,
+        animationSpec = tween(360),
+        label = "connect-entrance",
+    )
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(
+            stringResource(R.string.pxlnet_connection_heading),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(statusTitle, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center,
@@ -789,7 +854,10 @@ private fun ConnectionControl(
             Button(
                 onClick = onClick,
                 enabled = enabled,
-                modifier = Modifier.size(164.dp),
+                modifier = Modifier.size(164.dp).graphicsLayer {
+                    scaleX = entranceScale
+                    scaleY = entranceScale
+                },
                 shape = CircleShape,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = containerColor,
@@ -807,7 +875,7 @@ private fun ConnectionControl(
                     )
                 } else {
                     Icon(
-                        if (health == ConnectionHealth.Offline) Icons.Default.CloudOff else Icons.Default.PowerSettingsNew,
+                        if (state == ConnectionPresentationState.Error) Icons.Default.CloudOff else Icons.Default.PowerSettingsNew,
                         contentDescription = label,
                         modifier = Modifier.size(54.dp),
                     )
@@ -838,18 +906,19 @@ private fun ConnectionControl(
                             )
                         }
                     }
-                    PxlCatCharacter(health, animateMascot)
+                    PxlCatCharacter(state, animateMascot)
                 }
             }
         }
         Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
-        if (health == ConnectionHealth.Offline) {
+        if (state == ConnectionPresentationState.Error) {
             Text(
                 stringResource(R.string.pxlnet_choose_another_server),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
         }
+    }
     }
 }
 
@@ -889,7 +958,7 @@ private fun QuickTileCard(onAdd: () -> Unit) {
 }
 
 @Composable
-private fun ServerCard(serverTag: String, delay: Int?, enabled: Boolean, onClick: () -> Unit) {
+private fun ServerCard(serverTag: String, serverType: String, delay: Int?, enabled: Boolean, onClick: () -> Unit) {
     val context = LocalContext.current
     Card(
         modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick),
@@ -905,8 +974,11 @@ private fun ServerCard(serverTag: String, delay: Int?, enabled: Boolean, onClick
         ) {
             ServerLocationIcon(serverTag)
             Column(modifier = Modifier.weight(1f)) {
-                Text(stringResource(R.string.pxlnet_server_label), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.pxlnet_selected_server_label), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(serverTitle(context, serverTag), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+                serverProtocol(serverTag, serverType).takeIf(String::isNotBlank)?.let { protocol ->
+                    Text(protocol, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
             Text(formatDelay(context, delay), style = MaterialTheme.typography.labelMedium, color = delayColor(delay))
             Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
@@ -988,6 +1060,7 @@ private fun PxlOnboardingSheet(
     onSmartRoutingChanged: (Boolean) -> Unit,
     onTelegramLogin: () -> Unit,
     onImportClipboard: () -> Unit,
+    onAddLink: () -> Unit,
     onOpenVpnSettings: () -> Unit,
     onFinish: () -> Unit,
 ) {
@@ -1003,9 +1076,13 @@ private fun PxlOnboardingSheet(
         containerColor = MaterialTheme.colorScheme.surface,
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+            modifier = Modifier.fillMaxWidth().fillMaxHeight(0.82f).padding(horizontal = 24.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            LinearProgressIndicator(
+                progress = { (step + 1).toFloat() / titles.size },
+                modifier = Modifier.fillMaxWidth(),
+            )
             Text(
                 stringResource(R.string.pxlnet_onboarding_step, step + 1, titles.size),
                 style = MaterialTheme.typography.labelMedium,
@@ -1018,21 +1095,19 @@ private fun PxlOnboardingSheet(
                         stringResource(R.string.pxlnet_onboarding_subscription_text),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Button(
-                            onClick = onTelegramLogin,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp),
-                        ) {
-                            Text(stringResource(R.string.pxlnet_login_telegram))
-                        }
-                        OutlinedButton(
-                            onClick = onImportClipboard,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp),
-                        ) {
-                            Text(stringResource(R.string.pxlnet_from_clipboard))
-                        }
+                    Text(
+                        stringResource(R.string.pxlnet_onboarding_telegram_optional),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Button(onClick = onTelegramLogin, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.pxlnet_login_telegram))
+                    }
+                    OutlinedButton(onClick = onAddLink, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.pxlnet_add_subscription))
+                    }
+                    TextButton(onClick = onImportClipboard, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.pxlnet_from_clipboard))
                     }
                 }
                 1 -> {
@@ -1075,6 +1150,7 @@ private fun PxlOnboardingSheet(
                     )
                 }
             }
+            Spacer(Modifier.weight(1f))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1154,8 +1230,9 @@ private fun ServerPickerRow(item: ServerChoice, selected: Boolean, onClick: () -
     ) {
         ServerLocationIcon(item.tag)
         Column(modifier = Modifier.weight(1f)) {
-            Text(serverTitle(context, item.tag), fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
-            Text(item.type, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(serverTitle(context, item.tag, item.type), fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+            val protocol = serverProtocol(item.tag, item.type)
+            if (protocol.isNotBlank()) Text(protocol, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text(formatDelay(context, item.delay), color = delayColor(item.delay), style = MaterialTheme.typography.labelMedium)
         if (selected) {
@@ -1180,25 +1257,17 @@ private fun MetricCard(label: String, value: String, modifier: Modifier = Modifi
     }
 }
 
-private fun serverTitle(context: Context, tag: String): String = when {
-    tag.equals("AUTO", true) -> context.getString(R.string.pxlnet_server_auto)
-    tag.contains("germany", true) || tag.contains("deutsch", true) ->
-        context.getString(R.string.pxlnet_server_germany, protocolName(tag))
-    tag.contains("finland", true) || tag.contains("finn", true) ->
-        context.getString(R.string.pxlnet_server_finland, protocolName(tag))
-    else -> tag
-}
-
-private fun protocolName(tag: String): String = when {
-    tag.contains("hysteria", true) -> "Hysteria2"
-    tag.contains("vless", true) -> "VLESS"
-    else -> tag
+private fun serverTitle(context: Context, tag: String, type: String = ""): String = when (serverRegion(tag)) {
+    ServerRegion.AUTO -> context.getString(R.string.pxlnet_server_auto)
+    ServerRegion.GERMANY -> context.getString(R.string.pxlnet_country_germany)
+    ServerRegion.FINLAND -> context.getString(R.string.pxlnet_country_finland)
+    ServerRegion.OTHER -> cleanServerTag(tag)
 }
 
 @Composable
 private fun ServerLocationIcon(tag: String) {
-    when {
-        tag.equals("AUTO", true) -> {
+    when (serverRegion(tag)) {
+        ServerRegion.AUTO -> {
             Icon(
                 Icons.Default.Speed,
                 contentDescription = null,
@@ -1206,7 +1275,7 @@ private fun ServerLocationIcon(tag: String) {
                 modifier = Modifier.size(30.dp),
             )
         }
-        tag.contains("germany", true) || tag.contains("deutsch", true) -> {
+        ServerRegion.GERMANY -> {
             Column(
                 modifier = Modifier
                     .size(width = 32.dp, height = 22.dp)
@@ -1218,7 +1287,7 @@ private fun ServerLocationIcon(tag: String) {
                 Box(Modifier.fillMaxWidth().weight(1f).background(Color(0xFFFFCE00)))
             }
         }
-        tag.contains("finland", true) || tag.contains("finn", true) -> {
+        ServerRegion.FINLAND -> {
             Box(
                 modifier = Modifier
                     .size(width = 32.dp, height = 22.dp)
@@ -1230,7 +1299,8 @@ private fun ServerLocationIcon(tag: String) {
                     Modifier
                         .fillMaxHeight()
                         .width(5.dp)
-                        .align(Alignment.Center)
+                        .align(Alignment.CenterStart)
+                        .offset(x = 9.dp)
                         .background(Color(0xFF003580)),
                 )
                 Box(
@@ -1242,7 +1312,7 @@ private fun ServerLocationIcon(tag: String) {
                 )
             }
         }
-        else -> {
+        ServerRegion.OTHER -> {
             Icon(
                 Icons.Default.Public,
                 contentDescription = null,

@@ -13,6 +13,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
@@ -21,12 +22,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -45,6 +49,7 @@ import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.NewReleases
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Speed
@@ -100,9 +105,12 @@ import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.base.UiEvent
 import io.nekohasekai.sfa.compose.base.rememberApplyServiceChangeNotifier
 import io.nekohasekai.sfa.compose.component.UpdateAvailableDialog
+import io.nekohasekai.sfa.compose.theme.AppThemeMode
+import io.nekohasekai.sfa.compose.theme.AppAccent
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Settings
+import io.nekohasekai.sfa.utils.PxlLocalPreferences
 import io.nekohasekai.sfa.ktx.clipboardText
 import io.nekohasekai.sfa.update.UpdateCheckException
 import io.nekohasekai.sfa.update.UpdateSource
@@ -177,6 +185,9 @@ fun AppSettingsScreen(
         val appLocales = AppCompatDelegate.getApplicationLocales()
         mutableStateOf(if (appLocales.isEmpty) "" else appLocales.toLanguageTags())
     }
+    var showThemeDialog by remember { mutableStateOf(false) }
+    var themeMode by remember { mutableStateOf(AppThemeMode.fromPersisted(Settings.themeMode)) }
+    var accent by remember { mutableStateOf(AppAccent.fromPersisted(Settings.accent)) }
 
     var cacheSize by remember { mutableStateOf(0L) }
     var cacheSizeText by remember { mutableStateOf("") }
@@ -454,6 +465,24 @@ fun AppSettingsScreen(
         )
     }
 
+    if (showThemeDialog) {
+        ThemeDialog(
+            currentThemeMode = themeMode,
+            currentAccent = accent,
+            dynamicColorSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
+            onThemeSelected = { selectedMode ->
+                themeMode = selectedMode
+                Settings.themeMode = selectedMode.persistedValue
+            },
+            onAccentSelected = { selectedAccent ->
+                accent = selectedAccent
+                Settings.accent = selectedAccent.persistedValue
+                Settings.dynamicColor = selectedAccent == AppAccent.WALLPAPER
+            },
+            onDismiss = { showThemeDialog = false },
+        )
+    }
+
     Column(
         modifier =
         Modifier
@@ -569,6 +598,46 @@ fun AppSettingsScreen(
                     ListItemDefaults.colors(
                         containerColor = Color.Transparent,
                     ),
+                )
+
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            stringResource(R.string.theme),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    },
+                    supportingContent = {
+                        Text(
+                            "${themeMode.label()} · ${accent.label()}",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    },
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.Outlined.Palette,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    },
+                    modifier = Modifier.clickable { showThemeDialog = true },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                )
+
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.pxlnet_restart_onboarding)) },
+                    supportingContent = { Text(stringResource(R.string.pxlnet_restart_onboarding_summary)) },
+                    leadingContent = {
+                        Icon(Icons.Outlined.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    },
+                    modifier = Modifier.clickable {
+                        PxlLocalPreferences.requestOnboarding(context)
+                        navController.navigate("dashboard") {
+                            popUpTo("dashboard") { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 )
 
                 ListItem(
@@ -1408,6 +1477,148 @@ private fun UpdateSourceDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(android.R.string.cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun AppThemeMode.label(): String = when (this) {
+    AppThemeMode.SYSTEM -> stringResource(R.string.theme_system)
+    AppThemeMode.LIGHT -> stringResource(R.string.theme_light)
+    AppThemeMode.DARK -> stringResource(R.string.theme_dark)
+}
+
+@Composable
+private fun AppAccent.label(): String = when (this) {
+    AppAccent.WALLPAPER -> stringResource(R.string.accent_wallpaper)
+    AppAccent.GREEN -> stringResource(R.string.accent_green)
+    AppAccent.SKY -> stringResource(R.string.accent_sky)
+    AppAccent.VIOLET -> stringResource(R.string.accent_violet)
+    AppAccent.CORAL -> stringResource(R.string.accent_coral)
+    AppAccent.AMBER -> stringResource(R.string.accent_amber)
+    AppAccent.ROSE -> stringResource(R.string.accent_rose)
+}
+
+@Composable
+private fun ThemeDialog(
+    currentThemeMode: AppThemeMode,
+    currentAccent: AppAccent,
+    dynamicColorSupported: Boolean,
+    onThemeSelected: (AppThemeMode) -> Unit,
+    onAccentSelected: (AppAccent) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var lastFixedAccent by remember {
+        mutableStateOf(currentAccent.takeUnless { it == AppAccent.WALLPAPER } ?: AppAccent.GREEN)
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.appearance)) },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(stringResource(R.string.accent_color), style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .clickable {
+                            onAccentSelected(
+                                if (currentAccent == AppAccent.WALLPAPER) lastFixedAccent
+                                else AppAccent.WALLPAPER,
+                            )
+                        }
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(stringResource(R.string.accent_wallpaper), style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            stringResource(
+                                if (dynamicColorSupported) R.string.accent_wallpaper_description
+                                else R.string.accent_wallpaper_fallback,
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = currentAccent == AppAccent.WALLPAPER,
+                        onCheckedChange = { enabled ->
+                            onAccentSelected(if (enabled) AppAccent.WALLPAPER else lastFixedAccent)
+                        },
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                ) {
+                    AppAccent.entries.filter { it != AppAccent.WALLPAPER }.forEach { option ->
+                        val selected = currentAccent == option
+                        Column(
+                            modifier = Modifier
+                                .width(88.dp)
+                                .clip(RoundedCornerShape(20.dp))
+                                .border(
+                                    width = if (selected) 2.dp else 1.dp,
+                                    color = if (selected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.outlineVariant,
+                                    shape = RoundedCornerShape(20.dp),
+                                )
+                                .clickable {
+                                    lastFixedAccent = option
+                                    onAccentSelected(option)
+                                }
+                                .padding(vertical = 12.dp, horizontal = 6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Row(
+                                modifier = Modifier.size(52.dp).clip(CircleShape),
+                            ) {
+                                Box(Modifier.weight(1f).fillMaxHeight().background(option.swatch))
+                                Box(
+                                    Modifier.weight(1f).fillMaxHeight()
+                                        .background(option.swatch.copy(alpha = 0.55f)),
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(option.label(), style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+                Text(stringResource(R.string.theme_mode_label), style = MaterialTheme.typography.titleMedium)
+                AppThemeMode.entries.forEach { mode ->
+                    Row(
+                        modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onThemeSelected(mode) }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = currentThemeMode == mode,
+                            onClick = { onThemeSelected(mode) },
+                        )
+                        Text(
+                            text = mode.label(),
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(android.R.string.ok))
             }
         },
     )

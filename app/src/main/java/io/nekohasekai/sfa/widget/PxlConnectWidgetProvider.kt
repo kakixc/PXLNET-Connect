@@ -7,15 +7,14 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.net.VpnService
 import android.os.Bundle
 import android.view.View
 import android.widget.RemoteViews
 import io.nekohasekai.sfa.R
-import io.nekohasekai.sfa.bg.BoxService
 import io.nekohasekai.sfa.compose.MainActivity
+import io.nekohasekai.sfa.bg.BoxService
+import io.nekohasekai.sfa.bg.StartServiceCoordinator
 import io.nekohasekai.sfa.constant.Status
-import io.nekohasekai.sfa.constant.ServiceMode
 import io.nekohasekai.sfa.database.ProfileManager
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.utils.PxlLinks
@@ -25,6 +24,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -45,19 +45,32 @@ class PxlConnectWidgetProvider : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         if (intent.action != ACTION_TOGGLE) return
-        if (Settings.startedByUser) {
+        if (StartServiceCoordinator.currentStatus() == Status.Started) {
             BoxService.stop()
             updateAll(context, Status.Stopping)
         } else {
-            if (Settings.serviceMode == ServiceMode.VPN && VpnService.prepare(context) != null) {
-                context.startActivity(
-                    Intent(context, MainActivity::class.java)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
-                )
-                return
+            val pendingResult = goAsync()
+            scope.launch {
+                try {
+                    when (StartServiceCoordinator.preflight(context.applicationContext, Status.Stopped)) {
+                        StartServiceCoordinator.Decision.START -> {
+                            if (BoxService.start(StartServiceCoordinator.Source.WIDGET)) {
+                                updateAll(context, Status.Starting)
+                            }
+                        }
+
+                        StartServiceCoordinator.Decision.OPEN_APP_FOR_NOTIFICATION_PERMISSION,
+                        StartServiceCoordinator.Decision.OPEN_APP_FOR_VPN_PERMISSION ->
+                            withContext(Dispatchers.Main) {
+                                context.startActivity(StartServiceCoordinator.permissionIntent(context))
+                            }
+
+                        StartServiceCoordinator.Decision.ALREADY_IN_PROGRESS -> updateAll(context, Status.Starting)
+                    }
+                } finally {
+                    pendingResult.finish()
+                }
             }
-            BoxService.start()
-            updateAll(context, Status.Starting)
         }
     }
 
@@ -102,7 +115,7 @@ class PxlConnectWidgetProvider : AppWidgetProvider() {
                     (secondsLeft + TimeUnit.DAYS.toSeconds(1) - 1) / TimeUnit.DAYS.toSeconds(1)
                 }
             return WidgetSnapshot(
-                status = explicitStatus ?: if (Settings.startedByUser) Status.Started else Status.Stopped,
+                status = explicitStatus ?: StartServiceCoordinator.currentStatus() ?: Status.Stopped,
                 profileName = profile?.name,
                 serverName = selectedServer,
                 daysLeft = daysLeft,

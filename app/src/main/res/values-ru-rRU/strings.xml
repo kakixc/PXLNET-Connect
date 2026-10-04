@@ -5,6 +5,26 @@
     <string name="app_version_title">Версия приложения</string>
     <string name="language">Язык</string>
     <string name="system_default">Системный по умолчанию</string>
+    <string name="appearance">Оформление</string>
+    <string name="theme">Тема</string>
+    <string name="theme_system">Как в системе</string>
+    <string name="theme_light">Светлая</string>
+    <string name="theme_dark">Тёмная</string>
+    <string name="dynamic_color">Динамические цвета</string>
+    <string name="dynamic_color_summary">Использовать цвета обоев, когда Android это поддерживает</string>
+    <string name="dynamic_color_unavailable">Доступно на Android 12 и новее</string>
+    <string name="accent_color">Акцентный цвет</string>
+    <string name="accent_color_summary">Цвета обоев или один из постоянных оттенков.</string>
+    <string name="accent_wallpaper">По обоям (Monet)</string>
+    <string name="accent_wallpaper_description">Цвета обоев для оформления приложения</string>
+    <string name="theme_mode_label">Светлая и тёмная тема</string>
+    <string name="accent_wallpaper_fallback">На Android 11 и ниже — цвета PXLNET</string>
+    <string name="accent_green">Зелёный</string>
+    <string name="accent_sky">Голубой</string>
+    <string name="accent_violet">Фиолетовый</string>
+    <string name="accent_coral">Коралловый</string>
+    <string name="accent_amber">Янтарный</string>
+    <string name="accent_rose">Розовый</string>
 
     <!-- Common Actions -->
     <string name="ok">OK</string>
@@ -55,6 +75,7 @@
     <string name="title_log">Логи</string>
     <string name="title_settings">Параметры</string>
     <string name="title_app_settings">Приложение</string>
+    <string name="pxlnet_app_settings_summary">Тема, акцентный цвет и первоначальная настройка</string>
     <string name="title_new_profile">Новый профиль</string>
     <string name="title_edit_profile">Редактировать профиль</string>
     <string name="title_edit_configuration">Редактировать конфигурацию</string>
@@ -647,6 +668,8 @@
     <string name="pxlnet_guest_mode_description">VPN работает по ссылке без входа</string>
     <string name="pxlnet_signed_in_telegram">Вход выполнен через Telegram</string>
     <string name="pxlnet_subscription_active">Подписка активна</string>
+    <string name="pxlnet_access_by_link">Доступ по сохранённой ссылке подписки</string>
+    <string name="pxlnet_xhttp_nodes_skipped">VLESS XHTTP пока не поддерживается: пропущено узлов — %1$d. Совместимые серверы доступны для выбора.</string>
     <string name="pxlnet_subscription_active_until">Подписка активна до %1$s</string>
     <string name="pxlnet_subscription_inactive">Активной подписки пока нет</string>
     <string name="pxlnet_refresh">Обновить</string>
@@ -758,6 +781,16 @@
     <string name="pxlnet_clipboard_no_subscription">В буфере нет ссылки подписки</string>
     <string name="pxlnet_how_to_connect">Как подключиться</string>
     <string name="pxlnet_status_title">Состояние PXLNET</string>
+    <string name="pxlnet_choose_server_title">Выбор сервера</string>
+    <string name="pxlnet_connection_heading">ПОДКЛЮЧЕНИЕ</string>
+    <string name="pxlnet_selected_server_label">Выбранный сервер · нажмите, чтобы сменить</string>
+    <string name="pxlnet_country_germany">Германия</string>
+    <string name="pxlnet_country_finland">Финляндия</string>
+    <string name="pxlnet_saved_profile_offline">Сервис аккаунта недоступен. С сохранённым профилем можно подключиться.</string>
+    <string name="pxlnet_first_setup_offline">Сохранённого профиля пока нет. Добавьте ссылку подписки или войдите, когда сервис аккаунта станет доступен.</string>
+    <string name="pxlnet_restart_onboarding">Пройти первоначальную настройку снова</string>
+    <string name="pxlnet_restart_onboarding_summary">Повторно покажет инструкцию, не удаляя профиль и аккаунт.</string>
+    <string name="pxlnet_onboarding_telegram_optional">Telegram необязателен. Если он недоступен, добавьте ссылку подписки напрямую.</string>
     <string name="pxlnet_connection_works">Подключение работает</string>
     <string name="pxlnet_server_not_responding">Выбранный сервер не отвечает</string>
     <string name="pxlnet_checking_availability">Проверяем доступность…</string>
@@ -791,7 +824,7 @@
     <string name="pxlnet_add">Добавить</string>
     <string name="pxlnet_server_label">Сервер</string>
     <string name="pxlnet_guard_description">После подтверждённого сбоя переключит на самый быстрый рабочий сервер</string>
-    <string name="pxlnet_onboarding_add">Добавьте подписку</string>
+    <string name="pxlnet_onboarding_add">Настроим доступ</string>
     <string name="pxlnet_onboarding_mode">Выберите режим</string>
     <string name="pxlnet_onboarding_permission">Разрешите VPN</string>
     <string name="pxlnet_onboarding_connect">Подключитесь</string>

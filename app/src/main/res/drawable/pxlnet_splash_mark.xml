@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="432dp"
+    android:height="432dp"
+    android:viewportWidth="1024"
+    android:viewportHeight="1024">
+    <group
+        android:name="mark"
+        android:pivotX="512"
+        android:pivotY="512"
+        android:scaleX="0.78"
+        android:scaleY="0.78">
+        <path
+            android:fillColor="#171614"
+            android:pathData="M512,164L792,270V486C792,681 676,818 512,874C348,818 232,681 232,486V270L512,164Z" />
+        <path
+            android:fillColor="#F3EEE6"
+            android:pathData="M378,320H544C632,320 686,365 686,442C686,521 632,568 544,568H458V704H378V320ZM458,392V496H536C582,496 606,478 606,444C606,408 582,392 536,392H458Z" />
+    </group>
+</vector>

@@ -26,6 +26,11 @@ object PxlLocalPreferences {
         preferences(context).edit().putBoolean(KEY_ONBOARDING_COMPLETE, true).apply()
     }
 
+    /** Reopens the guide only. Profiles, account state and VPN settings stay untouched. */
+    fun requestOnboarding(context: Context) {
+        preferences(context).edit().putBoolean(KEY_ONBOARDING_COMPLETE, false).apply()
+    }
+
     fun isQuickTileAdded(context: Context): Boolean =
         preferences(context).getBoolean(KEY_QUICK_TILE_ADDED, false)
 

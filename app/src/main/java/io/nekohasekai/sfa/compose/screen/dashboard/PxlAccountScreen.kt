@@ -43,7 +43,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -54,8 +53,6 @@ import io.nekohasekai.sfa.compose.component.PxlRootTopBar
 import io.nekohasekai.sfa.compose.navigation.NewProfileArgs
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.utils.PxlLinks
-
-private val PxlAccountGreen = Color(0xFF277A4A)
 
 @Composable
 fun PxlAccountScreen(
@@ -138,7 +135,7 @@ fun PxlAccountScreen(
                                     stringResource(R.string.pxlnet_subscription_inactive)
                                 },
                                 color = if (uiState.telegramSubscriptionActive) {
-                                    PxlAccountGreen
+                                    MaterialTheme.colorScheme.primary
                                 } else {
                                     MaterialTheme.colorScheme.error
                                 },
