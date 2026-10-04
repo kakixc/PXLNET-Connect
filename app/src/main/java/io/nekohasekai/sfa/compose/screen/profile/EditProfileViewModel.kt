@@ -259,11 +259,12 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
 
                 // Fetch remote config
                 val response = HTTPClient().use { it.get(profile.typed.remoteURL) }
-                val content =
+                val conversion =
                     PxlSubscriptionConverter.convert(
                         response.content,
                         PxlRoutingPreferences.isSmartRouting(getApplication()),
-                    ).config
+                    )
+                val content = conversion.config
                 Libbox.checkConfig(content)
 
                 // Check if content changed
@@ -278,6 +279,7 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
                 // Update last updated time
                 profile.typed.lastUpdated = Date()
                 SubscriptionInfoStore.save(getApplication(), profile.id, response.subscriptionUserInfo)
+                SubscriptionInfoStore.saveSkippedXhttp(getApplication(), profile.id, conversion.skippedXhttpCount)
                 ProfileManager.update(profile)
 
                 // Update UI state with success indicator

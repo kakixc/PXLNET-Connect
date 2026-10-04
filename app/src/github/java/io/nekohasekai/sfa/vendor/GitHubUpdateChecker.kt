@@ -15,9 +15,7 @@ import java.io.IOException
 
 class GitHubUpdateChecker : Closeable {
     companion object {
-        private const val REPOSITORY_URL = "https://github.com/kakixc/PXLNET-Connect"
-        private const val METADATA_URL =
-            "$REPOSITORY_URL/releases/latest/download/SFA-version-metadata.json"
+        private const val RELEASES_URL = "https://api.github.com/repos/kakixc/PXLNET-Connect/releases?per_page=30"
     }
 
     private val client = Libbox.newHTTPClient().apply {
@@ -29,7 +27,7 @@ class GitHubUpdateChecker : Closeable {
 
     @Suppress("UNUSED_PARAMETER")
     fun checkUpdate(track: UpdateTrack, githubToken: String): UpdateInfo? = try {
-        checkLatestRelease()
+        checkLatestRelease(track)
     } catch (exception: Exception) {
         throw IOException(
             "Не удалось проверить обновление. Проверьте интернет и попробуйте немного позже.",
@@ -37,35 +35,38 @@ class GitHubUpdateChecker : Closeable {
         )
     }
 
-    private fun checkLatestRelease(): UpdateInfo? {
+    private fun checkLatestRelease(track: UpdateTrack): UpdateInfo? {
         val request = client.newRequest()
-        request.setURL(METADATA_URL)
+        request.setURL(RELEASES_URL)
         request.setUserAgent(HTTPClient.userAgent)
-
         val response = request.execute()
-        val metadata = json.decodeFromString<VersionMetadata>(response.content.unwrap)
-        if (!isNewerThanCurrent(metadata.versionName)) return null
-
-        val versionName = metadata.versionName.removePrefix("v")
-        val tagName = "v$versionName"
-        val currentAbi = Build.SUPPORTED_ABIS.firstOrNull().orEmpty()
-        val assetSuffix = if (currentAbi == "arm64-v8a") "arm64-v8a" else "universal"
-        val assetName = "PXLNET-Connect-$versionName-$assetSuffix.apk"
+        val release = GitHubReleaseSelection.select(
+            response.content.unwrap,
+            track,
+            BuildConfig.VERSION_NAME.removePrefix("v"),
+            Build.SUPPORTED_ABIS.firstOrNull().orEmpty(),
+            ::isNewerThan,
+        ) ?: return null
+        val metadataRequest = client.newRequest()
+        metadataRequest.setURL(release.metadataUrl)
+        metadataRequest.setUserAgent(HTTPClient.userAgent)
+        val metadata = json.decodeFromString<VersionMetadata>(metadataRequest.execute().content.unwrap)
+        if (metadata.versionName.removePrefix("v") != release.versionName ||
+            metadata.versionCode <= BuildConfig.VERSION_CODE
+        ) return null
 
         return UpdateInfo(
             versionCode = metadata.versionCode,
-            versionName = versionName,
-            downloadUrl = "$REPOSITORY_URL/releases/download/$tagName/$assetName",
-            releaseUrl = "$REPOSITORY_URL/releases/latest",
+            versionName = release.versionName,
+            downloadUrl = release.apkUrl,
+            releaseUrl = release.pageUrl,
             releaseNotes = null,
-            isPrerelease = versionName.contains("beta", ignoreCase = true) ||
-                versionName.contains("alpha", ignoreCase = true) ||
-                versionName.contains("rc", ignoreCase = true),
+            isPrerelease = release.prerelease,
         )
     }
 
-    private fun isNewerThanCurrent(versionName: String): Boolean =
-        Libbox.compareSemver(versionName.removePrefix("v"), BuildConfig.VERSION_NAME.removePrefix("v"))
+    private fun isNewerThan(candidate: String, current: String): Boolean =
+        runCatching { Libbox.compareSemver(candidate, current) }.getOrDefault(false)
 
     override fun close() {
         client.close()

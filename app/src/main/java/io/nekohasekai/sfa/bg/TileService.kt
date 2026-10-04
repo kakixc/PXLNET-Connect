@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa.bg
 
+import android.app.PendingIntent
 import android.app.KeyguardManager
 import android.content.Context
 import android.os.Build
@@ -9,12 +10,17 @@ import androidx.annotation.RequiresApi
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.utils.PxlLocalPreferences
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 @RequiresApi(24)
 class TileService :
     TileService(),
     ServiceConnection.Callback {
     private val connection = ServiceConnection(this, this)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onServiceStatusChanged(status: Status) {
         qsTile?.apply {
@@ -69,10 +75,42 @@ class TileService :
     }
 
     private fun toggleService() {
-        when (connection.status) {
-            Status.Stopped -> BoxService.start()
+        when (StartServiceCoordinator.currentStatus() ?: connection.status) {
+            Status.Stopped -> startService()
             Status.Started -> BoxService.stop()
             else -> {}
+        }
+    }
+
+    private fun startService() {
+        scope.launch {
+            when (StartServiceCoordinator.preflight(this@TileService, StartServiceCoordinator.currentStatus() ?: connection.status)) {
+                StartServiceCoordinator.Decision.START -> {
+                    BoxService.start(StartServiceCoordinator.Source.QUICK_SETTINGS)
+                }
+
+                StartServiceCoordinator.Decision.OPEN_APP_FOR_NOTIFICATION_PERMISSION,
+                StartServiceCoordinator.Decision.OPEN_APP_FOR_VPN_PERMISSION ->
+                    openPermissionActivity()
+
+                StartServiceCoordinator.Decision.ALREADY_IN_PROGRESS -> Unit
+            }
+        }
+    }
+
+    private fun openPermissionActivity() {
+        val intent = StartServiceCoordinator.permissionIntent(this)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            val pendingIntent = PendingIntent.getActivity(
+                this,
+                0,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            startActivityAndCollapse(pendingIntent)
+        } else {
+            @Suppress("DEPRECATION")
+            startActivityAndCollapse(intent)
         }
     }
 }

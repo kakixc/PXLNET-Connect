@@ -61,6 +61,7 @@ data class DashboardUiState(
     val profiles: List<Profile> = emptyList(),
     val selectedProfileId: Long = -1L,
     val selectedProfileName: String? = null,
+    val skippedXhttpCount: Int = 0,
     val isLoading: Boolean = false,
     val hasGroups: Boolean = false,
     val groupsCount: Int = 0,
@@ -136,6 +137,8 @@ data class DashboardUiState(
     val accountServiceAvailable: Boolean? = null,
     val availableServerTags: List<String> = emptyList(),
     val preferredServerTag: String = "AUTO",
+    val switchingServerTag: String? = null,
+    val serverSwitchFailed: Boolean = false,
     val ecosystemCheckPending: Boolean = false,
     val ecosystemLastCheckedAt: Long? = null,
 ) {
@@ -246,6 +249,7 @@ class DashboardViewModel :
                             profiles = profiles,
                             selectedProfileId = selectedId,
                             selectedProfileName = selectedProfile?.name,
+                            skippedXhttpCount = SubscriptionInfoStore.skippedXhttp(Application.application, selectedId),
                             availableServerTags = serverSelection.tags,
                             preferredServerTag = serverSelection.selectedTag,
                         )
@@ -420,19 +424,31 @@ class DashboardViewModel :
 
     fun selectPreferredServer(tag: String) {
         if (tag !in currentState.availableServerTags) return
+        if (_serviceStatus.value == Status.Started) {
+            updateState { copy(switchingServerTag = tag, serverSwitchFailed = false) }
+        } else {
+            updateState { copy(serverSwitchFailed = false) }
+        }
         viewModelScope.launch(Dispatchers.IO) {
-            val profile = ProfileManager.get(currentState.selectedProfileId) ?: return@launch
-            val file = File(profile.typed.path)
-            if (!file.exists()) return@launch
             try {
+                val profile = ProfileManager.get(currentState.selectedProfileId)
+                    ?: error("Selected profile is unavailable")
+                val file = File(profile.typed.path)
+                check(file.exists()) { "Selected profile file is unavailable" }
                 val updated = PxlSubscriptionConverter.selectServer(file.readText(), tag)
                 Libbox.checkConfig(updated)
                 file.writeText(updated)
                 updateState { copy(preferredServerTag = tag) }
                 if (_serviceStatus.value == Status.Started) {
                     CommandTarget.standaloneClient().selectOutbound("PXLNET", tag)
+                    delay(10_000)
+                    if (currentState.switchingServerTag == tag) {
+                        updateState { copy(switchingServerTag = null, serverSwitchFailed = true) }
+                        sendError(IllegalStateException("Не удалось подтвердить переключение сервера"))
+                    }
                 }
             } catch (e: Exception) {
+                updateState { copy(switchingServerTag = null, serverSwitchFailed = true) }
                 sendError(e)
             }
         }
@@ -659,11 +675,12 @@ class DashboardViewModel :
             Application.application.getString(R.string.pxlnet_unsafe_subscription_url)
         }
         val response = HTTPClient().use { it.get(url) }
-        val content =
+        val conversion =
             PxlSubscriptionConverter.convert(
                 response.content,
                 PxlRoutingPreferences.isSmartRouting(Application.application),
-            ).config
+            )
+        val content = conversion.config
         Libbox.checkConfig(content)
 
         val existing = ProfileManager.list().firstOrNull {
@@ -688,6 +705,7 @@ class DashboardViewModel :
             Settings.selectedProfile = profile.id
         }
         SubscriptionInfoStore.save(Application.application, profile.id, response.subscriptionUserInfo)
+        SubscriptionInfoStore.saveSkippedXhttp(Application.application, profile.id, conversion.skippedXhttpCount)
         UpdateProfileWork.reconfigureUpdater()
         if (_serviceStatus.value == Status.Started) {
             Libbox.newStandaloneCommandClient().serviceReload()
@@ -716,11 +734,12 @@ class DashboardViewModel :
             try {
                 // Fetch remote config
                 val response = HTTPClient().use { it.get(profile.typed.remoteURL) }
-                val content =
+                val conversion =
                     PxlSubscriptionConverter.convert(
                         response.content,
                         PxlRoutingPreferences.isSmartRouting(Application.application),
-                    ).config
+                    )
+                val content = conversion.config
                 Libbox.checkConfig(content)
 
                 // Check if content changed
@@ -734,6 +753,7 @@ class DashboardViewModel :
                 // Update last updated time
                 profile.typed.lastUpdated = Date()
                 SubscriptionInfoStore.save(Application.application, profile.id, response.subscriptionUserInfo)
+                SubscriptionInfoStore.saveSkippedXhttp(Application.application, profile.id, conversion.skippedXhttpCount)
                 ProfileManager.update(profile)
 
                 // Reload profiles
@@ -813,6 +833,7 @@ class DashboardViewModel :
             updateState {
                 copy(
                     serviceStatus = status,
+                    switchingServerTag = if (status == Status.Started) switchingServerTag else null,
                     isStatusVisible =
                     if (RemoteControlManager.remoteServer.value != null) {
                         isStatusVisible
@@ -1019,8 +1040,14 @@ class DashboardViewModel :
     override fun updateGroups(newGroups: MutableList<OutboundGroup>) {
         viewModelScope.launch(Dispatchers.Main) {
             val hasGroups = newGroups.isNotEmpty()
+            val selected = newGroups.firstOrNull { it.tag == "PXLNET" }?.selected
             updateState {
-                copy(hasGroups = hasGroups, groupsCount = newGroups.size)
+                copy(
+                    hasGroups = hasGroups,
+                    groupsCount = newGroups.size,
+                    switchingServerTag = if (switchingServerTag == selected) null else switchingServerTag,
+                    serverSwitchFailed = if (selected == preferredServerTag) false else serverSwitchFailed,
+                )
             }
         }
     }

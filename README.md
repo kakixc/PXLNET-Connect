@@ -2,9 +2,9 @@
 
 ## 📥 Скачать PXLNET Connect
 
-[![Universal](https://img.shields.io/badge/Download-Universal-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/kakixc/PXLNET-Connect/releases/download/v0.6.3-beta/PXLNET-Connect-0.6.3-beta-universal.apk)
+[![Universal](https://img.shields.io/badge/Download-Universal-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/kakixc/PXLNET-Connect/releases/download/v0.6.5-beta/PXLNET-Connect-0.6.5-beta-universal.apk)
 
-[![ARM64-v8a](https://img.shields.io/badge/Download-ARM64--v8a-181717?style=for-the-badge&logo=android&logoColor=white)](https://github.com/kakixc/PXLNET-Connect/releases/download/v0.6.3-beta/PXLNET-Connect-0.6.3-beta-arm64-v8a.apk)
+[![ARM64-v8a](https://img.shields.io/badge/Download-ARM64--v8a-181717?style=for-the-badge&logo=android&logoColor=white)](https://github.com/kakixc/PXLNET-Connect/releases/download/v0.6.5-beta/PXLNET-Connect-0.6.5-beta-arm64-v8a.apk)
 
 **Universal** — выбирайте, если не знаете архитектуру устройства.  
 **ARM64-v8a** — для большинства современных Android-смартфонов, сборка немного компактнее.
@@ -59,15 +59,27 @@ Debug APK подписан стандартным отладочным ключ�
 
 ## Сборка
 
-Для приложения нужны Android SDK и Java 17. Локально используем API 37.1 и собранный `app/libs/libbox.aar` с ABI arm64-v8a.
+Для приложения нужны Android SDK (API 37.1), NDK 28.0.13004108, Java 17 и Go 1.25.12. `app/libs/libbox.aar` и `libbox-legacy.aar` собираются для четырёх ABI: armeabi-v7a, arm64-v8a, x86 и x86_64. Иначе файл с названием `universal.apk` может не работать на части устройств.
 
 Ядро для текущей Beta воспроизводится из sing-box `v1.14.0-beta.7`:
 
 ```powershell
 git clone --branch v1.14.0-beta.7 https://github.com/SagerNet/sing-box.git third_party/sing-box
 git -C third_party/sing-box apply ../../patches/sing-box-pxlnet.patch
+$env:GOROOT = 'путь-к-Go-1.25.12'
+$env:ANDROID_HOME = 'путь-к-Android-SDK'
+$env:ANDROID_NDK_HOME = Join-Path $env:ANDROID_HOME 'ndk/28.0.13004108'
+$env:JAVA_HOME = 'путь-к-JDK-17'
+$env:GOPATH = Join-Path (Get-Location).Path '.build-tools/gopath'
+$env:GOCACHE = Join-Path (Get-Location).Path '.build-tools/gocache'
+$env:GOTELEMETRY = 'off'
+$env:GOTOOLCHAIN = 'local'
+$env:PATH = "$env:GOROOT\bin;$env:GOPATH\bin;$env:PATH"
+& "$env:GOROOT\bin\go.exe" install github.com/sagernet/gomobile/cmd/gomobile@v0.1.12 github.com/sagernet/gomobile/cmd/gobind@v0.1.12
 .\scripts\build-libbox.ps1
 ```
+
+Текущий закреплённый sing-box `v1.14.0-beta.7` **не поддерживает XHTTP**: проверка конфигурации возвращает `unknown transport type: xhttp`. Connect теперь явно сообщает об этом при импорте VLESS-XHTTP вместо тихой подмены обычным TCP. Для настоящей поддержки нужен отдельно согласованный совместимый движок; изменения серверного inbound не входят в эту сборку.
 
 ```powershell
 .\gradlew.bat :app:testOtherDebugUnitTest

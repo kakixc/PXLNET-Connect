@@ -19,6 +19,8 @@
     <string name="pxlnet_guest_mode_description">Use a subscription link without signing in</string>
     <string name="pxlnet_signed_in_telegram">Signed in with Telegram</string>
     <string name="pxlnet_subscription_active">Subscription active</string>
+    <string name="pxlnet_access_by_link">Access via saved subscription link</string>
+    <string name="pxlnet_xhttp_nodes_skipped">%1$d VLESS XHTTP servers are unavailable in this version. Compatible servers remain selectable.</string>
     <string name="pxlnet_subscription_active_until">Subscription active until %1$s</string>
     <string name="pxlnet_subscription_inactive">No active subscription</string>
     <string name="pxlnet_refresh">Refresh</string>
@@ -126,6 +128,16 @@
     <string name="pxlnet_clipboard_no_subscription">No subscription link found in the clipboard</string>
     <string name="pxlnet_how_to_connect">How to connect</string>
     <string name="pxlnet_status_title">PXLNET status</string>
+    <string name="pxlnet_choose_server_title">Choose server</string>
+    <string name="pxlnet_connection_heading">CONNECTION</string>
+    <string name="pxlnet_selected_server_label">Selected server · tap to change</string>
+    <string name="pxlnet_country_germany">Germany</string>
+    <string name="pxlnet_country_finland">Finland</string>
+    <string name="pxlnet_saved_profile_offline">Account service is unavailable. You can still connect with your saved profile.</string>
+    <string name="pxlnet_first_setup_offline">No saved profile yet. Add a subscription link or sign in when the account service is available.</string>
+    <string name="pxlnet_restart_onboarding">Run initial setup again</string>
+    <string name="pxlnet_restart_onboarding_summary">Shows the guide again without deleting your profile or account.</string>
+    <string name="pxlnet_onboarding_telegram_optional">Telegram is optional. If it is unavailable, add a subscription link directly.</string>
     <string name="pxlnet_connection_works">Connection is working</string>
     <string name="pxlnet_server_not_responding">The selected server is not responding</string>
     <string name="pxlnet_checking_availability">Checking availability…</string>
@@ -159,7 +171,7 @@
     <string name="pxlnet_add">Add</string>
     <string name="pxlnet_server_label">Server</string>
     <string name="pxlnet_guard_description">Switches to the fastest working server after a confirmed failure</string>
-    <string name="pxlnet_onboarding_add">Add a subscription</string>
+    <string name="pxlnet_onboarding_add">Set up your access</string>
     <string name="pxlnet_onboarding_mode">Choose a mode</string>
     <string name="pxlnet_onboarding_permission">Allow VPN</string>
     <string name="pxlnet_onboarding_connect">Connect</string>
@@ -197,6 +209,26 @@
     <string name="app_version_title">App version</string>
     <string name="language">Language</string>
     <string name="system_default">System default</string>
+    <string name="appearance">Appearance</string>
+    <string name="theme">Theme</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="dynamic_color">Dynamic color</string>
+    <string name="dynamic_color_summary">Use colours from your wallpaper when available</string>
+    <string name="dynamic_color_unavailable">Available on Android 12 and newer</string>
+    <string name="accent_color">Accent color</string>
+    <string name="accent_color_summary">Use wallpaper colors or choose a fixed accent.</string>
+    <string name="accent_wallpaper">Wallpaper (Monet)</string>
+    <string name="accent_wallpaper_description">Use colors from your wallpaper</string>
+    <string name="theme_mode_label">Light and dark theme</string>
+    <string name="accent_wallpaper_fallback">PXLNET colors on Android 11 and older</string>
+    <string name="accent_green">Green</string>
+    <string name="accent_sky">Sky blue</string>
+    <string name="accent_violet">Violet</string>
+    <string name="accent_coral">Coral</string>
+    <string name="accent_amber">Amber</string>
+    <string name="accent_rose">Rose</string>
 
     <!-- Common Actions -->
     <string name="ok">OK</string>
@@ -247,6 +279,7 @@
     <string name="title_log">Logs</string>
     <string name="title_settings">Settings</string>
     <string name="title_app_settings">App</string>
+    <string name="pxlnet_app_settings_summary">Theme, accent color, and first-time setup</string>
     <string name="title_new_profile">New Profile</string>
     <string name="title_edit_profile">Edit Profile</string>
     <string name="title_edit_configuration">Edit Configuration</string>

@@ -76,7 +76,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.core.os.ConfigurationCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -96,6 +95,7 @@ import io.nekohasekai.sfa.bg.CrashReportManager
 import io.nekohasekai.sfa.bg.OOMReportManager
 import io.nekohasekai.sfa.bg.ServiceConnection
 import io.nekohasekai.sfa.bg.ServiceNotification
+import io.nekohasekai.sfa.bg.StartServiceCoordinator
 import io.nekohasekai.sfa.compat.WindowSizeClassCompat
 import io.nekohasekai.sfa.compat.isWidthAtLeastBreakpointCompat
 import io.nekohasekai.sfa.compose.base.GlobalEventBus
@@ -124,6 +124,8 @@ import io.nekohasekai.sfa.compose.screen.tools.OpenVPNStatusViewModel
 import io.nekohasekai.sfa.compose.screen.tools.TailscaleSSHSharedViewModel
 import io.nekohasekai.sfa.compose.screen.tools.TailscaleStatusViewModel
 import io.nekohasekai.sfa.compose.screen.usbip.USBIPStatusViewModel
+import io.nekohasekai.sfa.compose.theme.AppAccent
+import io.nekohasekai.sfa.compose.theme.AppThemeMode
 import io.nekohasekai.sfa.compose.theme.SFATheme
 import io.nekohasekai.sfa.compose.topbar.LocalTopBarController
 import io.nekohasekai.sfa.compose.topbar.TopBarController
@@ -239,7 +241,12 @@ class MainActivity :
         handleIntent(intent)
 
         setContent {
-            SFATheme(dynamicColor = true) {
+            val themeMode by Settings.themeModeState
+            val accent by Settings.accentState
+            SFATheme(
+                themeMode = AppThemeMode.fromPersisted(themeMode),
+                accent = AppAccent.fromPersisted(accent),
+            ) {
                 SFAApp()
             }
         }
@@ -252,6 +259,11 @@ class MainActivity :
 
     private fun handleIntent(intent: Intent?) {
         if (intent == null) {
+            return
+        }
+        if (intent.getBooleanExtra(StartServiceCoordinator.EXTRA_START_AFTER_PREREQUISITES, false)) {
+            intent.removeExtra(StartServiceCoordinator.EXTRA_START_AFTER_PREREQUISITES)
+            startService()
             return
         }
         val uri = intent.data ?: return
@@ -315,11 +327,26 @@ class MainActivity :
                     return@launch
                 }
             }
-            val intent = Intent(Application.application, Settings.serviceClass())
-            withContext(Dispatchers.Main) {
-                ContextCompat.startForegroundService(this@MainActivity, intent)
+            when (StartServiceCoordinator.preflight(
+                this@MainActivity,
+                StartServiceCoordinator.currentStatus() ?: connection.status,
+            )) {
+                StartServiceCoordinator.Decision.START -> Unit
+                StartServiceCoordinator.Decision.OPEN_APP_FOR_NOTIFICATION_PERMISSION -> {
+                    withContext(Dispatchers.Main) { onServiceAlert(Alert.RequestNotificationPermission, null) }
+                    return@launch
+                }
+                StartServiceCoordinator.Decision.OPEN_APP_FOR_VPN_PERMISSION -> {
+                    prepare()
+                    return@launch
+                }
+                StartServiceCoordinator.Decision.ALREADY_IN_PROGRESS -> return@launch
             }
-            Settings.startedByUser = true
+            withContext(Dispatchers.Main) {
+                if (StartServiceCoordinator.start(StartServiceCoordinator.Source.HOME)) {
+                    Settings.startedByUser = true
+                }
+            }
         }
     }
 

@@ -1,7 +1,8 @@
 param(
     [string]$SingBoxDirectory = "$PSScriptRoot\..\third_party\sing-box",
     [string]$GoRoot = $env:GOROOT,
-    [string]$AndroidNdkHome = $env:ANDROID_NDK_HOME
+    [string]$AndroidNdkHome = $env:ANDROID_NDK_HOME,
+    [string]$Platform = "android"
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,10 +20,11 @@ if (-not (Test-Path "$SingBoxDirectory\go.mod")) {
 $env:ANDROID_NDK_HOME = $AndroidNdkHome
 Push-Location $SingBoxDirectory
 try {
-    & "$GoRoot\bin\go.exe" run ./cmd/internal/build_libbox -target android -platform android/arm64
+    & "$GoRoot\bin\go.exe" run ./cmd/internal/build_libbox -target android -platform $Platform
     if ($LASTEXITCODE -ne 0) {
         throw "libbox build failed with exit code $LASTEXITCODE"
     }
+    New-Item -ItemType Directory -Path "$PSScriptRoot\..\app\libs" -Force | Out-Null
     Copy-Item -LiteralPath "libbox.aar" -Destination "$PSScriptRoot\..\app\libs\libbox.aar" -Force
     Copy-Item -LiteralPath "libbox-legacy.aar" -Destination "$PSScriptRoot\..\app\libs\libbox-legacy.aar" -Force
 } finally {

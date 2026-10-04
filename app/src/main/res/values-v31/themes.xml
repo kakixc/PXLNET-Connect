@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="AppTheme.Base.V27">
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/pxlnet_splash_animated</item>
+        <item name="android:windowSplashScreenAnimationDuration">420</item>
+        <item name="android:windowSplashScreenBackground">#EDE6F3</item>
+    </style>
+</resources>

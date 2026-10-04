@@ -20,6 +20,7 @@ object PxlSubscriptionConverter {
     data class Result(
         val config: String,
         val serverCount: Int,
+        val skippedXhttpCount: Int = 0,
     )
 
     data class ServerSelection(
@@ -46,9 +47,17 @@ object PxlSubscriptionConverter {
             "Подписка не содержит поддерживаемых серверов VLESS или Hysteria2"
         }
 
+        val (xhttpLinks, compatibleLinks) = links.partition { link ->
+            link.startsWith("vless://", true) &&
+                queryParameters(URI(link.replace(" ", "%20")).rawQuery)["type"].equals("xhttp", ignoreCase = true)
+        }
+        require(compatibleLinks.isNotEmpty()) {
+            "XHTTP пока не поддерживается текущим VPN-ядром. В подписке нет совместимых серверов."
+        }
+
         val usedTags = mutableSetOf<String>()
         val nodes =
-            links.map { link ->
+            compatibleLinks.map { link ->
                 when {
                     link.startsWith("vless://", true) -> parseVless(link, usedTags)
                     else -> parseHysteria2(link, usedTags)
@@ -173,7 +182,7 @@ object PxlSubscriptionConverter {
                 )
             }
 
-        return Result(json.encodeToString(JsonObject.serializer(), config), nodes.size)
+        return Result(json.encodeToString(JsonObject.serializer(), config), nodes.size, xhttpLinks.size)
     }
 
     fun removeRemoteRoutingDependencies(content: String): String {
@@ -284,6 +293,9 @@ object PxlSubscriptionConverter {
         val uuid = decode(uri.rawUserInfo.orEmpty())
         require(uuid.isNotBlank()) { "В VLESS-ссылке отсутствует UUID" }
         val query = queryParameters(uri.rawQuery)
+        require(!query["type"].equals("xhttp", ignoreCase = true)) {
+            "XHTTP пока не поддерживается текущим VPN-ядром. Этот сервер нельзя импортировать без совместимого ядра."
+        }
         val tag = uniqueTag(serverTag(uri.rawFragment, host, "VLESS"), usedTags)
 
         return buildJsonObject {

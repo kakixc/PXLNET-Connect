@@ -14,6 +14,7 @@ import kotlin.math.pow
 object SubscriptionInfoStore {
     private const val PREFERENCES = "pxlnet_subscription_info"
     private const val ACCOUNT_EXPIRY = "account_expiry"
+    private const val SKIPPED_XHTTP_SUFFIX = "_skipped_xhttp"
 
     data class Info(
         val upload: Long = 0,
@@ -29,6 +30,17 @@ object SubscriptionInfoStore {
             .putString(profileId.toString(), header)
             .apply()
     }
+
+    fun saveSkippedXhttp(context: Context, profileId: Long, count: Int) {
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .edit()
+            .putInt("$profileId$SKIPPED_XHTTP_SUFFIX", count)
+            .apply()
+    }
+
+    fun skippedXhttp(context: Context, profileId: Long): Int =
+        if (profileId <= 0) 0 else context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .getInt("$profileId$SKIPPED_XHTTP_SUFFIX", 0)
 
     fun read(context: Context, profileId: Long): Info? {
         if (profileId <= 0) return null
