@@ -754,7 +754,7 @@ fun LogScreen(
                     // Share as File
                     DropdownMenuItem(
                         text = {
-                            Text(text = "Отправить в @pxlnet_bot")
+                            Text(text = stringResource(R.string.pxlnet_send_to_support_bot))
                         },
                         onClick = {
                             val logsText = resolvedViewModel.getAllLogsText()

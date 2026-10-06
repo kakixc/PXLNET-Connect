@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.content.FileProvider
 import io.nekohasekai.sfa.BuildConfig
+import io.nekohasekai.sfa.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -25,8 +26,8 @@ object PxlDiagnostics {
         "org.thunderdog.challegram",
     )
 
-    suspend fun inspect(): PxlSupportReport = withContext(Dispatchers.IO) {
-        val logs = runCatching {
+    suspend fun inspect(context: Context): PxlSupportReport = withContext(Dispatchers.IO) {
+        val appLogs = runCatching {
             val process = ProcessBuilder(
                 "logcat",
                 "-d",
@@ -38,9 +39,16 @@ object PxlDiagnostics {
             ).redirectErrorStream(true).start()
             process.inputStream.bufferedReader().use { it.readText().takeLast(250_000) }
         }.getOrDefault("")
+        val probeLog = PxlProbeDiagnostics.read(context)
+        val logs = if (probeLog.isBlank()) appLogs else buildString {
+            appendLine("PXLNET VPN-server probe (categories only):")
+            appendLine(probeLog)
+            appendLine()
+            append(appLogs)
+        }
 
         PxlSupportReport(
-            summary = detectProblem(logs),
+            summary = context.getString(detectProblemResource(logs)),
             logs = logs,
         )
     }
@@ -65,7 +73,7 @@ object PxlDiagnostics {
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(Intent.EXTRA_STREAM, uri)
-            putExtra(Intent.EXTRA_TEXT, "Обезличенная диагностика PXLNET Connect. Получатель: @pxlnet_bot")
+            putExtra(Intent.EXTRA_TEXT, context.getString(R.string.pxlnet_diagnostics_share_text))
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             if (context !is Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
@@ -73,34 +81,37 @@ object PxlDiagnostics {
             ?.let { intent.setPackage(it) }
 
         val target = if (intent.`package` == null) {
-            Intent.createChooser(intent, "Отправить диагностику в @pxlnet_bot")
+            Intent.createChooser(intent, context.getString(R.string.pxlnet_diagnostics_share_title))
         } else {
             intent
         }
         context.startActivity(target)
     }
 
-    internal fun detectProblem(logs: String): String {
+    internal fun detectProblemResource(logs: String): Int {
         val text = logs.lowercase(Locale.ROOT)
+        val hasAppEvents = logs.lineSequence().any { line ->
+            line.isNotBlank() && !line.trimStart().startsWith("--------- beginning of")
+        }
         return when {
-            logs.isBlank() -> "Явная ошибка не найдена. Запустите подключение ещё раз и повторите проверку."
+            !hasAppEvents -> R.string.pxlnet_diagnostics_no_logs
             "decode config" in text || "invalid character" in text ->
-                "Похоже, сервер вернул подписку в неподдерживаемом формате."
+                R.string.pxlnet_diagnostics_bad_subscription
             "x509" in text || "certificate" in text ->
-                "Обнаружена ошибка TLS-сертификата или подмены защищённого соединения."
+                R.string.pxlnet_diagnostics_tls
             "rule-set" in text && ("download" in text || "initialize" in text) ->
-                "Не удалось загрузить правила маршрутизации. Попробуйте другую сеть или временно отключите Smart Routing."
+                R.string.pxlnet_diagnostics_rules
             "network is unreachable" in text || "no route to host" in text ->
-                "Устройство не видит сеть или выбранный сервер недоступен."
+                R.string.pxlnet_diagnostics_network
             "connection refused" in text ->
-                "Сервер отклонил подключение. Возможно, узел временно выключен."
+                R.string.pxlnet_diagnostics_refused
             "timeout" in text || "deadline exceeded" in text || "i/o timeout" in text ->
-                "Подключение превысило время ожидания. Проверьте сеть или выберите другой сервер."
+                R.string.pxlnet_diagnostics_timeout
             "permission denied" in text ->
-                "Android или системная защита не дала приложению нужное разрешение."
+                R.string.pxlnet_diagnostics_permission
             "error" in text || "failed" in text || "fatal" in text ->
-                "Найдена техническая ошибка. Отправьте обезличенный отчёт поддержке."
-            else -> "Явная ошибка не найдена. В отчёт будут добавлены последние технические события."
+                R.string.pxlnet_diagnostics_error
+            else -> R.string.pxlnet_diagnostics_no_clear_error
         }
     }
 }

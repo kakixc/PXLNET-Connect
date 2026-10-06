@@ -132,6 +132,8 @@ data class DashboardUiState(
     val telegramUsername: String? = null,
     val telegramSubscriptionActive: Boolean = false,
     val telegramSubscriptionExpiresAt: String? = null,
+    val hasTelegramSession: Boolean = false,
+    val accountLastVerifiedAt: Long? = null,
     val telegramLoginPending: Boolean = false,
     val telegramLoginError: String? = null,
     val accountServiceAvailable: Boolean? = null,
@@ -432,9 +434,9 @@ class DashboardViewModel :
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val profile = ProfileManager.get(currentState.selectedProfileId)
-                    ?: error("Selected profile is unavailable")
+                    ?: error(Application.application.getString(R.string.pxlnet_selected_profile_unavailable))
                 val file = File(profile.typed.path)
-                check(file.exists()) { "Selected profile file is unavailable" }
+                check(file.exists()) { Application.application.getString(R.string.pxlnet_selected_profile_file_unavailable) }
                 val updated = PxlSubscriptionConverter.selectServer(file.readText(), tag)
                 Libbox.checkConfig(updated)
                 file.writeText(updated)
@@ -444,7 +446,7 @@ class DashboardViewModel :
                     delay(10_000)
                     if (currentState.switchingServerTag == tag) {
                         updateState { copy(switchingServerTag = null, serverSwitchFailed = true) }
-                        sendError(IllegalStateException("Не удалось подтвердить переключение сервера"))
+                        sendError(IllegalStateException(Application.application.getString(R.string.pxlnet_server_switch_unconfirmed)))
                     }
                 }
             } catch (e: Exception) {
@@ -486,6 +488,9 @@ class DashboardViewModel :
                         telegramUsername = account.username,
                         telegramSubscriptionActive = account.subscriptionActive,
                         telegramSubscriptionExpiresAt = account.subscriptionExpiresAt,
+                        hasTelegramSession = true,
+                        accountLastVerifiedAt = System.currentTimeMillis(),
+                        accountServiceAvailable = true,
                         telegramLoginPending = false,
                         telegramLoginError = null,
                     )
@@ -515,6 +520,8 @@ class DashboardViewModel :
                     telegramUsername = null,
                     telegramSubscriptionActive = false,
                     telegramSubscriptionExpiresAt = null,
+                    hasTelegramSession = false,
+                    accountLastVerifiedAt = null,
                     telegramLoginPending = false,
                     telegramLoginError = null,
                 )
@@ -525,6 +532,7 @@ class DashboardViewModel :
     private fun restoreTelegramAccount() {
         viewModelScope.launch(Dispatchers.IO) {
             val token = PxlSecureTokenStore.read(Application.application) ?: return@launch
+            updateState { copy(hasTelegramSession = true) }
             val client = PxlAuthClient()
             runCatching {
                 val account = client.account(token)
@@ -541,6 +549,9 @@ class DashboardViewModel :
                             telegramUsername = account.username,
                             telegramSubscriptionActive = account.subscriptionActive,
                             telegramSubscriptionExpiresAt = account.subscriptionExpiresAt,
+                            hasTelegramSession = true,
+                            accountLastVerifiedAt = System.currentTimeMillis(),
+                            accountServiceAvailable = true,
                         )
                     }
                     loadProfiles()
@@ -548,6 +559,16 @@ class DashboardViewModel :
                 .onFailure { error ->
                     if (error.message.orEmpty().contains("HTTP 401")) {
                         PxlSecureTokenStore.clear(Application.application)
+                        updateState {
+                            copy(
+                                hasTelegramSession = false,
+                                accountLastVerifiedAt = null,
+                                telegramAccountName = null,
+                                telegramUsername = null,
+                                telegramSubscriptionActive = false,
+                                telegramSubscriptionExpiresAt = null,
+                            )
+                        }
                     } else {
                         updateState { copy(accountServiceAvailable = false) }
                     }
@@ -580,6 +601,9 @@ class DashboardViewModel :
                         telegramUsername = account.username,
                         telegramSubscriptionActive = account.subscriptionActive,
                         telegramSubscriptionExpiresAt = account.subscriptionExpiresAt,
+                        hasTelegramSession = true,
+                        accountLastVerifiedAt = System.currentTimeMillis(),
+                        accountServiceAvailable = true,
                         telegramLoginPending = false,
                     )
                 }
@@ -595,6 +619,9 @@ class DashboardViewModel :
                         telegramUsername = if (invalidToken) null else telegramUsername,
                         telegramSubscriptionActive = if (invalidToken) false else telegramSubscriptionActive,
                         telegramSubscriptionExpiresAt = if (invalidToken) null else telegramSubscriptionExpiresAt,
+                        hasTelegramSession = if (invalidToken) false else hasTelegramSession,
+                        accountLastVerifiedAt = if (invalidToken) null else accountLastVerifiedAt,
+                        accountServiceAvailable = if (invalidToken) accountServiceAvailable else false,
                         telegramLoginPending = false,
                         telegramLoginError = accountErrorMessage(e, R.string.pxlnet_account_refresh_failed),
                     )
@@ -658,6 +685,12 @@ class DashboardViewModel :
                         invalidToken -> null
                         refreshedAccount != null -> refreshedAccount.subscriptionExpiresAt
                         else -> telegramSubscriptionExpiresAt
+                    },
+                    hasTelegramSession = token != null && !invalidToken,
+                    accountLastVerifiedAt = when {
+                        invalidToken -> null
+                        refreshedAccount != null -> System.currentTimeMillis()
+                        else -> accountLastVerifiedAt
                     },
                     telegramLoginError = accountError?.let {
                         accountErrorMessage(it, R.string.pxlnet_account_refresh_failed)

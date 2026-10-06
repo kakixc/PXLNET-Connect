@@ -15,6 +15,7 @@ import io.nekohasekai.sfa.update.UpdateCheckException
 import io.nekohasekai.sfa.update.UpdateInfo
 import io.nekohasekai.sfa.update.UpdateSource
 import io.nekohasekai.sfa.update.UpdateState
+import io.nekohasekai.sfa.update.UpdateApkVerifier
 import io.nekohasekai.sfa.update.UpdateTrack
 import io.nekohasekai.sfa.update.checkFDroidUpdate
 
@@ -113,6 +114,16 @@ object Vendor : VendorInterface {
         UpdateWorker.schedule(io.nekohasekai.sfa.Application.application)
     }
 
+    override fun scheduleUpdatePreDownload(context: android.content.Context, update: UpdateInfo?) {
+        if (Settings.updatePreDownloadEnabled && update != null &&
+            UpdateSource.fromString(Settings.updateSource) == UpdateSource.GITHUB
+        ) {
+            UpdateDownloadWorker.schedule(context, update)
+        } else {
+            UpdateDownloadWorker.cancel(context)
+        }
+    }
+
     override suspend fun verifySilentInstallMethod(method: String): Boolean {
         return when (method) {
             "PACKAGE_INSTALLER" -> {
@@ -137,11 +148,15 @@ object Vendor : VendorInterface {
         SystemPackageInstaller.ensureInstallPermission(context)
 
     override suspend fun downloadAndInstall(context: android.content.Context, downloadUrl: String) {
+        val update = requireNotNull(UpdateState.updateInfo.value?.takeIf { it.downloadUrl == downloadUrl }) {
+            "Update information is no longer current"
+        }
         val cachedApk = UpdateState.cachedApkFile.value
-        val apkFile = if (cachedApk != null && cachedApk.exists() && cachedApk.length() > 0) {
+        val apkFile = if (cachedApk != null && UpdateApkVerifier.isValid(context, cachedApk, update)) {
             cachedApk
         } else {
-            ApkDownloader().use { it.download(downloadUrl) }
+            UpdateState.clearCachedApkPath()
+            ApkDownloader().use { it.download(update) }
         }
         ApkInstaller.install(context, apkFile)
     }

@@ -1,8 +1,11 @@
 package io.nekohasekai.sfa.bg
 
+import android.content.Context
+import android.os.Build
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.sfa.Application
 import io.nekohasekai.sfa.BuildConfig
+import io.nekohasekai.sfa.utils.PxlCrashSupportReport
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -46,6 +49,8 @@ object CrashReportManager {
     private const val CRASH_REPORTS_DIR_NAME = "crash_reports"
     private const val PENDING_JVM_CRASH_FILE_NAME = "CrashReport-JVM.log"
     private const val PENDING_JVM_METADATA_FILE_NAME = "CrashReport-JVM-metadata.json"
+    private const val SUPPORT_PREFS = "pxlnet_crash_support"
+    private const val LAST_COPIED_REPORT = "last_copied_report"
 
     private val timestampFormat = SimpleDateFormat("yyyy-MM-dd'T'HH-mm-ss", Locale.US).apply {
         timeZone = TimeZone.getTimeZone("UTC")
@@ -163,6 +168,36 @@ object CrashReportManager {
             files.add(CrashReportFile(CrashReportFile.Kind.CONFIG, "Configuration", configFile))
         }
         return files
+    }
+
+    fun newestUncopiedReport(context: Context): CrashReport? {
+        val lastCopied = context.getSharedPreferences(SUPPORT_PREFS, Context.MODE_PRIVATE)
+            .getString(LAST_COPIED_REPORT, null)
+        val newestUnread = _reports.value.firstOrNull { !it.isRead &&
+            (File(it.directory, JVM_LOG_FILE_NAME).isFile || File(it.directory, GO_LOG_FILE_NAME).isFile) }
+        return newestUnread?.takeUnless { it.id == lastCopied }
+    }
+
+    fun markSupportReportCopied(context: Context, report: CrashReport) {
+        context.getSharedPreferences(SUPPORT_PREFS, Context.MODE_PRIVATE)
+            .edit().putString(LAST_COPIED_REPORT, report.id).apply()
+    }
+
+    fun supportText(report: CrashReport): String {
+        val metadata = File(report.directory, METADATA_FILE_NAME).takeIf(File::isFile)
+            ?.let { runCatching { it.readText() }.getOrNull() }.orEmpty()
+        val version = runCatching { JSONObject(metadata).optString("appMarketingVersion") }
+            .getOrNull()?.takeIf(String::isNotBlank) ?: BuildConfig.VERSION_NAME
+        val logFile = listOf(JVM_LOG_FILE_NAME, GO_LOG_FILE_NAME)
+            .map { File(report.directory, it) }.firstOrNull(File::isFile)
+        val log = logFile?.let { runCatching { it.readText() }.getOrNull() }.orEmpty()
+        return PxlCrashSupportReport.format(
+            version = version,
+            android = "${Build.VERSION.RELEASE} / SDK ${Build.VERSION.SDK_INT}",
+            device = "${Build.MANUFACTURER} ${Build.MODEL}",
+            metadata = metadata,
+            crashLog = log,
+        )
     }
 
     fun loadFileContent(file: CrashReportFile): String {

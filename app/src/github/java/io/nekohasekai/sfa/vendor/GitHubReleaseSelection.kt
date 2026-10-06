@@ -19,6 +19,7 @@ internal object GitHubReleaseSelection {
     private data class Release(
         @SerialName("tag_name") val tagName: String,
         @SerialName("html_url") val pageUrl: String,
+        val body: String? = null,
         val draft: Boolean,
         val prerelease: Boolean,
         val assets: List<Asset>,
@@ -30,6 +31,7 @@ internal object GitHubReleaseSelection {
         val apkUrl: String,
         val pageUrl: String,
         val prerelease: Boolean,
+        val releaseNotes: String?,
     )
 
     fun select(
@@ -56,7 +58,14 @@ internal object GitHubReleaseSelection {
                 it.name == "PXLNET-Connect-$version-universal.apk"
             } ?: return@mapNotNull null
             val betaVersion = version.contains(Regex("-(?:alpha|beta|rc)", RegexOption.IGNORE_CASE))
-            Candidate(version, metadata.downloadUrl, apk.downloadUrl, release.pageUrl, release.prerelease || betaVersion)
+            Candidate(
+                version,
+                metadata.downloadUrl,
+                apk.downloadUrl,
+                release.pageUrl,
+                release.prerelease || betaVersion,
+                release.body?.take(12_000)?.takeIf(String::isNotBlank),
+            )
         }
         .maxWithOrNull { a, b ->
             when {

@@ -76,10 +76,17 @@ class UpdateWorker(private val appContext: Context, params: WorkerParameters) : 
 
             Log.d(TAG, "Update available: ${updateInfo.versionName}")
             UpdateState.setUpdate(updateInfo)
+            val willInstallSilently = Settings.silentInstallEnabled && ApkInstaller.canSilentInstall()
+            if (UpdateSource.fromString(Settings.updateSource) == UpdateSource.GITHUB) {
+                UpdateNotification.showIfDue(appContext, updateInfo)
+                if (Settings.updatePreDownloadEnabled && !willInstallSilently) {
+                    UpdateDownloadWorker.schedule(appContext, updateInfo)
+                }
+            }
 
-            if (Settings.silentInstallEnabled && ApkInstaller.canSilentInstall()) {
+            if (willInstallSilently) {
                 Log.d(TAG, "Downloading update...")
-                val apkFile = ApkDownloader().use { it.download(updateInfo.downloadUrl) }
+                val apkFile = ApkDownloader().use { it.download(updateInfo) }
 
                 Log.d(TAG, "Installing update...")
                 ApkInstaller.install(appContext, apkFile)

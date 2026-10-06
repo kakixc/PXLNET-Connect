@@ -2,7 +2,9 @@ package io.nekohasekai.sfa.vendor
 
 import android.os.Build
 import io.nekohasekai.libbox.Libbox
+import io.nekohasekai.sfa.Application
 import io.nekohasekai.sfa.BuildConfig
+import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.ktx.unwrap
 import io.nekohasekai.sfa.update.UpdateInfo
 import io.nekohasekai.sfa.update.UpdateTrack
@@ -30,7 +32,7 @@ class GitHubUpdateChecker : Closeable {
         checkLatestRelease(track)
     } catch (exception: Exception) {
         throw IOException(
-            "Не удалось проверить обновление. Проверьте интернет и попробуйте немного позже.",
+            Application.application.getString(R.string.pxlnet_update_check_failed),
             exception,
         )
     }
@@ -60,7 +62,7 @@ class GitHubUpdateChecker : Closeable {
             versionName = release.versionName,
             downloadUrl = release.apkUrl,
             releaseUrl = release.pageUrl,
-            releaseNotes = null,
+            releaseNotes = release.releaseNotes,
             isPrerelease = release.prerelease,
         )
     }

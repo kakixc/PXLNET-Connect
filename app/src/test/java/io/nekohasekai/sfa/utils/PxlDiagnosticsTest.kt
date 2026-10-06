@@ -1,22 +1,31 @@
 package io.nekohasekai.sfa.utils
 
-import org.junit.Assert.assertTrue
+import io.nekohasekai.sfa.R
+import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class PxlDiagnosticsTest {
     @Test
     fun detectsSubscriptionFormatError() {
-        val result = PxlDiagnostics.detectProblem(
+        val result = PxlDiagnostics.detectProblemResource(
             "decode config: invalid character 'd' looking for beginning of value",
         )
 
-        assertTrue(result.contains("неподдерживаемом формате"))
+        assertEquals(R.string.pxlnet_diagnostics_bad_subscription, result)
     }
 
     @Test
     fun detectsCertificateError() {
-        val result = PxlDiagnostics.detectProblem("x509: certificate is valid for another host")
+        val result = PxlDiagnostics.detectProblemResource("x509: certificate is valid for another host")
 
-        assertTrue(result.contains("TLS-сертификата"))
+        assertEquals(R.string.pxlnet_diagnostics_tls, result)
+    }
+
+    @Test
+    fun logcatHeaderAloneIsNotTreatedAsEvidence() {
+        assertEquals(
+            R.string.pxlnet_diagnostics_no_logs,
+            PxlDiagnostics.detectProblemResource("--------- beginning of main"),
+        )
     }
 }

@@ -8,7 +8,7 @@ object PxlDiagnosticRedactor {
         "(?i)https?://[^\\s/]+(?::\\d+)?/sub/[^\\s/?#]+",
     )
     private val authorization = Regex(
-        "(?i)\\b(authorization|bearer|access[_-]?token|refresh[_-]?token|password|passwd|secret)" +
+        "(?i)\\b(authorization|bearer|access[_-]?token|refresh[_-]?token|token|api[_-]?key|private[_-]?key|password|passwd|secret)" +
             "(\\s*[:=]\\s*|\\s+)[^\\s,;]+",
     )
     private val uuid = Regex(

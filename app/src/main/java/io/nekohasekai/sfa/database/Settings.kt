@@ -70,6 +70,10 @@ object Settings {
     var fdroidMirrorUrl by dataStore.string(SettingsKey.FDROID_MIRROR_URL) { "https://f-droid.org/repo" }
     var fdroidCustomMirrors by dataStore.stringSet(SettingsKey.FDROID_CUSTOM_MIRRORS) { emptySet() }
     var autoUpdateEnabled by dataStore.boolean(SettingsKey.AUTO_UPDATE_ENABLED) { true }
+    var updateNotificationEnabled by dataStore.boolean(SettingsKey.UPDATE_NOTIFICATION_ENABLED) { true }
+    var updatePreDownloadEnabled by dataStore.boolean(SettingsKey.UPDATE_PRE_DOWNLOAD_ENABLED) { false }
+    var updatePreDownloadUnmetered by dataStore.boolean(SettingsKey.UPDATE_PRE_DOWNLOAD_UNMETERED) { true }
+    var lastUpdateNotificationAt by dataStore.long(SettingsKey.LAST_UPDATE_NOTIFICATION_AT) { 0L }
     var dynamicNotification by dataStore.boolean(SettingsKey.DYNAMIC_NOTIFICATION) { true }
     var disableDeprecatedWarnings by dataStore.boolean(SettingsKey.DISABLE_DEPRECATED_WARNINGS) { false }
     var developerMode by dataStore.boolean(SettingsKey.DEVELOPER_MODE) { false }

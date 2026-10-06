@@ -16,6 +16,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,10 +27,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -63,7 +67,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Switch
+import io.nekohasekai.sfa.compose.component.PxlSwitch as Switch
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -72,6 +76,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -91,9 +96,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.component.PxlRootTopBar
+import io.nekohasekai.sfa.compose.component.PxlCatEasterEggDialog
+import io.nekohasekai.sfa.compose.component.rememberPxlCatEasterEggState
 import io.nekohasekai.sfa.compose.theme.performPxlConfirmation
 import io.nekohasekai.sfa.compose.navigation.NewProfileArgs
 import io.nekohasekai.sfa.compose.screen.dashboard.groups.GroupsViewModel
@@ -101,11 +110,17 @@ import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.utils.PxlLocalPreferences
+import io.nekohasekai.sfa.utils.PxlLatencySource
+import io.nekohasekai.sfa.utils.PxlServerLatencyProbe
 import io.nekohasekai.sfa.utils.PxlGuard
 import io.nekohasekai.sfa.utils.PxlMascotSettings
 import io.nekohasekai.sfa.utils.PxlQuickTile
 import io.nekohasekai.sfa.utils.SubscriptionInfoStore
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 private val PxlGreen = Color(0xFF277A4A)
 
@@ -114,6 +129,12 @@ private data class ServerChoice(
     val type: String,
     val delay: Int? = null,
 )
+
+private sealed interface ServerProbeDisplay {
+    data object Loading : ServerProbeDisplay
+    data object Unavailable : ServerProbeDisplay
+    data class Measured(val milliseconds: Int) : ServerProbeDisplay
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -128,6 +149,7 @@ fun DashboardScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val catEasterEgg = rememberPxlCatEasterEggState()
     val hapticFeedback = LocalHapticFeedback.current
     val clipboard = LocalClipboardManager.current
     val resolvedGroupsViewModel = groupsViewModel ?: viewModel<GroupsViewModel>()
@@ -138,10 +160,19 @@ fun DashboardScreen(
     var showServerPicker by remember { mutableStateOf(false) }
     var showOnboarding by remember { mutableStateOf(PxlLocalPreferences.shouldShowOnboarding(context)) }
     var showAccountHelp by remember { mutableStateOf(false) }
+    var showXhttpDetails by remember { mutableStateOf(false) }
     var showGuestBanner by remember { mutableStateOf(true) }
     var guardEnabled by remember { mutableStateOf(PxlLocalPreferences.isGuardEnabled(context)) }
     var quickTileAdded by remember { mutableStateOf(PxlLocalPreferences.isQuickTileAdded(context)) }
     var lastGuardSource by remember { mutableStateOf<String?>(null) }
+    var pixTapCount by remember { mutableIntStateOf(0) }
+    var latencySource by remember { mutableStateOf(PxlLocalPreferences.latencySource(context)) }
+    var probeRevision by remember { mutableIntStateOf(0) }
+    val serverProbeResults = remember { mutableStateMapOf<String, ServerProbeDisplay>() }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        latencySource = PxlLocalPreferences.latencySource(context)
+    }
 
     LaunchedEffect(serviceStatus) {
         resolvedGroupsViewModel.updateServiceStatus(serviceStatus)
@@ -160,10 +191,36 @@ fun DashboardScreen(
         ?.map { ServerChoice(it.tag, it.type, it.urlTestDelay) }
         ?.takeIf { it.isNotEmpty() }
         ?: uiState.availableServerTags.map { ServerChoice(it, type = "") }
+    val automaticChoices = serverChoices.filter { serverRegion(it.tag) == ServerRegion.AUTO }
+    val manualChoices = serverChoices.filter { serverRegion(it.tag) != ServerRegion.AUTO }
     val selectedServer = selector?.selected ?: uiState.preferredServerTag
     val selectedItem = serverChoices.firstOrNull { it.tag == selectedServer }
     val hasProfile = uiState.selectedProfileId > 0
     var healthCheckTimedOut by remember { mutableStateOf(false) }
+
+    LaunchedEffect(serviceStatus, selectedServer, showServerPicker, latencySource, probeRevision, uiState.selectedProfileId, manualChoices.map { it.tag }) {
+        serverProbeResults.clear()
+        if (latencySource != PxlLatencySource.VPN_SERVER || !hasProfile ||
+            serviceStatus !in setOf(Status.Started, Status.Stopped)) return@LaunchedEffect
+        val tags = if (showServerPicker) manualChoices.map { it.tag } else listOfNotNull(
+            selectedServer.takeIf { tag -> manualChoices.any { it.tag == tag } },
+        )
+        // A pre-connect probe creates a temporary outbound-only core. Keep it
+        // sequential so opening the picker cannot allocate several cores.
+        val limiter = Semaphore(if (serviceStatus == Status.Started) 2 else 1)
+        coroutineScope {
+            tags.distinct().forEach { tag ->
+                serverProbeResults[tag] = ServerProbeDisplay.Loading
+                launch {
+                    val delay = limiter.withPermit {
+                        if (serviceStatus == Status.Started) PxlServerLatencyProbe.measure(tag)
+                        else PxlServerLatencyProbe.measureBeforeStart(uiState.selectedProfileId, tag)
+                    }
+                    serverProbeResults[tag] = delay?.let(ServerProbeDisplay::Measured) ?: ServerProbeDisplay.Unavailable
+                }
+            }
+        }
+    }
 
     LaunchedEffect(serviceStatus, selector?.tag, selectedServer, selectedItem?.delay) {
         healthCheckTimedOut = false
@@ -190,6 +247,12 @@ fun DashboardScreen(
         isSwitchingServer = uiState.switchingServerTag != null,
         reachability = if (uiState.serverSwitchFailed) ConnectionReachability.Unreachable else reachability,
     )
+    val selectedProbe = serverProbeResults[selectedServer]
+    val selectedDisplayedDelay = if (latencySource == PxlLatencySource.VPN_SERVER) {
+        (selectedProbe as? ServerProbeDisplay.Measured)?.milliseconds
+    } else {
+        selectedItem?.delay
+    }
 
     LaunchedEffect(reachability, guardEnabled, selector?.tag, selectedServer, serverChoices) {
         if (reachability == ConnectionReachability.Reachable) {
@@ -232,6 +295,7 @@ fun DashboardScreen(
         PxlRootTopBar(
             title = "PXLNET Connect",
             subtitle = BuildConfig.VERSION_NAME,
+            onTitleClick = { catEasterEgg.tap(context) },
             actions = {
                 IconButton(onClick = { showOnboarding = true }) {
                     Icon(Icons.Default.HelpOutline, contentDescription = stringResource(R.string.pxlnet_how_to_connect))
@@ -242,6 +306,8 @@ fun DashboardScreen(
             },
         )
     }
+
+    PxlCatEasterEggDialog(catEasterEgg)
 
     if (showOnboarding) {
         PxlOnboardingSheet(
@@ -269,11 +335,25 @@ fun DashboardScreen(
         )
     }
 
+    if (showXhttpDetails) {
+        AlertDialog(
+            onDismissRequest = { showXhttpDetails = false },
+            title = { Text(stringResource(R.string.pxlnet_xhttp_details_title)) },
+            text = { Text(stringResource(R.string.pxlnet_xhttp_nodes_skipped, uiState.skippedXhttpCount)) },
+            confirmButton = {
+                TextButton(onClick = { showXhttpDetails = false }) {
+                    Text(stringResource(R.string.ok))
+                }
+            },
+        )
+    }
+
     if (showServerPicker && serverChoices.isNotEmpty()) {
         ModalBottomSheet(
             onDismissRequest = { showServerPicker = false },
             containerColor = MaterialTheme.colorScheme.surface,
         ) {
+          Column(Modifier.fillMaxWidth().heightIn(max = 600.dp).verticalScroll(rememberScrollState())) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -298,27 +378,83 @@ fun DashboardScreen(
                     )
                 }
                 IconButton(
-                    onClick = { selector?.let { resolvedGroupsViewModel.urlTest(it.tag) } },
-                    enabled = selector != null,
+                    onClick = {
+                        if (latencySource == PxlLatencySource.VPN_SERVER) {
+                            probeRevision++
+                        } else {
+                            selector?.let { resolvedGroupsViewModel.urlTest(it.tag) }
+                        }
+                    },
+                    enabled = if (latencySource == PxlLatencySource.VPN_SERVER) {
+                        serviceStatus in setOf(Status.Started, Status.Stopped) && hasProfile && manualChoices.isNotEmpty()
+                    } else {
+                        selector != null
+                    },
                 ) {
-                    Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.pxlnet_check_ping))
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = stringResource(
+                            if (latencySource == PxlLatencySource.VPN_SERVER) {
+                                R.string.pxlnet_check_server_delay
+                            } else {
+                                R.string.pxlnet_check_website_delay
+                            },
+                        ),
+                    )
                 }
             }
-            serverChoices.forEachIndexed { index, item ->
+            Text(
+                stringResource(
+                    if (latencySource == PxlLatencySource.VPN_SERVER) {
+                        R.string.pxlnet_latency_server_title
+                    } else {
+                        R.string.pxlnet_website_delay_label
+                    },
+                ),
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            @Composable fun choiceRow(item: ServerChoice) {
+                val probe = serverProbeResults[item.tag]
                 ServerPickerRow(
                     item = item,
                     selected = item.tag == selectedServer,
-                    onClick = {
-                        hapticFeedback.performPxlConfirmation()
-                        viewModel.selectPreferredServer(item.tag)
-                        showServerPicker = false
+                    delay = if (latencySource == PxlLatencySource.VPN_SERVER) {
+                        (probe as? ServerProbeDisplay.Measured)?.milliseconds
+                    } else {
+                        item.delay
                     },
-                )
-                if (index != serverChoices.lastIndex) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    loading = latencySource == PxlLatencySource.VPN_SERVER && probe == ServerProbeDisplay.Loading,
+                ) {
+                    hapticFeedback.performPxlConfirmation()
+                    viewModel.selectPreferredServer(item.tag)
+                    showServerPicker = false
+                }
+            }
+            if (automaticChoices.isNotEmpty()) {
+                ServerPickerSectionTitle(stringResource(R.string.pxlnet_server_section_auto))
+                if (latencySource == PxlLatencySource.VPN_SERVER) {
+                    Text(
+                        stringResource(R.string.pxlnet_latency_auto_explanation),
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                automaticChoices.forEach { choiceRow(it) }
+            }
+            if (manualChoices.isNotEmpty()) {
+                ServerPickerSectionTitle(stringResource(R.string.pxlnet_server_section_manual))
+                manualChoices.forEachIndexed { index, item ->
+                    choiceRow(item)
+                    if (index != manualChoices.lastIndex) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    }
                 }
             }
             Spacer(Modifier.height(24.dp))
+          }
         }
     }
 
@@ -330,17 +466,24 @@ fun DashboardScreen(
         contentPadding = PaddingValues(top = 16.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        if (hasProfile || uiState.telegramAccountName != null || uiState.telegramUsername != null) {
+        if (hasProfile || uiState.hasTelegramSession) {
             item {
                 AccessStrip(
                     profileName = uiState.selectedProfileName,
                     summary = SubscriptionInfoStore.summary(context, uiState.selectedProfileId),
                     accountName = uiState.telegramUsername?.let { "@$it" } ?: uiState.telegramAccountName,
+                    hasAccountSession = uiState.hasTelegramSession,
+                    accountVerified = uiState.accountLastVerifiedAt != null,
+                    accountServiceAvailable = uiState.accountServiceAvailable,
                     accountActive = uiState.telegramSubscriptionActive,
                     accountExpiry = formatPxlAccountExpiry(uiState.telegramSubscriptionExpiresAt),
-                    updating = uiState.updatingProfileId != null,
+                    updating = uiState.updatingProfileId != null || uiState.telegramLoginPending,
                     onRefresh = {
-                        uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }?.let(viewModel::updateProfile)
+                        if (uiState.hasTelegramSession) {
+                            viewModel.refreshTelegramAccount()
+                        } else {
+                            uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }?.let(viewModel::updateProfile)
+                        }
                     },
                 )
             }
@@ -350,7 +493,7 @@ fun DashboardScreen(
                 serviceStatus = serviceStatus,
                 state = connectionState,
                 reachability = reachability,
-                delay = selectedItem?.delay,
+                delay = selectedDisplayedDelay,
                 enabled = hasProfile && connectionState !in setOf(
                     ConnectionPresentationState.Connecting,
                     ConnectionPresentationState.Disconnecting,
@@ -360,7 +503,21 @@ fun DashboardScreen(
                 animateMascot = mascotAnimationsEnabled,
                 showMascotTips = mascotTipsEnabled,
                 hasProfile = hasProfile,
-                serverName = serverTitle(context, selectedServer, selectedItem?.type.orEmpty()),
+                onMascotTap = {
+                    pixTapCount++
+                    if (PxlLocalPreferences.isCosmosUnlocked(context)) {
+                        if (pixTapCount >= 5) {
+                            pixTapCount = 0
+                            Toast.makeText(context, R.string.pxlnet_cosmos_already_unlocked, Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        if (pixTapCount >= 5) {
+                            PxlLocalPreferences.unlockCosmos(context)
+                            pixTapCount = 0
+                            Toast.makeText(context, R.string.pxlnet_cosmos_unlocked, Toast.LENGTH_LONG).show()
+                        }
+                    }
+                },
                 onClick = {
                     hapticFeedback.performPxlConfirmation()
                     viewModel.toggleService()
@@ -383,7 +540,9 @@ fun DashboardScreen(
             ServerCard(
                 serverTag = selectedServer,
                 serverType = selectedItem?.type.orEmpty(),
-                delay = selectedItem?.delay,
+                delay = selectedDisplayedDelay,
+                loading = latencySource == PxlLatencySource.VPN_SERVER && selectedProbe == ServerProbeDisplay.Loading,
+                latencySource = latencySource,
                 enabled = serverChoices.isNotEmpty(),
                 onClick = { if (serverChoices.isNotEmpty()) showServerPicker = true },
             )
@@ -391,12 +550,34 @@ fun DashboardScreen(
 
         if (uiState.skippedXhttpCount > 0) {
             item {
-                Text(
-                    stringResource(R.string.pxlnet_xhttp_nodes_skipped, uiState.skippedXhttpCount),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                )
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable { showXhttpDetails = true },
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                    shape = RoundedCornerShape(16.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.HelpOutline,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                stringResource(R.string.pxlnet_xhttp_summary, uiState.skippedXhttpCount),
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                stringResource(R.string.pxlnet_xhttp_more),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
             }
         }
 
@@ -543,17 +724,27 @@ private fun AccessStrip(
     profileName: String?,
     summary: String?,
     accountName: String?,
+    hasAccountSession: Boolean,
+    accountVerified: Boolean,
+    accountServiceAvailable: Boolean?,
     accountActive: Boolean,
     accountExpiry: String?,
     updating: Boolean,
     onRefresh: () -> Unit,
 ) {
     val accessSummary = when {
-        accountName != null && accountActive && accountExpiry != null ->
+        hasAccountSession && !accountVerified -> stringResource(R.string.pxlnet_account_status_unknown)
+        hasAccountSession && accountActive && accountExpiry != null ->
             stringResource(R.string.pxlnet_subscription_active_until, accountExpiry)
-        accountName != null && accountActive -> stringResource(R.string.pxlnet_subscription_active)
-        accountName != null -> stringResource(R.string.pxlnet_subscription_inactive)
-        else -> summary ?: stringResource(R.string.pxlnet_access_by_link)
+        hasAccountSession && accountActive -> stringResource(R.string.pxlnet_subscription_active)
+        hasAccountSession -> stringResource(R.string.pxlnet_subscription_inactive)
+        summary != null -> stringResource(R.string.pxlnet_link_summary, summary)
+        else -> stringResource(R.string.pxlnet_access_by_link)
+    }
+    val displayedSummary = if (hasAccountSession && accountVerified && accountServiceAvailable == false) {
+        stringResource(R.string.pxlnet_account_last_known, accessSummary)
+    } else {
+        accessSummary
     }
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -568,28 +759,28 @@ private fun AccessStrip(
         ) {
             Box(
                 modifier = Modifier.size(9.dp).background(
-                    if (accountName != null && !accountActive) MaterialTheme.colorScheme.error
+                    if (hasAccountSession && accountVerified && !accountActive) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.primary,
                     CircleShape,
                 ),
             )
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                    if (accountName != null) "PXLNET · $accountName" else profileName ?: "PXLNET",
+                    if (hasAccountSession && accountName != null) "PXLNET · $accountName" else profileName ?: "PXLNET",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    accessSummary,
+                    displayedSummary,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (profileName != null) {
+            if (profileName != null || hasAccountSession) {
                 IconButton(onClick = onRefresh, enabled = !updating) {
                     if (updating) {
                         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -603,9 +794,10 @@ private fun AccessStrip(
 }
 
 @Composable
-private fun PxlCatCharacter(state: ConnectionPresentationState, animationsEnabled: Boolean) {
-    val ink = MaterialTheme.colorScheme.onPrimaryContainer
+private fun PxlCatCharacter(state: ConnectionPresentationState, animationsEnabled: Boolean, onTap: () -> Unit) {
+    val ink = MaterialTheme.colorScheme.primary
     val face = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+    val interactionSource = remember { MutableInteractionSource() }
     val transition = rememberInfiniteTransition(label = "pix-motion")
     val animatedBob by transition.animateFloat(
         initialValue = 0f,
@@ -624,56 +816,48 @@ private fun PxlCatCharacter(state: ConnectionPresentationState, animationsEnable
     Canvas(
         modifier = Modifier
             .size(width = 72.dp, height = 86.dp)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClickLabel = stringResource(R.string.pxlnet_mascot_tap),
+                onClick = onTap,
+            )
             .graphicsLayer { translationY = bob },
     ) {
         val stroke = 2.dp.toPx()
-        drawArc(
-            color = ink,
-            startAngle = -45f + tail,
-            sweepAngle = 155f,
-            useCenter = false,
-            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.58f, size.height * 0.49f),
-            size = androidx.compose.ui.geometry.Size(size.width * 0.38f, size.height * 0.43f),
-            style = Stroke(stroke * 4f, cap = StrokeCap.Round),
-        )
-        drawOval(
-            color = face,
-            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.27f, size.height * 0.43f),
-            size = androidx.compose.ui.geometry.Size(size.width * 0.50f, size.height * 0.48f),
-        )
-        drawOval(
-            color = ink,
-            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.27f, size.height * 0.43f),
-            size = androidx.compose.ui.geometry.Size(size.width * 0.50f, size.height * 0.48f),
-            style = Stroke(stroke),
-        )
-        val earLeft = Path().apply {
-            moveTo(size.width * 0.20f, size.height * 0.27f)
+        // Separate silhouettes keep the head, body and tail from drawing through each other.
+        val tailPath = Path().apply {
+            moveTo(size.width * 0.77f, size.height * 0.79f)
+            cubicTo(
+                size.width * 0.97f, size.height * 0.86f,
+                size.width * 1.02f, size.height * 0.66f,
+                size.width * (0.92f + tail * 0.002f), size.height * 0.58f,
+            )
+        }
+        drawPath(tailPath, ink, style = Stroke(stroke * 4f, cap = StrokeCap.Round))
+        val bodyPath = Path().apply {
+            moveTo(size.width * 0.29f, size.height * 0.61f)
+            cubicTo(size.width * 0.21f, size.height * 0.72f, size.width * 0.26f, size.height * 0.88f,
+                size.width * 0.48f, size.height * 0.91f)
+            cubicTo(size.width * 0.72f, size.height * 0.92f, size.width * 0.79f, size.height * 0.75f,
+                size.width * 0.71f, size.height * 0.61f)
+        }
+        drawPath(bodyPath, ink, style = Stroke(stroke, cap = StrokeCap.Round))
+        val headPath = Path().apply {
+            moveTo(size.width * 0.19f, size.height * 0.29f)
             lineTo(size.width * 0.24f, size.height * 0.04f)
-            lineTo(size.width * 0.43f, size.height * 0.20f)
-            close()
-        }
-        val earRight = Path().apply {
-            moveTo(size.width * 0.57f, size.height * 0.20f)
+            lineTo(size.width * 0.40f, size.height * 0.19f)
+            quadraticTo(size.width * 0.50f, size.height * 0.16f, size.width * 0.60f, size.height * 0.19f)
             lineTo(size.width * 0.76f, size.height * 0.04f)
-            lineTo(size.width * 0.80f, size.height * 0.27f)
+            lineTo(size.width * 0.81f, size.height * 0.29f)
+            cubicTo(size.width * 0.90f, size.height * 0.47f, size.width * 0.77f, size.height * 0.61f,
+                size.width * 0.50f, size.height * 0.61f)
+            cubicTo(size.width * 0.23f, size.height * 0.61f, size.width * 0.10f, size.height * 0.47f,
+                size.width * 0.19f, size.height * 0.29f)
             close()
         }
-        drawPath(earLeft, face)
-        drawPath(earRight, face)
-        drawPath(earLeft, ink, style = Stroke(stroke, join = androidx.compose.ui.graphics.StrokeJoin.Round))
-        drawPath(earRight, ink, style = Stroke(stroke, join = androidx.compose.ui.graphics.StrokeJoin.Round))
-        drawOval(
-            color = face,
-            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.14f, size.height * 0.15f),
-            size = androidx.compose.ui.geometry.Size(size.width * 0.72f, size.height * 0.46f),
-        )
-        drawOval(
-            color = ink,
-            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.14f, size.height * 0.15f),
-            size = androidx.compose.ui.geometry.Size(size.width * 0.72f, size.height * 0.46f),
-            style = Stroke(stroke),
-        )
+        drawPath(headPath, face)
+        drawPath(headPath, ink, style = Stroke(stroke, join = androidx.compose.ui.graphics.StrokeJoin.Round))
 
         val leftEye = androidx.compose.ui.geometry.Offset(size.width * 0.37f, size.height * 0.35f)
         val rightEye = androidx.compose.ui.geometry.Offset(size.width * 0.63f, size.height * 0.35f)
@@ -713,15 +897,15 @@ private fun PxlCatCharacter(state: ConnectionPresentationState, animationsEnable
         listOf(0.43f, 0.48f).forEach { y ->
             drawLine(
                 ink,
-                androidx.compose.ui.geometry.Offset(size.width * 0.08f, size.height * y),
-                androidx.compose.ui.geometry.Offset(size.width * 0.32f, size.height * (y - 0.02f)),
+                androidx.compose.ui.geometry.Offset(size.width * 0.04f, size.height * y),
+                androidx.compose.ui.geometry.Offset(size.width * 0.15f, size.height * (y - 0.01f)),
                 stroke * 0.75f,
                 StrokeCap.Round,
             )
             drawLine(
                 ink,
-                androidx.compose.ui.geometry.Offset(size.width * 0.68f, size.height * (y - 0.02f)),
-                androidx.compose.ui.geometry.Offset(size.width * 0.92f, size.height * y),
+                androidx.compose.ui.geometry.Offset(size.width * 0.85f, size.height * (y - 0.01f)),
+                androidx.compose.ui.geometry.Offset(size.width * 0.96f, size.height * y),
                 stroke * 0.75f,
                 StrokeCap.Round,
             )
@@ -765,12 +949,16 @@ private fun ConnectionControl(
     animateMascot: Boolean,
     showMascotTips: Boolean,
     hasProfile: Boolean,
-    serverName: String,
+    onMascotTap: () -> Unit,
     onClick: () -> Unit,
 ) {
     val label = when (state) {
         ConnectionPresentationState.Connected -> when (reachability) {
-            ConnectionReachability.Reachable -> stringResource(R.string.pxlnet_protected_delay, delay ?: 0)
+            ConnectionReachability.Reachable -> if (delay != null && delay > 0) {
+                stringResource(R.string.pxlnet_protected_delay, delay)
+            } else {
+                stringResource(R.string.pxlnet_connection_works)
+            }
             ConnectionReachability.Checking -> stringResource(R.string.pxlnet_checking_internet)
             else -> stringResource(R.string.pxlnet_vpn_changing)
         }
@@ -798,7 +986,7 @@ private fun ConnectionControl(
     }
     val mascotMessage = when {
         !hasProfile -> stringResource(R.string.pxlnet_mascot_no_subscription)
-        state == ConnectionPresentationState.Connected && reachability == ConnectionReachability.Reachable -> stringResource(R.string.pxlnet_mascot_online, serverName, delay ?: 0)
+        state == ConnectionPresentationState.Connected && reachability == ConnectionReachability.Reachable -> stringResource(R.string.pxlnet_mascot_online)
         state == ConnectionPresentationState.Error -> stringResource(R.string.pxlnet_mascot_offline)
         state == ConnectionPresentationState.Connected && reachability == ConnectionReachability.Checking -> stringResource(R.string.pxlnet_mascot_checking)
         state in setOf(ConnectionPresentationState.Connecting, ConnectionPresentationState.Switching, ConnectionPresentationState.Disconnecting) -> stringResource(R.string.pxlnet_mascot_transitioning)
@@ -906,7 +1094,7 @@ private fun ConnectionControl(
                             )
                         }
                     }
-                    PxlCatCharacter(state, animateMascot)
+                    PxlCatCharacter(state, animateMascot, onMascotTap)
                 }
             }
         }
@@ -958,7 +1146,15 @@ private fun QuickTileCard(onAdd: () -> Unit) {
 }
 
 @Composable
-private fun ServerCard(serverTag: String, serverType: String, delay: Int?, enabled: Boolean, onClick: () -> Unit) {
+private fun ServerCard(
+    serverTag: String,
+    serverType: String,
+    delay: Int?,
+    loading: Boolean,
+    latencySource: PxlLatencySource,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
     val context = LocalContext.current
     Card(
         modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick),
@@ -980,7 +1176,20 @@ private fun ServerCard(serverTag: String, serverType: String, delay: Int?, enabl
                     Text(protocol, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            Text(formatDelay(context, delay), style = MaterialTheme.typography.labelMedium, color = delayColor(delay))
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    stringResource(
+                        if (latencySource == PxlLatencySource.VPN_SERVER) {
+                            R.string.pxlnet_latency_server_short
+                        } else {
+                            R.string.pxlnet_website_delay_short
+                        },
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                DelayIndicator(delay, loading)
+            }
             Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
         }
     }
@@ -1122,7 +1331,7 @@ private fun PxlOnboardingSheet(
                             enabled = !smartRouting,
                             shape = RoundedCornerShape(10.dp),
                         ) {
-                            Text("Smart Routing")
+                            Text(stringResource(R.string.pxlnet_route_smart_title))
                         }
                         OutlinedButton(
                             onClick = { onSmartRoutingChanged(false) },
@@ -1221,7 +1430,13 @@ private fun AccountLoginDialog(
 }
 
 @Composable
-private fun ServerPickerRow(item: ServerChoice, selected: Boolean, onClick: () -> Unit) {
+private fun ServerPickerRow(
+    item: ServerChoice,
+    selected: Boolean,
+    delay: Int?,
+    loading: Boolean,
+    onClick: () -> Unit,
+) {
     val context = LocalContext.current
     Row(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 14.dp),
@@ -1234,10 +1449,43 @@ private fun ServerPickerRow(item: ServerChoice, selected: Boolean, onClick: () -
             val protocol = serverProtocol(item.tag, item.type)
             if (protocol.isNotBlank()) Text(protocol, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Text(formatDelay(context, item.delay), color = delayColor(item.delay), style = MaterialTheme.typography.labelMedium)
+        DelayIndicator(delay, loading)
         if (selected) {
             Box(Modifier.size(8.dp).background(PxlGreen, CircleShape))
         }
+    }
+}
+
+@Composable
+private fun ServerPickerSectionTitle(title: String) {
+    Text(
+        title,
+        modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 4.dp),
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+    )
+}
+
+@Composable
+private fun DelayIndicator(delay: Int?, loading: Boolean = false) {
+    if (loading) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(18.dp),
+            strokeWidth = 2.dp,
+        )
+    } else if (delay != null && delay > 0) {
+        Text(
+            stringResource(R.string.pxlnet_delay_ms, delay),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    } else {
+        Icon(
+            Icons.Default.Speed,
+            contentDescription = stringResource(R.string.pxlnet_measurement_unavailable),
+            modifier = Modifier.size(18.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -1326,15 +1574,4 @@ private fun ServerLocationIcon(tag: String) {
 private fun formatPxlAccountExpiry(value: String?): String? {
     val parts = value?.take(10)?.split('-') ?: return null
     return if (parts.size == 3) "${parts[2]}.${parts[1]}.${parts[0]}" else value
-}
-
-private fun formatDelay(context: Context, delay: Int?): String =
-    if (delay != null && delay > 0) context.getString(R.string.pxlnet_delay_ms, delay) else "—"
-
-@Composable
-private fun delayColor(delay: Int?): Color = when {
-    delay == null || delay <= 0 -> MaterialTheme.colorScheme.onSurfaceVariant
-    delay < 150 -> PxlGreen
-    delay < 300 -> Color(0xFF9A6B16)
-    else -> Color(0xFF9B3D33)
 }

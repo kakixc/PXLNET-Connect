@@ -2,6 +2,8 @@ package io.nekohasekai.sfa.compose
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.ContentResolver
 import android.content.Intent
 import android.net.Uri
@@ -10,6 +12,7 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -138,6 +141,7 @@ import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.ktx.hasPermission
 import io.nekohasekai.sfa.ktx.launchCustomTab
 import io.nekohasekai.sfa.update.UpdateState
+import io.nekohasekai.sfa.update.UpdateInfo
 import io.nekohasekai.sfa.utils.PxlDeveloperMode
 import io.nekohasekai.sfa.utils.PxlLocalPreferences
 import io.nekohasekai.sfa.utils.RemoteControlManager
@@ -151,6 +155,12 @@ import kotlinx.coroutines.withContext
 class MainActivity :
     AppCompatActivity(),
     ServiceConnection.Callback {
+    companion object {
+        const val EXTRA_OPEN_UPDATE_SETTINGS = "net.pxlnet.connect.OPEN_UPDATE_SETTINGS"
+        const val EXTRA_OPEN_UPDATE_DETAILS = "net.pxlnet.connect.OPEN_UPDATE_DETAILS"
+        const val EXTRA_OPEN_UPDATE_PREVIEW = "net.pxlnet.connect.OPEN_UPDATE_PREVIEW"
+    }
+
     private val connection = ServiceConnection(this, this)
     private lateinit var dashboardViewModel: DashboardViewModel
     private var currentServiceStatus by mutableStateOf(Status.Stopped)
@@ -206,9 +216,13 @@ class MainActivity :
             }
         }
     private val pendingNavigationRoute = mutableStateOf<String?>(null)
+    private var pendingOpenUpdateDetails by mutableStateOf(false)
+    private var showUpdatePreview by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingOpenUpdateDetails = savedInstanceState?.getBoolean("pending_open_update_details") ?: false
+        showUpdatePreview = savedInstanceState?.getBoolean("show_update_preview") ?: false
         ConfigurationCompat.getLocales(resources.configuration)[0]?.let { locale ->
             runCatching {
                 Libbox.setLocale(locale.toLanguageTag())
@@ -221,7 +235,7 @@ class MainActivity :
         connection.reconnect()
         RemoteControlManager.restore()
 
-        UpdateState.loadFromCache()
+        UpdateState.loadFromCache(this)
         if (PxlLocalPreferences.initializeUpdateDefaults(this)) {
             Settings.checkUpdateEnabled = true
             Settings.autoUpdateEnabled = true
@@ -232,8 +246,9 @@ class MainActivity :
                 try {
                     val updateInfo = Vendor.checkUpdateAsync()
                     UpdateState.setUpdate(updateInfo)
+                    Vendor.scheduleUpdatePreDownload(this@MainActivity, updateInfo)
                 } catch (_: Exception) {
-                    UpdateState.setUpdate(null)
+                    // Keep a cached, still-newer release visible while offline.
                 }
             }
         }
@@ -254,11 +269,33 @@ class MainActivity :
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         handleIntent(intent)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("pending_open_update_details", pendingOpenUpdateDetails)
+        outState.putBoolean("show_update_preview", showUpdatePreview)
+        super.onSaveInstanceState(outState)
     }
 
     private fun handleIntent(intent: Intent?) {
         if (intent == null) {
+            return
+        }
+        if (intent.getBooleanExtra(EXTRA_OPEN_UPDATE_DETAILS, false)) {
+            intent.removeExtra(EXTRA_OPEN_UPDATE_DETAILS)
+            pendingOpenUpdateDetails = true
+            return
+        }
+        if (intent.getBooleanExtra(EXTRA_OPEN_UPDATE_PREVIEW, false)) {
+            intent.removeExtra(EXTRA_OPEN_UPDATE_PREVIEW)
+            showUpdatePreview = true
+            return
+        }
+        if (intent.getBooleanExtra(EXTRA_OPEN_UPDATE_SETTINGS, false)) {
+            intent.removeExtra(EXTRA_OPEN_UPDATE_SETTINGS)
+            pendingNavigationRoute.value = "settings/app"
             return
         }
         if (intent.getBooleanExtra(StartServiceCoordinator.EXTRA_START_AFTER_PREREQUISITES, false)) {
@@ -276,8 +313,8 @@ class MainActivity :
                 val profile = Libbox.parseRemoteProfileImportLink(uri.toString())
                 pendingImportProfile = Triple(profile.name, profile.host, profile.url)
                 showImportProfileDialog = true
-            } catch (e: Exception) {
-                pendingIntentErrorMessage = e.message ?: "Failed to parse profile link"
+            } catch (_: Exception) {
+                pendingIntentErrorMessage = getString(R.string.pxlnet_import_parse_failed)
             }
             return
         }
@@ -374,6 +411,34 @@ class MainActivity :
         val currentRoute = currentDestination?.route
         val scope = rememberCoroutineScope()
         val importHandler = remember { ProfileImportHandler(this@MainActivity) }
+        val crashReports by CrashReportManager.reports.collectAsState()
+        var pendingCrashSupportText by remember { mutableStateOf<String?>(null) }
+        val saveCrashReportLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("text/plain"),
+        ) { uri ->
+            val text = pendingCrashSupportText
+            if (uri != null && text != null) {
+                scope.launch {
+                    val saved = withContext(Dispatchers.IO) {
+                        runCatching {
+                            contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+                                ?: error("Unable to open crash report destination")
+                        }.isSuccess
+                    }
+                    if (saved) pendingCrashSupportText = null
+                }
+            }
+        }
+
+        LaunchedEffect(crashReports) {
+            val report = CrashReportManager.newestUncopiedReport(this@MainActivity) ?: return@LaunchedEffect
+            val text = withContext(Dispatchers.IO) { CrashReportManager.supportText(report) }
+            pendingCrashSupportText = text
+            runCatching {
+                (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
+                    .setPrimaryClip(ClipData.newPlainText("PXLNET Connect crash log", text))
+            }.onSuccess { CrashReportManager.markSupportReportCopied(this@MainActivity, report) }
+        }
 
         val windowSizeClass = currentWindowAdaptiveInfo().windowSizeClass
         val useNavigationRail =
@@ -505,6 +570,28 @@ class MainActivity :
                 title = stringResource(R.string.error_title),
                 message = errorMessage,
                 onDismiss = { showErrorDialog = false },
+            )
+        }
+
+        if (pendingCrashSupportText != null) {
+            AlertDialog(
+                onDismissRequest = { pendingCrashSupportText = null },
+                title = { Text(stringResource(R.string.pxlnet_crash_support_title)) },
+                text = { Text(stringResource(R.string.pxlnet_crash_support_message)) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        saveCrashReportLauncher.launch("pxlnet_crash_${System.currentTimeMillis()}.txt")
+                    }) { Text(stringResource(R.string.pxlnet_crash_support_save)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        pendingCrashSupportText?.let { text ->
+                            (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
+                                .setPrimaryClip(ClipData.newPlainText("PXLNET Connect crash log", text))
+                        }
+                        pendingCrashSupportText = null
+                    }) { Text(stringResource(R.string.pxlnet_crash_support_copy)) }
+                },
             )
         }
 
@@ -661,18 +748,58 @@ class MainActivity :
         val shouldShowUpdateDialog = updateInfo != null &&
             updateInfo!!.versionCode > Settings.lastShownUpdateVersion
         var showUpdateDialog by remember { mutableStateOf(true) }
+        LaunchedEffect(updateInfo?.versionCode) {
+            if ((updateInfo?.versionCode ?: 0) > Settings.lastShownUpdateVersion) {
+                showUpdateDialog = true
+            }
+        }
+        LaunchedEffect(pendingOpenUpdateDetails) {
+            if (pendingOpenUpdateDetails) showUpdateDialog = true
+        }
+        LaunchedEffect(showUpdatePreview) {
+            if (showUpdatePreview) showUpdateDialog = false
+        }
 
         // Download dialog state
         var showDownloadDialog by remember { mutableStateOf(false) }
         var downloadJob by remember { mutableStateOf<Job?>(null) }
         var downloadError by remember { mutableStateOf<String?>(null) }
 
-        if (showUpdateDialog && shouldShowUpdateDialog) {
+        if (showUpdatePreview) {
+            UpdateAvailableDialog(
+                updateInfo = UpdateInfo(
+                    versionCode = 0,
+                    versionName = BuildConfig.VERSION_NAME,
+                    downloadUrl = "",
+                    releaseUrl = "",
+                    releaseNotes = stringResource(R.string.pxlnet_update_test_notes),
+                    isPrerelease = true,
+                ),
+                onDismiss = { showUpdatePreview = false },
+                onUpdate = {},
+                previewOnly = true,
+            )
+        }
+
+        if (!showUpdatePreview && showUpdateDialog && updateInfo != null &&
+            (shouldShowUpdateDialog || pendingOpenUpdateDetails)
+        ) {
             UpdateAvailableDialog(
                 updateInfo = updateInfo!!,
                 onDismiss = {
                     Settings.lastShownUpdateVersion = updateInfo!!.versionCode
                     showUpdateDialog = false
+                    pendingOpenUpdateDetails = false
+                    scope.launch {
+                        val result = snackbarHostState.showSnackbar(
+                            message = getString(R.string.pxlnet_update_later_hint),
+                            actionLabel = getString(R.string.pxlnet_update_settings_action),
+                            duration = androidx.compose.material3.SnackbarDuration.Short,
+                        )
+                        if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                            navController.navigate("settings/app") { launchSingleTop = true }
+                        }
+                    }
                 },
                 onUpdate = {
                     if (!Vendor.ensureUpdateInstallPermission(this@MainActivity)) {
@@ -680,6 +807,7 @@ class MainActivity :
                     }
                     Settings.lastShownUpdateVersion = updateInfo!!.versionCode
                     showUpdateDialog = false
+                    pendingOpenUpdateDetails = false
                     showDownloadDialog = true
                     downloadError = null
                     downloadJob = scope.launch {
@@ -792,7 +920,8 @@ class MainActivity :
             )
         }
 
-        val isSettingsSubScreen = currentRoute?.startsWith("settings/") == true
+        val isSettingsSubScreen = currentRoute?.startsWith("settings/") == true ||
+            currentRoute == "pxlnet/app_routing"
         val isToolsSubScreen = currentRoute?.startsWith("tools/") == true
         val isConnectionsDetail = currentRoute?.startsWith("connections/detail") == true
         val isProfileRoute = currentRoute?.startsWith("profile/") == true

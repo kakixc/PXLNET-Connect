@@ -2,6 +2,8 @@ package io.nekohasekai.sfa.compose.navigation
 
 import android.net.Uri
 import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -106,6 +108,10 @@ fun SFANavHost(
         navController = navController,
         startDestination = Screen.Dashboard.route,
         modifier = modifier,
+        enterTransition = { EnterTransition.None },
+        exitTransition = { ExitTransition.None },
+        popEnterTransition = { EnterTransition.None },
+        popExitTransition = { ExitTransition.None },
     ) {
         composable(Screen.Dashboard.route) {
             if (dashboardViewModel != null) {

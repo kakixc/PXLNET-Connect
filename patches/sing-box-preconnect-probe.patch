@@ -1,0 +1,112 @@
+diff --git a/experimental/libbox/pxlnet_preconnect_probe.go b/experimental/libbox/pxlnet_preconnect_probe.go
+new file mode 100644
+--- /dev/null
++++ b/experimental/libbox/pxlnet_preconnect_probe.go
+@@ -0,0 +1,107 @@
++package libbox
++
++import (
++	"context"
++	"os"
++	"sort"
++	"time"
++
++	box "github.com/sagernet/sing-box"
++	"github.com/sagernet/sing-box/adapter"
++	C "github.com/sagernet/sing-box/constant"
++	"github.com/sagernet/sing-box/option"
++	E "github.com/sagernet/sing/common/exceptions"
++	"github.com/sagernet/sing/service"
++)
++
++// preconnectPlatformStub never creates a VPN interface or protects sockets.
++// The selected server is contacted over Android's ordinary network while the
++// app's VPN service is stopped.
++type preconnectPlatformStub struct{ platformInterfaceStub }
++
++func (*preconnectPlatformStub) UsePlatformDefaultInterfaceMonitor() bool    { return false }
++func (*preconnectPlatformStub) UsePlatformAutoDetectInterfaceControl() bool { return false }
++
++// ProbeServerBeforeStart measures a manual VLESS/REALITY or Hysteria2 server
++// without starting the VPN. It builds a short-lived, outbound-only sing-box
++// instance from the selected profile; no TUN, inbound, cache or API is opened.
++// It returns the median of three fresh protocol handshakes, or no result.
++func ProbeServerBeforeStart(configContent string, outboundTag string) (int32, error) {
++	if outboundTag == "" {
++		return 0, E.New("empty outbound tag")
++	}
++	ctx, cancel := context.WithTimeout(baseContext(nil), 24*time.Second)
++	defer cancel()
++	parsed, err := parseConfig(ctx, configContent)
++	if err != nil {
++		return 0, err
++	}
++	var selected *option.Outbound
++	for i := range parsed.Outbounds {
++		if parsed.Outbounds[i].Tag == outboundTag {
++			selected = &parsed.Outbounds[i]
++			break
++		}
++	}
++	if selected == nil {
++		return 0, E.New("outbound not found")
++	}
++	switch selected.Type {
++	case C.TypeVLESS:
++		server, ok := selected.Options.(*option.VLESSOutboundOptions)
++		if !ok || server.Detour != "" {
++			return 0, E.New("unsupported VLESS preconnect configuration")
++		}
++	case C.TypeHysteria2:
++		server, ok := selected.Options.(*option.Hysteria2OutboundOptions)
++		if !ok || server.Detour != "" {
++			return 0, E.New("unsupported Hysteria2 preconnect configuration")
++		}
++	default:
++		return 0, E.New("unsupported outbound type")
++	}
++	ctx = service.ContextWith[adapter.PlatformInterface](ctx, &preconnectPlatformStub{})
++	instance, err := box.New(box.Options{
++		Context: ctx,
++		Options: option.Options{
++			Log:       &option.LogOptions{Disabled: true},
++			Outbounds: []option.Outbound{*selected},
++			Route:     &option.RouteOptions{Final: outboundTag},
++		},
++	})
++	if err != nil {
++		return 0, err
++	}
++	defer instance.Close()
++	if err = instance.Start(); err != nil {
++		return 0, err
++	}
++	outbound, found := instance.Outbound().Outbound(outboundTag)
++	if !found {
++		return 0, E.New("preconnect outbound not found")
++	}
++	prober, supported := outbound.(interface{ ProbeServer(context.Context) error })
++	if !supported {
++		return 0, E.New("preconnect probe unsupported")
++	}
++	samples := make([]int32, 0, 3)
++	for range 3 {
++		sampleCtx, sampleCancel := context.WithTimeout(ctx, 6*time.Second)
++		start := time.Now()
++		err = prober.ProbeServer(sampleCtx)
++		sampleCancel()
++		if err != nil {
++			return 0, err
++		}
++		ms := time.Since(start).Milliseconds()
++		if ms < 1 {
++			ms = 1
++		}
++		if ms > 60_000 {
++			return 0, os.ErrDeadlineExceeded
++		}
++		samples = append(samples, int32(ms))
++	}
++	sort.Slice(samples, func(i, j int) bool { return samples[i] < samples[j] })
++	return samples[1], nil
++}
