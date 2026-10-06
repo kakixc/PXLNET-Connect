@@ -1,6 +1,8 @@
 package io.nekohasekai.sfa.utils
 
 import android.content.Context
+import android.text.format.Formatter
+import io.nekohasekai.sfa.R
 import java.text.DateFormat
 import java.time.Instant
 import java.time.LocalDate
@@ -14,6 +16,7 @@ import kotlin.math.pow
 object SubscriptionInfoStore {
     private const val PREFERENCES = "pxlnet_subscription_info"
     private const val ACCOUNT_EXPIRY = "account_expiry"
+    private const val SKIPPED_XHTTP_SUFFIX = "_skipped_xhttp"
 
     data class Info(
         val upload: Long = 0,
@@ -29,6 +32,17 @@ object SubscriptionInfoStore {
             .putString(profileId.toString(), header)
             .apply()
     }
+
+    fun saveSkippedXhttp(context: Context, profileId: Long, count: Int) {
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .edit()
+            .putInt("$profileId$SKIPPED_XHTTP_SUFFIX", count)
+            .apply()
+    }
+
+    fun skippedXhttp(context: Context, profileId: Long): Int =
+        if (profileId <= 0) 0 else context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .getInt("$profileId$SKIPPED_XHTTP_SUFFIX", 0)
 
     fun read(context: Context, profileId: Long): Info? {
         if (profileId <= 0) return null
@@ -75,13 +89,43 @@ object SubscriptionInfoStore {
 
     fun summary(context: Context, profileId: Long): String? {
         val info = read(context, profileId) ?: return null
+        return summary(
+            info,
+            System.currentTimeMillis() / 1000,
+            usage = { used, total ->
+                context.getString(
+                    R.string.pxlnet_link_usage,
+                    Formatter.formatShortFileSize(context, used),
+                    Formatter.formatShortFileSize(context, total),
+                )
+            },
+            future = { date -> context.getString(R.string.pxlnet_link_expiry_future, date) },
+            expired = { date -> context.getString(R.string.pxlnet_link_expiry_expired, date) },
+        )
+    }
+
+    internal fun summary(info: Info, nowSeconds: Long): String? = summary(
+        info,
+        nowSeconds,
+        usage = { used, total -> "Использовано ${formatBytes(used)} из ${formatBytes(total)}" },
+        future = { date -> "указан срок до $date" },
+        expired = { date -> "указанный срок истёк $date" },
+    )
+
+    private fun summary(
+        info: Info,
+        nowSeconds: Long,
+        usage: (Long, Long) -> String,
+        future: (String) -> String,
+        expired: (String) -> String,
+    ): String? {
         val parts = mutableListOf<String>()
         if (info.total > 0) {
-            parts += "Использовано ${formatBytes(info.upload + info.download)} из ${formatBytes(info.total)}"
+            parts += usage(info.upload + info.download, info.total)
         }
         if (info.expire > 0) {
             val date = DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(info.expire * 1000))
-            parts += "активна до $date"
+            parts += if (info.expire > nowSeconds) future(date) else expired(date)
         }
         return parts.joinToString(" · ").takeIf(String::isNotBlank)
     }

@@ -317,6 +317,7 @@ class NewProfileViewModel(application: Application) : AndroidViewModel(applicati
         // Create profile in database and select it
         ProfileManager.create(profile, andSelect = true)
         SubscriptionInfoStore.save(context, profile.id, response.subscriptionUserInfo)
+        SubscriptionInfoStore.saveSkippedXhttp(context, profile.id, conversion.skippedXhttpCount)
 
         // Reconfigure updater if auto-update is enabled
         if (state.autoUpdate) {

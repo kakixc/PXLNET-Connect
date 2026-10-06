@@ -64,6 +64,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -105,6 +106,7 @@ fun GroupsCard(
     )
     val snackbarHostState = remember { SnackbarHostState() }
     val uiState by actualViewModel.uiState.collectAsState()
+    val context = LocalContext.current
 
     if (showTopBar) {
         val allCollapsed = uiState.expandedGroups.isEmpty()
@@ -159,8 +161,8 @@ fun GroupsCard(
         if (uiState.showCloseConnectionsSnackbar) {
             val result =
                 snackbarHostState.showSnackbar(
-                    message = "Close all connections?",
-                    actionLabel = "Close",
+                    message = context.getString(R.string.close_connections_confirm),
+                    actionLabel = context.getString(R.string.close),
                     duration = androidx.compose.material3.SnackbarDuration.Indefinite,
                     withDismissAction = true,
                 )
@@ -256,7 +258,7 @@ private fun GroupsCardContent(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            text = "No groups available",
+                            text = stringResource(R.string.empty_groups),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -388,7 +390,12 @@ private fun ProxyGroupItem(
 
                             Icon(
                                 imageVector = Icons.Default.ExpandMore,
-                                contentDescription = if (isExpanded) "Collapse" else "Expand",
+                                contentDescription =
+                                if (isExpanded) {
+                                    stringResource(R.string.collapse)
+                                } else {
+                                    stringResource(R.string.expand)
+                                },
                                 modifier =
                                 Modifier
                                     .size(24.dp)

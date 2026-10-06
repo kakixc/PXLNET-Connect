@@ -21,3 +21,4 @@ local.properties
 release.json
 third_party/sing-box/
 /*.apk
+/LOCAL_BRANCH_GUIDE.md
