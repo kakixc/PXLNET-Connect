@@ -10,6 +10,7 @@ class GitHubReleaseSelectionTest {
         [
           {
             "tag_name":"v0.6.4-beta", "draft":false, "prerelease":false,
+            "body":"## Что изменилось\n- Упростили выбор сервера\n- Исправили настройки",
             "html_url":"https://github.com/kakixc/PXLNET-Connect/releases/tag/v0.6.4-beta",
             "assets":[
               {"name":"SFA-version-metadata.json","browser_download_url":"https://example.test/beta/metadata"},
@@ -43,6 +44,7 @@ class GitHubReleaseSelectionTest {
         assertEquals("https://example.test/beta/arm64", selected?.apkUrl)
         assertEquals("https://example.test/beta/metadata", selected?.metadataUrl)
         assertEquals(true, selected?.prerelease)
+        assertEquals("## Что изменилось\n- Упростили выбор сервера\n- Исправили настройки", selected?.releaseNotes)
     }
 
     @Test

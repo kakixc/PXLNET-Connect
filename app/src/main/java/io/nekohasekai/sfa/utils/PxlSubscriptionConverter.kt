@@ -1,5 +1,7 @@
 package io.nekohasekai.sfa.utils
 
+import io.nekohasekai.sfa.Application
+import io.nekohasekai.sfa.R
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -17,6 +19,9 @@ import java.util.Base64
 
 /** Converts common share-link subscriptions into a sing-box configuration. */
 object PxlSubscriptionConverter {
+    private fun message(resourceId: Int, fallback: String): String =
+        runCatching { Application.application.getString(resourceId) }.getOrDefault(fallback)
+
     data class Result(
         val config: String,
         val serverCount: Int,
@@ -44,7 +49,7 @@ object PxlSubscriptionConverter {
                 .toList()
 
         require(links.isNotEmpty()) {
-            "Подписка не содержит поддерживаемых серверов VLESS или Hysteria2"
+            message(R.string.pxlnet_import_no_supported_servers, "Subscription has no supported VLESS or Hysteria2 servers")
         }
 
         val (xhttpLinks, compatibleLinks) = links.partition { link ->
@@ -52,7 +57,7 @@ object PxlSubscriptionConverter {
                 queryParameters(URI(link.replace(" ", "%20")).rawQuery)["type"].equals("xhttp", ignoreCase = true)
         }
         require(compatibleLinks.isNotEmpty()) {
-            "XHTTP пока не поддерживается текущим VPN-ядром. В подписке нет совместимых серверов."
+            message(R.string.pxlnet_import_only_xhttp, "XHTTP is not supported by this VPN core; no compatible servers remain")
         }
 
         val usedTags = mutableSetOf<String>()
@@ -291,10 +296,10 @@ object PxlSubscriptionConverter {
         val host = requireHost(uri)
         val port = requirePort(uri)
         val uuid = decode(uri.rawUserInfo.orEmpty())
-        require(uuid.isNotBlank()) { "В VLESS-ссылке отсутствует UUID" }
+        require(uuid.isNotBlank()) { message(R.string.pxlnet_import_missing_uuid, "VLESS link has no UUID") }
         val query = queryParameters(uri.rawQuery)
         require(!query["type"].equals("xhttp", ignoreCase = true)) {
-            "XHTTP пока не поддерживается текущим VPN-ядром. Этот сервер нельзя импортировать без совместимого ядра."
+            message(R.string.pxlnet_import_xhttp_server, "XHTTP requires a compatible VPN core")
         }
         val tag = uniqueTag(serverTag(uri.rawFragment, host, "VLESS"), usedTags)
 
@@ -372,7 +377,9 @@ object PxlSubscriptionConverter {
         }
         if (reality) {
             val publicKey = query["pbk"] ?: query["public_key"]
-            require(!publicKey.isNullOrBlank()) { "В VLESS Reality-ссылке отсутствует public key" }
+            require(!publicKey.isNullOrBlank()) {
+                message(R.string.pxlnet_import_missing_reality_key, "VLESS Reality link has no public key")
+            }
             put(
                 "reality",
                 buildJsonObject {
@@ -454,10 +461,12 @@ object PxlSubscriptionConverter {
         return candidate
     }
 
-    private fun requireHost(uri: URI): String = requireNotNull(uri.host) { "В ссылке сервера отсутствует адрес" }.removePrefix("[").removeSuffix("]")
+    private fun requireHost(uri: URI): String = requireNotNull(uri.host) {
+        message(R.string.pxlnet_import_missing_host, "Server link has no address")
+    }.removePrefix("[").removeSuffix("]")
 
     private fun requirePort(uri: URI): Int {
-        require(uri.port in 1..65535) { "В ссылке сервера отсутствует корректный порт" }
+        require(uri.port in 1..65535) { message(R.string.pxlnet_import_invalid_port, "Server link has no valid port") }
         return uri.port
     }
 

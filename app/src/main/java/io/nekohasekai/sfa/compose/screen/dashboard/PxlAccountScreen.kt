@@ -53,6 +53,7 @@ import io.nekohasekai.sfa.compose.component.PxlRootTopBar
 import io.nekohasekai.sfa.compose.navigation.NewProfileArgs
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.utils.PxlLinks
+import io.nekohasekai.sfa.utils.SubscriptionInfoStore
 
 @Composable
 fun PxlAccountScreen(
@@ -61,7 +62,8 @@ fun PxlAccountScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
-    val isLoggedIn = uiState.telegramAccountName != null || uiState.telegramUsername != null
+    val hasSession = uiState.hasTelegramSession
+    val hasVerifiedAccount = uiState.accountLastVerifiedAt != null
 
     LaunchedEffect(uiState.telegramLoginError) {
         uiState.telegramLoginError?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
@@ -95,21 +97,23 @@ fun PxlAccountScreen(
                         Text(
                             uiState.telegramAccountName
                                 ?: uiState.telegramUsername?.let { "@$it" }
-                                ?: stringResource(R.string.pxlnet_guest_mode),
+                                ?: stringResource(if (hasSession) R.string.pxlnet_account_title else R.string.pxlnet_guest_mode),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            stringResource(
-                                if (isLoggedIn) R.string.pxlnet_signed_in_telegram
-                                else R.string.pxlnet_guest_mode_description,
-                            ),
+                            stringResource(when {
+                                !hasSession -> R.string.pxlnet_guest_mode_description
+                                !hasVerifiedAccount -> R.string.pxlnet_account_not_verified
+                                uiState.accountServiceAvailable == false -> R.string.pxlnet_account_saved_data_offline
+                                else -> R.string.pxlnet_signed_in_telegram
+                            }),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
 
-                if (isLoggedIn) {
+                if (hasSession) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -127,14 +131,18 @@ fun PxlAccountScreen(
                                 fontWeight = FontWeight.Medium,
                             )
                             Text(
-                                if (uiState.telegramSubscriptionActive) {
+                                if (!hasVerifiedAccount) {
+                                    stringResource(R.string.pxlnet_account_status_unknown)
+                                } else if (uiState.telegramSubscriptionActive) {
                                     formatAccountExpiry(uiState.telegramSubscriptionExpiresAt)?.let {
                                         stringResource(R.string.pxlnet_subscription_active_until, it)
                                     } ?: stringResource(R.string.pxlnet_subscription_active)
                                 } else {
                                     stringResource(R.string.pxlnet_subscription_inactive)
                                 },
-                                color = if (uiState.telegramSubscriptionActive) {
+                                color = if (!hasVerifiedAccount) {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                } else if (uiState.telegramSubscriptionActive) {
                                     MaterialTheme.colorScheme.primary
                                 } else {
                                     MaterialTheme.colorScheme.error
@@ -165,17 +173,14 @@ fun PxlAccountScreen(
                                 Text(stringResource(R.string.pxlnet_refresh))
                             }
                         }
-                        Button(
-                            onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp),
-                        ) {
-                            Text(
-                                stringResource(
-                                    if (uiState.telegramSubscriptionActive) R.string.pxlnet_renew
-                                    else R.string.pxlnet_buy,
-                                ),
-                            )
+                        if (hasVerifiedAccount) {
+                            Button(
+                                onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp),
+                            ) {
+                                Text(stringResource(if (uiState.telegramSubscriptionActive) R.string.pxlnet_renew else R.string.pxlnet_buy))
+                            }
                         }
                     }
                     TextButton(onClick = viewModel::logoutTelegram) {
@@ -205,7 +210,7 @@ fun PxlAccountScreen(
             }
         }
 
-        if (!isLoggedIn) {
+        if (!hasSession) {
             item {
                 PxlAccountCard {
                     Row(
@@ -230,6 +235,15 @@ fun PxlAccountScreen(
                                 ),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            if (uiState.selectedProfileId > 0) {
+                                SubscriptionInfoStore.summary(context, uiState.selectedProfileId)?.let { summary ->
+                                    Text(
+                                        stringResource(R.string.pxlnet_link_summary, summary),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
                         }
                     }
                     if (uiState.selectedProfileId <= 0) {
@@ -266,7 +280,7 @@ fun PxlAccountScreen(
                 )
                 PxlPulsePanel(
                     serviceAvailable = uiState.accountServiceAvailable,
-                    isLoggedIn = isLoggedIn,
+                    isLoggedIn = hasSession,
                     subscriptionActive = uiState.telegramSubscriptionActive,
                     hasLocalSubscription = uiState.selectedProfileId > 0,
                     serverCount = uiState.availableServerTags.count { !it.equals("AUTO", true) },

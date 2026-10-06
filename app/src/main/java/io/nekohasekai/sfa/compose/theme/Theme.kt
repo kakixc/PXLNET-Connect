@@ -38,6 +38,7 @@ enum class AppAccent(val persistedValue: String, val swatch: Color) {
     CORAL("coral", Color(0xFFFFB4A1)),
     AMBER("amber", Color(0xFFEFC76A)),
     ROSE("rose", Color(0xFFF4B0CC)),
+    COSMOS("cosmos", Color(0xFF9BA9FF)),
     ;
 
     companion object {
@@ -130,6 +131,7 @@ private fun AppAccent.roles(): AccentRoles = when (this) {
     AppAccent.CORAL -> AccentRoles(Color(0xFFFFB4A1), Color(0xFF5F1606), Color(0xFF862B18), Color(0xFFA33E29), Color(0xFFFFDAD0), Color(0xFF3B0800))
     AppAccent.AMBER -> AccentRoles(Color(0xFFEFC76A), Color(0xFF423000), Color(0xFF604600), Color(0xFF7D5B00), Color(0xFFFFE5A6), Color(0xFF291B00))
     AppAccent.ROSE -> AccentRoles(Color(0xFFF4B0CC), Color(0xFF5C1238), Color(0xFF7C2B50), Color(0xFF963D62), Color(0xFFFFD9E5), Color(0xFF3B071E))
+    AppAccent.COSMOS -> AccentRoles(Color(0xFFB3C5FF), Color(0xFF17205C), Color(0xFF303B86), Color(0xFF4654A9), Color(0xFFDDE3FF), Color(0xFF10183F))
     AppAccent.WALLPAPER -> error("Wallpaper accent uses dynamic colour or the PXLNET fallback")
 }
 

@@ -1,6 +1,7 @@
 package io.nekohasekai.sfa.update
 
 import androidx.compose.runtime.mutableStateOf
+import android.content.Context
 import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.database.Settings
 import java.io.File
@@ -26,6 +27,10 @@ object UpdateState {
     val installStatus = mutableStateOf<InstallStatus>(InstallStatus.Idle)
 
     fun setUpdate(info: UpdateInfo?) {
+        if (info?.versionCode != updateInfo.value?.versionCode) {
+            cachedApkFile.value = null
+            Settings.cachedApkPath = ""
+        }
         updateInfo.value = info
         hasUpdate.value = info != null
         saveToCache(info)
@@ -52,7 +57,7 @@ object UpdateState {
         downloadError.value = null
     }
 
-    fun loadFromCache() {
+    fun loadFromCache(context: Context) {
         val json = Settings.cachedUpdateInfo
         if (json.isBlank()) return
 
@@ -68,10 +73,11 @@ object UpdateState {
         val apkPath = Settings.cachedApkPath
         if (apkPath.isNotBlank()) {
             val apkFile = File(apkPath)
-            if (apkFile.exists() && apkFile.length() > 0) {
+            if (UpdateApkVerifier.isValid(context, apkFile, info)) {
                 cachedApkFile.value = apkFile
             } else {
                 Settings.cachedApkPath = ""
+                cachedApkFile.value = null
             }
         }
     }
@@ -83,6 +89,11 @@ object UpdateState {
     fun saveApkPath(file: File) {
         Settings.cachedApkPath = file.absolutePath
         cachedApkFile.value = file
+    }
+
+    fun clearCachedApkPath() {
+        Settings.cachedApkPath = ""
+        cachedApkFile.value = null
     }
 
     private fun clearCache() {

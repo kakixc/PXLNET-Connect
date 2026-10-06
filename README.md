@@ -2,9 +2,9 @@
 
 ## 📥 Скачать PXLNET Connect
 
-[![Universal](https://img.shields.io/badge/Download-Universal-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/kakixc/PXLNET-Connect/releases/download/v0.6.5-beta/PXLNET-Connect-0.6.5-beta-universal.apk)
+[![Universal](https://img.shields.io/badge/Download-Universal-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/kakixc/PXLNET-Connect/releases/download/v0.6.9-beta/PXLNET-Connect-0.6.9-beta-universal.apk)
 
-[![ARM64-v8a](https://img.shields.io/badge/Download-ARM64--v8a-181717?style=for-the-badge&logo=android&logoColor=white)](https://github.com/kakixc/PXLNET-Connect/releases/download/v0.6.5-beta/PXLNET-Connect-0.6.5-beta-arm64-v8a.apk)
+[![ARM64-v8a](https://img.shields.io/badge/Download-ARM64--v8a-181717?style=for-the-badge&logo=android&logoColor=white)](https://github.com/kakixc/PXLNET-Connect/releases/download/v0.6.9-beta/PXLNET-Connect-0.6.9-beta-arm64-v8a.apk)
 
 **Universal** — выбирайте, если не знаете архитектуру устройства.  
 **ARM64-v8a** — для большинства современных Android-смартфонов, сборка немного компактнее.
@@ -49,13 +49,13 @@
 
 ## Быстрый тест на телефоне
 
-1. Установить arm64 APK из `app/build/outputs/apk/other/debug/`.
+1. Скачать ARM64-v8a или Universal APK кнопкой выше и установить поверх прежней бета-версии.
 2. Открыть приложение и нажать добавление профиля.
 3. Выбрать «Добавить подписку», вставить URL и сохранить.
 4. Нажать большую кнопку запуска и подтвердить системный запрос Android на создание VPN.
-5. После подключения открыть карточку группы PXLNET: там доступны AUTO, серверы с флагами и проверка задержки.
+5. Открыть «Выбор сервера». Для ручного узла можно проверить отклик VPN-сервера до подключения; AUTO остаётся автоматическим выбором и не имеет отдельного серверного пинга.
 
-Debug APK подписан стандартным отладочным ключом и предназначен только для beta-теста. Ссылки подписок в исходники и APK не вшиваются.
+Release APK подписаны прежним ключом PXLNET Connect и подходят для обновления поверх установленных бета-версий. Ссылки подписок в исходники и APK не вшиваются.
 
 ## Сборка
 
@@ -66,6 +66,8 @@ Debug APK подписан стандартным отладочным ключ�
 ```powershell
 git clone --branch v1.14.0-beta.7 https://github.com/SagerNet/sing-box.git third_party/sing-box
 git -C third_party/sing-box apply ../../patches/sing-box-pxlnet.patch
+git -C third_party/sing-box apply ../../patches/sing-box-server-probe.patch
+git -C third_party/sing-box apply ../../patches/sing-box-preconnect-probe.patch
 $env:GOROOT = 'путь-к-Go-1.25.12'
 $env:ANDROID_HOME = 'путь-к-Android-SDK'
 $env:ANDROID_NDK_HOME = Join-Path $env:ANDROID_HOME 'ndk/28.0.13004108'
