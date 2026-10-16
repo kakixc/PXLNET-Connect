@@ -11,6 +11,7 @@ import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.Notification
 import io.nekohasekai.libbox.TunOptions
 import io.nekohasekai.sfa.database.Settings
+import io.nekohasekai.sfa.xray.PxlXrayController
 import io.nekohasekai.sfa.ktx.toIpPrefix
 import io.nekohasekai.sfa.ktx.toList
 import kotlinx.coroutines.Dispatchers
@@ -24,7 +25,11 @@ class VPNService :
         private const val TAG = "VPNService"
     }
 
-    private val service = BoxService(this, this)
+    // Xray is bound only to the VPN owner. ProxyService never owns an XHTTP sidecar.
+    private val xraySession: PxlXrayController by lazy {
+        PxlXrayController(this, onUnexpectedDeath = { service.onXrayUnexpectedDeath() })
+    }
+    private val service: BoxService by lazy { BoxService(this, this, xraySession) }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = service.onStartCommand()
 

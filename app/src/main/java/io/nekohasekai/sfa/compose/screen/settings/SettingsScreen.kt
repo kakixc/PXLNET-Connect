@@ -22,18 +22,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
-import androidx.compose.material.icons.outlined.Animation
 import androidx.compose.material.icons.outlined.BatteryChargingFull
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Campaign
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.FilterAlt
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.NotificationsActive
-import androidx.compose.material.icons.outlined.Pets
 import androidx.compose.material.icons.outlined.Security
+import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SettingsRemote
 import androidx.compose.material.icons.outlined.SupportAgent
@@ -70,6 +68,8 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.navigation.NavController
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.component.PxlRootTopBar
+import io.nekohasekai.sfa.compose.component.LocalPxlTopBarInset
+import io.nekohasekai.sfa.compose.component.LocalPxlFloatingNavInset
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.update.UpdateState
 import io.nekohasekai.sfa.vendor.UpdateNotification
@@ -77,7 +77,6 @@ import io.nekohasekai.sfa.utils.PxlDeveloperMode
 import io.nekohasekai.sfa.utils.PxlDiagnostics
 import io.nekohasekai.sfa.utils.PxlLinks
 import io.nekohasekai.sfa.utils.PxlLocalPreferences
-import io.nekohasekai.sfa.utils.PxlMascotSettings
 import io.nekohasekai.sfa.utils.PxlSubscriptionReminderSettings
 import io.nekohasekai.sfa.utils.PxlSupportReport
 import kotlinx.coroutines.launch
@@ -98,13 +97,18 @@ fun SettingsScreen(navController: NavController) {
     var diagnosticReport by remember { mutableStateOf<PxlSupportReport?>(null) }
     var checkingDiagnostics by remember { mutableStateOf(false) }
     val developerMode by PxlDeveloperMode.enabled.collectAsState()
-    val mascotEnabled by PxlMascotSettings.enabled.collectAsState()
-    val mascotAnimationsEnabled by PxlMascotSettings.animationsEnabled.collectAsState()
-    val mascotTipsEnabled by PxlMascotSettings.tipsEnabled.collectAsState()
     val subscriptionRemindersEnabled by PxlSubscriptionReminderSettings.enabled.collectAsState()
     val hasUpdate by UpdateState.hasUpdate
     var guardEnabled by remember { mutableStateOf(PxlLocalPreferences.isGuardEnabled(context)) }
-    var batteryOptimizationIgnored by remember { mutableStateOf(false) }
+    val topBarInset = LocalPxlTopBarInset.current
+    val floatingNavInset = LocalPxlFloatingNavInset.current
+    var batteryOptimizationIgnored by remember(context) {
+        mutableStateOf(
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
+                context.getSystemService(PowerManager::class.java)
+                    ?.isIgnoringBatteryOptimizations(context.packageName) == true,
+        )
+    }
     fun refreshBatteryOptimization() {
         batteryOptimizationIgnored = Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
             context.getSystemService(PowerManager::class.java)
@@ -174,8 +178,26 @@ fun SettingsScreen(navController: NavController) {
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .verticalScroll(rememberScrollState())
-            .padding(vertical = 8.dp),
+            .padding(top = topBarInset + 8.dp, bottom = floatingNavInset + 8.dp),
     ) {
+        Card(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        ) {
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.title_app_settings)) },
+                supportingContent = { Text(stringResource(R.string.pxlnet_app_settings_summary)) },
+                leadingContent = {
+                    Icon(Icons.Outlined.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                },
+                trailingContent = {
+                    if (hasUpdate) Badge(containerColor = MaterialTheme.colorScheme.primary)
+                },
+                modifier = Modifier.clickable { navController.navigate("settings/app") },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
+        }
         Text(
             text = stringResource(R.string.pxlnet_settings_connection),
             style = MaterialTheme.typography.labelLarge,
@@ -188,6 +210,15 @@ fun SettingsScreen(navController: NavController) {
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         ) {
             Column {
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.pxlnet_settings_subscriptions)) },
+                supportingContent = { Text(stringResource(R.string.pxlnet_settings_subscriptions_summary)) },
+                leadingContent = {
+                    Icon(Icons.Outlined.Sync, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                },
+                modifier = Modifier.clickable { navController.navigate("settings/subscriptions") },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
             ListItem(
                 headlineContent = { Text(stringResource(R.string.pxlnet_settings_always_on_title)) },
                 supportingContent = { Text(stringResource(R.string.pxlnet_settings_always_on_summary)) },
@@ -225,16 +256,11 @@ fun SettingsScreen(navController: NavController) {
                 },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             )
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !batteryOptimizationIgnored) {
                 ListItem(
                     headlineContent = { Text(stringResource(R.string.request_background_permission)) },
                     supportingContent = {
-                        Text(
-                            stringResource(
-                                if (batteryOptimizationIgnored) R.string.pxlnet_battery_ignored_summary
-                                else R.string.pxlnet_battery_request_summary,
-                            ),
-                        )
+                        Text(stringResource(R.string.pxlnet_battery_request_summary))
                     },
                     leadingContent = {
                         Icon(
@@ -244,13 +270,8 @@ fun SettingsScreen(navController: NavController) {
                         )
                     },
                     modifier = Modifier.clickable {
-                        val action = if (batteryOptimizationIgnored) {
-                            AndroidSettings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS
-                        } else {
-                            AndroidSettings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
-                        }
-                        val intent = Intent(action).apply {
-                            if (!batteryOptimizationIgnored) data = Uri.parse("package:${context.packageName}")
+                        val intent = Intent(AndroidSettings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                            data = Uri.parse("package:${context.packageName}")
                         }
                         runCatching { batteryPermissionLauncher.launch(intent) }
                             .onFailure {
@@ -326,14 +347,7 @@ fun SettingsScreen(navController: NavController) {
             )
         }
 
-        Text(
-            text = stringResource(R.string.pxlnet_settings_appearance),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(horizontal = 32.dp, vertical = 8.dp),
-        )
-
-        // App appearance, subscription and advanced groups keep their existing settings keys.
+        // App settings contain appearance, updates and advanced preferences.
         Card(
             modifier =
             Modifier
@@ -346,104 +360,8 @@ fun SettingsScreen(navController: NavController) {
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         ) {
             Column {
-                ListItem(
-                    headlineContent = {
-                        Text(
-                            stringResource(R.string.title_app_settings),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    },
-                    supportingContent = { Text(stringResource(R.string.pxlnet_app_settings_summary)) },
-                    leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.Info,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    },
-                    trailingContent = {
-                        if (hasUpdate) {
-                            Badge(containerColor = MaterialTheme.colorScheme.primary)
-                        }
-                    },
-                    modifier =
-                    Modifier
-                        .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
-                        .clickable { navController.navigate("settings/app") },
-                    colors =
-                    ListItemDefaults.colors(
-                        containerColor = Color.Transparent,
-                    ),
-                )
-
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.pxlnet_mascot_setting_title)) },
-                    supportingContent = { Text(stringResource(R.string.pxlnet_mascot_setting_description)) },
-                    leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.Pets,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    },
-                    trailingContent = {
-                        Switch(
-                            checked = mascotEnabled,
-                            onCheckedChange = PxlMascotSettings::setEnabled,
-                        )
-                    },
-                    modifier = Modifier.clickable {
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        PxlMascotSettings.setEnabled(!mascotEnabled)
-                    },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                )
-
-                if (mascotEnabled) {
-                    ListItem(
-                        headlineContent = { Text(stringResource(R.string.pxlnet_mascot_animations_title)) },
-                        supportingContent = { Text(stringResource(R.string.pxlnet_mascot_animations_description)) },
-                        leadingContent = {
-                            Icon(Icons.Outlined.Animation, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        },
-                        trailingContent = {
-                            Switch(
-                                checked = mascotAnimationsEnabled,
-                                onCheckedChange = PxlMascotSettings::setAnimationsEnabled,
-                            )
-                        },
-                        modifier = Modifier.clickable {
-                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            PxlMascotSettings.setAnimationsEnabled(!mascotAnimationsEnabled)
-                        },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    )
-                    ListItem(
-                        headlineContent = { Text(stringResource(R.string.pxlnet_mascot_tips_title)) },
-                        supportingContent = { Text(stringResource(R.string.pxlnet_mascot_tips_description)) },
-                        leadingContent = {
-                            Icon(
-                                Icons.Outlined.ChatBubbleOutline,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        },
-                        trailingContent = {
-                            Switch(
-                                checked = mascotTipsEnabled,
-                                onCheckedChange = PxlMascotSettings::setTipsEnabled,
-                            )
-                        },
-                        modifier = Modifier.clickable {
-                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            PxlMascotSettings.setTipsEnabled(!mascotTipsEnabled)
-                        },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    )
-                }
-
                 Text(
-                    text = stringResource(R.string.pxlnet_settings_subscription),
+                    text = stringResource(R.string.pxlnet_settings_updates),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -473,7 +391,7 @@ fun SettingsScreen(navController: NavController) {
                 )
 
                 Text(
-                    text = stringResource(R.string.pxlnet_settings_advanced),
+                    text = stringResource(R.string.pxlnet_settings_developer),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),

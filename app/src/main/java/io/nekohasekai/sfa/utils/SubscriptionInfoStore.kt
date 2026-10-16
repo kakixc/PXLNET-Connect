@@ -3,6 +3,13 @@ package io.nekohasekai.sfa.utils
 import android.content.Context
 import android.text.format.Formatter
 import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.bg.BoxService
+import io.nekohasekai.sfa.bg.StartServiceCoordinator
+import io.nekohasekai.sfa.constant.Status
+import io.nekohasekai.sfa.database.Settings
+import io.nekohasekai.sfa.widget.PxlConnectWidgetProvider
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.text.DateFormat
 import java.time.Instant
 import java.time.LocalDate
@@ -14,9 +21,96 @@ import kotlin.math.ln
 import kotlin.math.pow
 
 object SubscriptionInfoStore {
+    private val _summaryRevision = MutableStateFlow(0)
+    val summaryRevision = _summaryRevision.asStateFlow()
     private const val PREFERENCES = "pxlnet_subscription_info"
     private const val ACCOUNT_EXPIRY = "account_expiry"
     private const val SKIPPED_XHTTP_SUFFIX = "_skipped_xhttp"
+    private const val SMART_STATUS_SUFFIX = "_smart_status"
+
+    enum class SmartStatus { ACTIVE, EXPIRED, PAUSED, BLOCKED, REVOKED, UNKNOWN }
+
+    /**
+     * The locally verifiable access state of one saved VPN profile.  UNKNOWN deliberately means
+     * "do not block": an unavailable account service must not take an existing guest or Legacy
+     * profile away from its owner.
+     */
+    enum class ConnectionAccess { ALLOWED, SMART_INACTIVE, LEGACY_EXPIRED }
+
+    internal fun isPxlManagedInactive(access: ConnectionAccess): Boolean =
+        access == ConnectionAccess.SMART_INACTIVE
+
+    internal fun parseSmartStatus(header: String?): SmartStatus? = when (header?.trim()?.lowercase()) {
+        null, "" -> null
+        "active" -> SmartStatus.ACTIVE
+        "expired" -> SmartStatus.EXPIRED
+        "paused" -> SmartStatus.PAUSED
+        "blocked" -> SmartStatus.BLOCKED
+        "revoked" -> SmartStatus.REVOKED
+        else -> SmartStatus.UNKNOWN
+    }
+
+    internal fun isExplicitInactiveSmartStatus(header: String?): Boolean =
+        parseSmartStatus(header) in setOf(SmartStatus.EXPIRED, SmartStatus.PAUSED, SmartStatus.BLOCKED, SmartStatus.REVOKED)
+
+    /** A successful server response may revoke access even when its config cannot be imported. */
+    fun recordExplicitInactiveResponse(context: Context, profileId: Long, header: String?): Boolean {
+        if (profileId <= 0 || !isExplicitInactiveSmartStatus(header)) return false
+        saveSmartStatus(context, profileId, header)
+        return true
+    }
+
+    fun saveSmartStatus(context: Context, profileId: Long, header: String?) {
+        val status = parseSmartStatus(header)
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit().apply {
+            if (status == null) remove("$profileId$SMART_STATUS_SUFFIX")
+            else putString("$profileId$SMART_STATUS_SUFFIX", status.name)
+        }.apply()
+        _summaryRevision.value += 1
+        PxlConnectWidgetProvider.updateAll(context)
+        if (profileId == Settings.selectedProfile &&
+            status in setOf(SmartStatus.EXPIRED, SmartStatus.PAUSED, SmartStatus.BLOCKED, SmartStatus.REVOKED) &&
+            StartServiceCoordinator.currentStatus() == Status.Started
+        ) {
+            BoxService.stop()
+        }
+    }
+
+    /** Foreground service checks again soon, and exactly at a nearer saved expiry. */
+    internal fun nextAccessCheckDelayMillis(expirySeconds: Long, nowSeconds: Long): Long =
+        if (expirySeconds > nowSeconds) (expirySeconds - nowSeconds).coerceAtMost(30) * 1000
+        else 30_000
+
+    fun smartStatus(context: Context, profileId: Long): SmartStatus? {
+        if (profileId <= 0) return null
+        val stored = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .getString("$profileId$SMART_STATUS_SUFFIX", null)
+        return stored?.let { runCatching { SmartStatus.valueOf(it) }.getOrNull() }
+    }
+
+    internal fun connectionAccess(
+        smartStatus: SmartStatus?,
+        legacyExpiry: Long,
+        nowSeconds: Long,
+    ): ConnectionAccess = when {
+        smartStatus in setOf(SmartStatus.EXPIRED, SmartStatus.PAUSED, SmartStatus.BLOCKED, SmartStatus.REVOKED) ->
+            ConnectionAccess.SMART_INACTIVE
+        // The profile-local expiry remains definite evidence even if an older Smart ACTIVE header
+        // has not been refreshed yet. A Smart UNKNOWN response is deliberately non-authoritative:
+        // preserve the existing guest/Legacy profile until a definite status arrives. Do not use
+        // account expiry: it may describe a Telegram account while this selected profile is independent.
+        smartStatus != SmartStatus.UNKNOWN && legacyExpiry > 0 && legacyExpiry <= nowSeconds -> ConnectionAccess.LEGACY_EXPIRED
+        else -> ConnectionAccess.ALLOWED
+    }
+
+    fun connectionAccess(context: Context, profileId: Long): ConnectionAccess {
+        if (profileId <= 0) return ConnectionAccess.ALLOWED
+        return connectionAccess(
+            smartStatus(context, profileId),
+            read(context, profileId)?.expire ?: 0,
+            System.currentTimeMillis() / 1000,
+        )
+    }
 
     data class Info(
         val upload: Long = 0,
@@ -25,12 +119,33 @@ object SubscriptionInfoStore {
         val expire: Long = 0,
     )
 
+    internal fun storedHeaderAfterAcceptedRefresh(header: String?): String? = header?.takeIf(String::isNotBlank)
+
+    internal fun profileMetadataKeys(profileId: Long): List<String> = listOf(
+        profileId.toString(),
+        "$profileId$SMART_STATUS_SUFFIX",
+        "$profileId$SKIPPED_XHTTP_SUFFIX",
+    )
+
+    /** Clears metadata bound to a deleted profile ID before that ID can be reused. */
+    fun clearProfile(context: Context, profileId: Long) {
+        if (profileId <= 0) return
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit().apply {
+            profileMetadataKeys(profileId).forEach(::remove)
+        }.apply()
+        _summaryRevision.value += 1
+        PxlConnectWidgetProvider.updateAll(context)
+    }
+
     fun save(context: Context, profileId: Long, header: String?) {
-        if (header.isNullOrBlank()) return
-        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-            .edit()
-            .putString(profileId.toString(), header)
-            .apply()
+        if (profileId <= 0) return
+        val storedHeader = storedHeaderAfterAcceptedRefresh(header)
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit().apply {
+            if (storedHeader == null) remove(profileId.toString())
+            else putString(profileId.toString(), storedHeader)
+        }.apply()
+        _summaryRevision.value += 1
+        PxlConnectWidgetProvider.updateAll(context)
     }
 
     fun saveSkippedXhttp(context: Context, profileId: Long, count: Int) {
@@ -88,8 +203,22 @@ object SubscriptionInfoStore {
     }
 
     fun summary(context: Context, profileId: Long): String? {
-        val info = read(context, profileId) ?: return null
-        return summary(
+        val smartStatus = smartStatus(context, profileId)
+        if (smartStatus != null && smartStatus != SmartStatus.ACTIVE) {
+            val label = when (smartStatus) {
+                SmartStatus.EXPIRED -> R.string.pxlnet_smart_status_expired
+                SmartStatus.PAUSED -> R.string.pxlnet_smart_status_paused
+                SmartStatus.BLOCKED -> R.string.pxlnet_smart_status_blocked
+                SmartStatus.REVOKED -> R.string.pxlnet_smart_status_revoked
+                else -> R.string.pxlnet_smart_status_unknown
+            }
+            return context.getString(label)
+        }
+        val info = read(context, profileId)
+            ?: return if (smartStatus == SmartStatus.ACTIVE) {
+                context.getString(R.string.pxlnet_smart_status_active_no_details)
+            } else null
+        val detail = summary(
             info,
             System.currentTimeMillis() / 1000,
             usage = { used, total ->
@@ -102,6 +231,9 @@ object SubscriptionInfoStore {
             future = { date -> context.getString(R.string.pxlnet_link_expiry_future, date) },
             expired = { date -> context.getString(R.string.pxlnet_link_expiry_expired, date) },
         )
+        return if (smartStatus == SmartStatus.ACTIVE) {
+            context.getString(R.string.pxlnet_smart_status_active, detail.orEmpty())
+        } else detail
     }
 
     internal fun summary(info: Info, nowSeconds: Long): String? = summary(

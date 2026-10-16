@@ -21,18 +21,29 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.PlayArrow
@@ -70,15 +81,23 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.Role
 import androidx.core.os.ConfigurationCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -106,6 +125,11 @@ import io.nekohasekai.sfa.compose.base.SelectableMessageDialog
 import io.nekohasekai.sfa.compose.base.UiEvent
 import io.nekohasekai.sfa.compose.component.RemoteStatusBar
 import io.nekohasekai.sfa.compose.component.ServiceStatusBar
+import io.nekohasekai.sfa.compose.component.LocalPxlTopBarInset
+import io.nekohasekai.sfa.compose.component.LocalPxlTopBarOverlay
+import io.nekohasekai.sfa.compose.component.LocalPxlTopBarServiceStatus
+import io.nekohasekai.sfa.compose.component.LocalPxlTopBarStatusText
+import io.nekohasekai.sfa.compose.component.LocalPxlFloatingNavInset
 import io.nekohasekai.sfa.compose.component.UpdateAvailableDialog
 import io.nekohasekai.sfa.compose.component.UptimeText
 import io.nekohasekai.sfa.compose.model.Connection
@@ -144,13 +168,18 @@ import io.nekohasekai.sfa.update.UpdateState
 import io.nekohasekai.sfa.update.UpdateInfo
 import io.nekohasekai.sfa.utils.PxlDeveloperMode
 import io.nekohasekai.sfa.utils.PxlLocalPreferences
+import io.nekohasekai.sfa.utils.PxlUiPreferences
 import io.nekohasekai.sfa.utils.RemoteControlManager
+import io.nekohasekai.sfa.utils.SubscriptionInfoStore
 import io.nekohasekai.sfa.vendor.Vendor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.HazeState
 
 class MainActivity :
     AppCompatActivity(),
@@ -231,6 +260,7 @@ class MainActivity :
             }
         }
         enableEdgeToEdge()
+        PxlUiPreferences.initialize(this)
 
         connection.reconnect()
         RemoteControlManager.restore()
@@ -347,6 +377,9 @@ class MainActivity :
 
     @SuppressLint("NewApi")
     fun startService() {
+        if (SubscriptionInfoStore.connectionAccess(this, Settings.selectedProfile) != SubscriptionInfoStore.ConnectionAccess.ALLOWED) {
+            return
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !ServiceNotification.checkPermission()) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             return
@@ -369,6 +402,7 @@ class MainActivity :
                 StartServiceCoordinator.currentStatus() ?: connection.status,
             )) {
                 StartServiceCoordinator.Decision.START -> Unit
+                StartServiceCoordinator.Decision.BLOCKED_BY_INACTIVE_SUBSCRIPTION -> return@launch
                 StartServiceCoordinator.Decision.OPEN_APP_FOR_NOTIFICATION_PERMISSION -> {
                     withContext(Dispatchers.Main) { onServiceAlert(Alert.RequestNotificationPermission, null) }
                     return@launch
@@ -443,6 +477,12 @@ class MainActivity :
         val windowSizeClass = currentWindowAdaptiveInfo().windowSizeClass
         val useNavigationRail =
             windowSizeClass.isWidthAtLeastBreakpointCompat(WindowSizeClassCompat.WIDTH_DP_MEDIUM_LOWER_BOUND)
+        val floatingNavigation by PxlUiPreferences.floatingNavigation.collectAsState()
+        val navigationBlur by PxlUiPreferences.navigationBlur.collectAsState()
+        val floatingNavigationLabels by PxlUiPreferences.floatingNavigationLabels.collectAsState()
+        val hazeState = remember { HazeState() }
+        var floatingNavHeightPx by remember { mutableIntStateOf(0) }
+        var glassTopBarHeightPx by remember { mutableIntStateOf(0) }
 
         // Snackbar state
         val snackbarHostState = remember { SnackbarHostState() }
@@ -1117,6 +1157,7 @@ class MainActivity :
         }
 
         val scaffoldContent: @Composable (PaddingValues) -> Unit = { paddingValues ->
+            val floatingPanelInset = LocalPxlFloatingNavInset.current
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -1131,6 +1172,7 @@ class MainActivity :
 
                 SFANavHost(
                     navController = navController,
+                    rootTabRoutes = (if (useNavigationRail) railScreens else visibleBottomNavigationScreens).map { it.route },
                     serviceStatus = currentServiceStatus,
                     showStartFab = showStartFab,
                     showStatusBar = showStatusBar,
@@ -1151,7 +1193,7 @@ class MainActivity :
                 if (!useNavigationRail) {
                     if (isRemote) {
                         RemoteStatusBar(
-                            visible = !isSubScreen,
+                            visible = !isSubScreen && (!floatingNavigation || useNavigationRail || isDashboardRoute),
                             serverName = remoteServer?.displayName ?: "",
                             isConnected = remoteConnected,
                             startTime = remoteStartedAt,
@@ -1161,11 +1203,11 @@ class MainActivity :
                             connectionsCount = dashboardUiState.connectionsCount,
                             onConnectionsClick = { showConnectionsSheet = true },
                             onDisconnectClick = { RemoteControlManager.exitRemoteControl() },
-                            modifier = Modifier.align(Alignment.BottomCenter),
+                            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = floatingPanelInset),
                         )
                     } else {
                         ServiceStatusBar(
-                            visible = showStatusBar && !isSubScreen && !isDashboardRoute,
+                            visible = showStatusBar && !isSubScreen && !isDashboardRoute && (!floatingNavigation || useNavigationRail),
                             serviceStatus = currentServiceStatus,
                             startTime = dashboardUiState.serviceStartTime,
                             groupsCount = dashboardUiState.groupsCount,
@@ -1174,7 +1216,7 @@ class MainActivity :
                             connectionsCount = dashboardUiState.connectionsCount,
                             onConnectionsClick = { showConnectionsSheet = true },
                             onStopClick = { dashboardViewModel.toggleService() },
-                            modifier = Modifier.align(Alignment.BottomCenter),
+                            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = floatingPanelInset),
                         )
                     }
                 }
@@ -1305,7 +1347,8 @@ class MainActivity :
                         exit = scaleOut(),
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
-                            .padding(16.dp),
+                            .padding(16.dp)
+                            .padding(bottom = floatingPanelInset),
                     ) {
                         FloatingActionButton(
                             onClick = { startService() },
@@ -1334,7 +1377,32 @@ class MainActivity :
             }
         }
 
-        CompositionLocalProvider(LocalTopBarController provides topBarController) {
+        val glassChrome = !useNavigationRail && floatingNavigation && navigationBlur &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !isSubScreen &&
+            currentRootRoute in setOf(Screen.Dashboard.route, Screen.Account.route, Screen.Settings.route)
+        val floatingRoot = !useNavigationRail && floatingNavigation && !isSubScreen &&
+            currentRootRoute in setOf(Screen.Dashboard.route, Screen.Account.route, Screen.Settings.route)
+        val floatingPanelVisible = !useNavigationRail && floatingNavigation && !isSubScreen
+        val glassTopInset = if (glassChrome) {
+            if (glassTopBarHeightPx > 0) with(LocalDensity.current) { glassTopBarHeightPx.toDp() } else 88.dp
+        } else 0.dp
+        val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        val floatingNavInset = if (floatingPanelVisible) {
+            (if (floatingNavHeightPx > 0) with(LocalDensity.current) { floatingNavHeightPx.toDp() } else 76.dp) +
+                navigationBarInset + 24.dp
+        } else 0.dp
+
+        CompositionLocalProvider(
+            LocalTopBarController provides topBarController,
+            LocalPxlTopBarOverlay provides glassChrome,
+            LocalPxlTopBarInset provides glassTopInset,
+            LocalPxlFloatingNavInset provides floatingNavInset,
+            LocalPxlTopBarServiceStatus provides if (floatingPanelVisible && !isDashboardRoute) currentServiceStatus else Status.Stopped,
+            LocalPxlTopBarStatusText provides if (floatingPanelVisible && !isDashboardRoute && isRemote) {
+                if (remoteConnected) remoteServer?.displayName ?: stringResource(R.string.remote_connected)
+                else stringResource(R.string.remote_connecting)
+            } else null,
+        ) {
             if (useNavigationRail) {
                 Row(modifier = Modifier.fillMaxSize()) {
                     Surface(tonalElevation = 1.dp) {
@@ -1387,9 +1455,9 @@ class MainActivity :
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-                    topBar = topBarContent,
+                    topBar = { if (!glassChrome) topBarContent() },
                     bottomBar = {
-                        if (!isSubScreen) {
+                        if (!isSubScreen && !floatingNavigation) {
                             val hasUpdate by UpdateState.hasUpdate
                             NavigationBar(
                                 containerColor = MaterialTheme.colorScheme.surface,
@@ -1442,7 +1510,128 @@ class MainActivity :
                         }
                     },
                 ) { paddingValues ->
-                    scaffoldContent(paddingValues)
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .then(
+                                    if (floatingNavigation && navigationBlur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                        Modifier.hazeSource(hazeState)
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
+                        ) {
+                            val contentPadding = if (!isSubScreen && floatingNavigation) {
+                                val layoutDirection = LocalLayoutDirection.current
+                                val navHeight = with(LocalDensity.current) { floatingNavHeightPx.toDp() }
+                                PaddingValues(
+                                    start = paddingValues.calculateStartPadding(layoutDirection),
+                                    top = if (glassChrome) 0.dp else paddingValues.calculateTopPadding(),
+                                    end = paddingValues.calculateEndPadding(layoutDirection),
+                                    bottom = if (floatingRoot) 0.dp else navHeight + navigationBarInset + 24.dp,
+                                )
+                            } else {
+                                paddingValues
+                            }
+                            scaffoldContent(contentPadding)
+                        }
+                        if (glassChrome) {
+                            val topGlassSurface = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .fillMaxWidth()
+                                    .onSizeChanged { glassTopBarHeightPx = it.height }
+                                    .hazeEffect(hazeState) {
+                                        backgroundColor = topGlassSurface
+                                        blurRadius = 22.dp
+                                    },
+                            ) {
+                                topBarContent()
+                            }
+                        }
+                        if (!isSubScreen && floatingNavigation) {
+                            val canBlurNavigation = navigationBlur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                            val capsuleShape = RoundedCornerShape(36.dp)
+                            val capsuleSurface = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)
+                            Row(
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .padding(start = 16.dp, end = 16.dp, bottom = navigationBarInset + 12.dp)
+                                    .fillMaxWidth()
+                                    .onSizeChanged { floatingNavHeightPx = it.height }
+                                    .clip(capsuleShape)
+                                    .then(
+                                        if (canBlurNavigation) Modifier.hazeEffect(hazeState) {
+                                            backgroundColor = capsuleSurface
+                                            blurRadius = 22.dp
+                                        } else Modifier.background(MaterialTheme.colorScheme.surface),
+                                    )
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, capsuleShape)
+                                    .then(
+                                        if (visibleBottomNavigationScreens.size > 4) {
+                                            Modifier.horizontalScroll(rememberScrollState())
+                                        } else Modifier,
+                                    )
+                                    .padding(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                val hasUpdate by UpdateState.hasUpdate
+                                visibleBottomNavigationScreens.forEach { screen ->
+                                    val selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true
+                                    val title = stringResource(screen.titleRes)
+                                    val itemModifier = if (visibleBottomNavigationScreens.size <= 4) {
+                                        Modifier.weight(1f)
+                                    } else Modifier.width(84.dp)
+                                    Column(
+                                        modifier = itemModifier
+                                            .clip(RoundedCornerShape(30.dp))
+                                            .background(
+                                                if (selected) MaterialTheme.colorScheme.primaryContainer
+                                                else Color.Transparent,
+                                            )
+                                            .selectable(selected = selected, role = Role.Tab) {
+                                                navController.navigate(screen.route) {
+                                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                                    launchSingleTop = true
+                                                    restoreState = true
+                                                }
+                                            }
+                                            .padding(horizontal = 4.dp, vertical = if (floatingNavigationLabels) 8.dp else 10.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(3.dp),
+                                    ) {
+                                        val iconTint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                                            else MaterialTheme.colorScheme.onSurfaceVariant
+                                        Box(modifier = Modifier.height(28.dp), contentAlignment = Alignment.Center) {
+                                            if (screen == Screen.Settings && hasUpdate) {
+                                                BadgedBox(badge = { Badge(containerColor = MaterialTheme.colorScheme.primary) }) {
+                                                    Icon(screen.icon, contentDescription = title, tint = iconTint)
+                                                }
+                                            } else if (screen == Screen.Tools && toolsUnreadCount > 0) {
+                                                BadgedBox(badge = { Badge(containerColor = MaterialTheme.colorScheme.error) { Text("$toolsUnreadCount") } }) {
+                                                    Icon(screen.icon, contentDescription = title, tint = iconTint)
+                                                }
+                                            } else {
+                                                Icon(screen.icon, contentDescription = title, tint = iconTint)
+                                            }
+                                        }
+                                        if (floatingNavigationLabels && visibleBottomNavigationScreens.size <= 4) {
+                                            Text(
+                                                text = title,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                                color = iconTint,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

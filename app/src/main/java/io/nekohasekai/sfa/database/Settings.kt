@@ -77,10 +77,17 @@ object Settings {
     var dynamicNotification by dataStore.boolean(SettingsKey.DYNAMIC_NOTIFICATION) { true }
     var disableDeprecatedWarnings by dataStore.boolean(SettingsKey.DISABLE_DEPRECATED_WARNINGS) { false }
     var developerMode by dataStore.boolean(SettingsKey.DEVELOPER_MODE) { false }
-    var pxlnetMascotEnabled by dataStore.boolean(SettingsKey.PXLNET_MASCOT_ENABLED) { false }
+    var pxlnetMascotEnabled by dataStore.boolean(SettingsKey.PXLNET_MASCOT_ENABLED) { true }
     var pxlnetMascotAnimations by dataStore.boolean(SettingsKey.PXLNET_MASCOT_ANIMATIONS) { true }
     var pxlnetMascotTips by dataStore.boolean(SettingsKey.PXLNET_MASCOT_TIPS) { true }
     var pxlnetSubscriptionReminders by dataStore.boolean(SettingsKey.PXLNET_SUBSCRIPTION_REMINDERS) { true }
+    private var persistedSubscriptionUpdateInterval by dataStore.int(SettingsKey.PXLNET_SUBSCRIPTION_UPDATE_INTERVAL) { 60 }
+    var subscriptionUpdateIntervalMinutes: Int
+        get() = persistedSubscriptionUpdateInterval.takeIf { it == 60 || it == 360 || it == 720 } ?: 60
+        set(value) {
+            require(value == 60 || value == 360 || value == 720)
+            persistedSubscriptionUpdateInterval = value
+        }
     private var persistedThemeMode by dataStore.string(SettingsKey.PXLNET_THEME_MODE) { "system" }
     private val _themeModeState = mutableStateOf(persistedThemeMode)
     val themeModeState: State<String> get() = _themeModeState

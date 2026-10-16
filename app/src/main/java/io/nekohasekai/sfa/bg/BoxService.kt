@@ -38,15 +38,32 @@ import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.ktx.hasPermission
 import io.nekohasekai.sfa.vendor.Vendor
 import io.nekohasekai.sfa.widget.PxlConnectWidgetProvider
+import io.nekohasekai.sfa.utils.SubscriptionInfoStore
+import io.nekohasekai.sfa.utils.PxlXhttpActivation
+import io.nekohasekai.sfa.utils.PxlXhttpSidecar
+import io.nekohasekai.sfa.utils.PxlSubscriptionConverter
+import io.nekohasekai.sfa.xray.PxlXraySession
 import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 
-class BoxService(private val service: Service, private val platformInterface: PlatformInterface) : CommandServerHandler {
+class BoxService(
+    private val service: Service,
+    private val platformInterface: PlatformInterface,
+    private val xraySession: PxlXraySession? = null,
+) : CommandServerHandler {
     companion object {
         private const val PROFILE_UPDATE_INTERVAL = 15L * 60 * 1000 // 15 minutes in milliseconds
         private const val TAG = "BoxService"
@@ -72,6 +89,8 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     }
     private val binder = ServiceBinder(status)
     private val notification = ServiceNotification(status, service)
+    private val xrayStartGate = PxlXrayStartGate()
+    private val lifecycleMutex = Mutex()
     private lateinit var commandServer: CommandServer
 
     private var receiverRegistered = false
@@ -102,10 +121,68 @@ class BoxService(private val service: Service, private val platformInterface: Pl
         this.commandServer = commandServer
     }
 
-    private var lastProfileName = ""
+    private fun serviceOverrides() = OverrideOptions().apply {
+        autoRedirect = Settings.autoRedirect
+        if (Vendor.isPerAppProxyAvailable() && Settings.perAppProxyEnabled) {
+            val appList = Settings.getEffectivePerAppProxyList()
+            if (Settings.getEffectivePerAppProxyMode() == Settings.PER_APP_PROXY_INCLUDE) {
+                includePackage = PlatformInterfaceWrapper.StringArray((appList + Application.application.packageName).iterator())
+            } else {
+                excludePackage = PlatformInterfaceWrapper.StringArray((appList - Application.application.packageName).iterator())
+            }
+        }
+    }
 
-    private suspend fun startService() {
+    private suspend fun activateXhttp(configFile: File, generation: Long): Boolean {
+        val sidecar = PxlXhttpSidecar.read(configFile)
+        val pendingXhttpOnly = runCatching {
+            PxlSubscriptionConverter.serverSelection(configFile.readText()).let {
+                it.tags.isEmpty() && it.selectedTag.isEmpty()
+            }
+        }.getOrDefault(false)
+        val requiresXhttp = sidecar?.preferredTag != null || pendingXhttpOnly
+        val companion = xraySession ?: run {
+            if (sidecar != null) Log.w(TAG, "XHTTP activation: companion unavailable")
+            return !requiresXhttp
+        }
+        val result = PxlXhttpActivation(
+            session = companion,
+            reloadSingbox = { config ->
+                commandServer.startOrReloadService(config, serviceOverrides())
+            },
+            canContinue = { xrayStartGate.isStarting(generation) },
+        ).activate(configFile)
+        Log.i(TAG, "XHTTP activation: nodes=${sidecar?.links?.size ?: 0}, manual=$requiresXhttp, result=$result")
+        return if (requiresXhttp) {
+            result == PxlXhttpActivation.Result.Activated
+        } else {
+            result != PxlXhttpActivation.Result.Fatal
+        }
+    }
+
+    private var lastProfileName = ""
+    private val accessMonitorScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var accessMonitorJob: Job? = null
+
+    private fun monitorSelectedProfileAccess(profileId: Long) {
+        accessMonitorJob?.cancel()
+        accessMonitorJob = accessMonitorScope.launch {
+            while (isActive && Settings.selectedProfile == profileId) {
+                if (SubscriptionInfoStore.connectionAccess(Application.application, profileId) != SubscriptionInfoStore.ConnectionAccess.ALLOWED) {
+                    Log.i(TAG, "selected profile access expired; stopping service")
+                    PxlConnectWidgetProvider.updateAll(Application.application, Status.Stopped)
+                    BoxService.stop()
+                    break
+                }
+                val expiry = SubscriptionInfoStore.read(Application.application, profileId)?.expire ?: 0
+                delay(SubscriptionInfoStore.nextAccessCheckDelayMillis(expiry, System.currentTimeMillis() / 1000))
+            }
+        }
+    }
+
+    private suspend fun startService(startGeneration: Long): Unit = lifecycleMutex.withLock {
         try {
+            xraySession?.stop()
             withContext(Dispatchers.Main) {
                 notification.show(lastProfileName, R.string.status_starting)
             }
@@ -138,19 +215,7 @@ class BoxService(private val service: Service, private val platformInterface: Pl
             try {
                 commandServer.startOrReloadService(
                     content,
-                    OverrideOptions().apply {
-                        autoRedirect = Settings.autoRedirect
-                        if (Vendor.isPerAppProxyAvailable() && Settings.perAppProxyEnabled) {
-                            val appList = Settings.getEffectivePerAppProxyList()
-                            if (Settings.getEffectivePerAppProxyMode() == Settings.PER_APP_PROXY_INCLUDE) {
-                                includePackage =
-                                    PlatformInterfaceWrapper.StringArray((appList + Application.application.packageName).iterator())
-                            } else {
-                                excludePackage =
-                                    PlatformInterfaceWrapper.StringArray((appList - Application.application.packageName).iterator())
-                            }
-                        }
-                    },
+                    serviceOverrides(),
                 )
             } catch (e: Exception) {
                 stopAndAlert(Alert.CreateService, e.message)
@@ -170,11 +235,23 @@ class BoxService(private val service: Service, private val platformInterface: Pl
                 }
             }
 
-            status.postValue(Status.Started)
-            withContext(Dispatchers.Main) {
-                notification.show(lastProfileName, R.string.status_started)
+            if (!activateXhttp(File(profile.typed.path), startGeneration)) {
+                stopAndAlert(Alert.StartService)
+                return
             }
+
             notification.start()
+            val published = withContext(Dispatchers.Main) {
+                xrayStartGate.publish(startGeneration) {
+                    notification.show(lastProfileName, R.string.status_started)
+                    monitorSelectedProfileAccess(selectedProfileId)
+                    status.value = Status.Started
+                }
+            }
+            if (!published) {
+                stopAndAlert(Alert.StartService)
+                return
+            }
         } catch (e: Exception) {
             stopAndAlert(Alert.StartService, e.message)
             return
@@ -182,14 +259,23 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     }
 
     override fun serviceStop() {
-        notification.close()
-        status.postValue(Status.Starting)
-        val pfd = fileDescriptor
-        if (pfd != null) {
-            pfd.close()
-            fileDescriptor = null
+        xrayStartGate.close()
+        xraySession?.invalidate()
+        runBlocking {
+            lifecycleMutex.withLock {
+                accessMonitorJob?.cancel()
+                notification.close()
+                status.postValue(Status.Starting)
+                // The active selector may still target Xray's local SOCKS port.
+                closeService()
+                xraySession?.stop()
+                val pfd = fileDescriptor
+                if (pfd != null) {
+                    pfd.close()
+                    fileDescriptor = null
+                }
+            }
         }
-        closeService()
     }
 
     override fun serviceReload() {
@@ -198,8 +284,21 @@ class BoxService(private val service: Service, private val platformInterface: Pl
         }
     }
 
-    suspend fun serviceReload0() {
+    suspend fun serviceReload0(): Unit = lifecycleMutex.withLock {
+        // Native serviceStop() leaves the owner in Starting so a subsequent
+        // command-client reload must still be accepted. A queued reload after
+        // full shutdown, however, must never reopen the VPN.
+        if (status.value == Status.Stopped || status.value == Status.Stopping) return
         val selectedProfileId = Settings.selectedProfile
+        if (SubscriptionInfoStore.connectionAccess(Application.application, selectedProfileId) != SubscriptionInfoStore.ConnectionAccess.ALLOWED) {
+            if (status.value == Status.Started) stopService() else stopAndAlert(Alert.StartService)
+            return
+        }
+        val reloadGeneration = xrayStartGate.begin()
+        withContext(Dispatchers.Main) {
+            status.value = Status.Starting
+            notification.show(lastProfileName, R.string.status_starting)
+        }
         if (selectedProfileId == -1L) {
             stopAndAlert(Alert.EmptyConfiguration)
             return
@@ -220,20 +319,18 @@ class BoxService(private val service: Service, private val platformInterface: Pl
         try {
             commandServer.startOrReloadService(
                 content,
-                OverrideOptions().apply {
-                    autoRedirect = Settings.autoRedirect
-                    if (Vendor.isPerAppProxyAvailable() && Settings.perAppProxyEnabled) {
-                        val appList = Settings.getEffectivePerAppProxyList()
-                        if (Settings.getEffectivePerAppProxyMode() == Settings.PER_APP_PROXY_INCLUDE) {
-                            includePackage = PlatformInterfaceWrapper.StringArray((appList + Application.application.packageName).iterator())
-                        } else {
-                            excludePackage = PlatformInterfaceWrapper.StringArray((appList - Application.application.packageName).iterator())
-                        }
-                    }
-                },
+                serviceOverrides(),
             )
         } catch (e: Exception) {
             stopAndAlert(Alert.CreateService, e.message)
+            return
+        }
+        // StartOrReloadService closes the old sing-box instance before returning.
+        // Only now is it safe to remove its Xray loopback target.
+        xraySession?.invalidate()
+        xraySession?.stop()
+        if (!xrayStartGate.isStarting(reloadGeneration)) {
+            stopAndAlert(Alert.StartService)
             return
         }
 
@@ -249,6 +346,18 @@ class BoxService(private val service: Service, private val platformInterface: Pl
                 return
             }
         }
+        if (!activateXhttp(File(profile.typed.path), reloadGeneration)) {
+            stopAndAlert(Alert.StartService)
+            return
+        }
+        val published = withContext(Dispatchers.Main) {
+            xrayStartGate.publish(reloadGeneration) {
+                notification.show(lastProfileName, R.string.status_started)
+                monitorSelectedProfileAccess(selectedProfileId)
+                status.value = Status.Started
+            }
+        }
+        if (!published) stopAndAlert(Alert.StartService)
     }
 
     override fun getSystemProxyStatus(): SystemProxyStatus? {
@@ -275,7 +384,10 @@ class BoxService(private val service: Service, private val platformInterface: Pl
 
     @OptIn(DelicateCoroutinesApi::class)
     private fun stopService() {
+        xrayStartGate.close()
+        xraySession?.invalidate()
         if (status.value != Status.Started) return
+        accessMonitorJob?.cancel()
         status.value = Status.Stopping
         if (receiverRegistered) {
             service.unregisterReceiver(receiver)
@@ -283,16 +395,19 @@ class BoxService(private val service: Service, private val platformInterface: Pl
         }
         notification.close()
         GlobalScope.launch(Dispatchers.IO) {
-            val pfd = fileDescriptor
-            if (pfd != null) {
-                pfd.close()
-                fileDescriptor = null
-            }
-            DefaultNetworkMonitor.stop()
-            closeService()
-            commandServer.apply {
-                close()
+            lifecycleMutex.withLock {
+                closeService()
+                xraySession?.stop()
+                val pfd = fileDescriptor
+                if (pfd != null) {
+                    pfd.close()
+                    fileDescriptor = null
+                }
+                DefaultNetworkMonitor.stop()
+                commandServer.apply {
+                    close()
 //                Seq.destroyRef(refnum)
+                }
             }
             Settings.startedByUser = false
             withContext(Dispatchers.Main) {
@@ -311,8 +426,15 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     }
 
     private suspend fun stopAndAlert(type: Alert, message: String? = null) {
+        xrayStartGate.close()
+        xraySession?.invalidate()
+        accessMonitorJob?.cancel()
         StartServiceCoordinator.onStartFailed("$type${message?.let { ": $it" } ?: ""}")
         Settings.startedByUser = false
+        if (::commandServer.isInitialized) {
+            closeService()
+        }
+        xraySession?.stop()
         val pfd = fileDescriptor
         if (pfd != null) {
             pfd.close()
@@ -320,7 +442,6 @@ class BoxService(private val service: Service, private val platformInterface: Pl
         }
         DefaultNetworkMonitor.stop()
         if (::commandServer.isInitialized) {
-            closeService()
             commandServer.close()
         }
         withContext(Dispatchers.Main) {
@@ -341,6 +462,13 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     @Suppress("SameReturnValue")
     internal fun onStartCommand(): Int {
         if (status.value != Status.Stopped) return Service.START_NOT_STICKY
+        if (SubscriptionInfoStore.connectionAccess(Application.application, Settings.selectedProfile) != SubscriptionInfoStore.ConnectionAccess.ALLOWED) {
+            StartServiceCoordinator.onStartFailed("inactive selected subscription")
+            PxlConnectWidgetProvider.updateAll(Application.application, Status.Stopped)
+            service.stopSelf()
+            return Service.START_NOT_STICKY
+        }
+        val startGeneration = xrayStartGate.begin()
         status.value = Status.Starting
 
         if (!receiverRegistered) {
@@ -366,7 +494,7 @@ class BoxService(private val service: Service, private val platformInterface: Pl
                 stopAndAlert(Alert.StartCommandServer, e.message)
                 return@launch
             }
-            startService()
+            startService(startGeneration)
         }
         return Service.START_NOT_STICKY
     }
@@ -374,6 +502,11 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     internal fun onBind(): IBinder = binder
 
     internal fun onDestroy() {
+        xrayStartGate.close()
+        xraySession?.invalidate()
+        xraySession?.close()
+        accessMonitorJob?.cancel()
+        accessMonitorScope.cancel()
         StartServiceCoordinator.onServiceStatusChanged(Status.Stopped)
         PxlConnectWidgetProvider.updateAll(Application.application, Status.Stopped)
         status.removeObserver(widgetStatusObserver)
@@ -381,7 +514,14 @@ class BoxService(private val service: Service, private val platformInterface: Pl
     }
 
     internal fun onRevoke() {
+        xraySession?.invalidate()
         stopService()
+    }
+
+    internal fun onXrayUnexpectedDeath() {
+        // Address only this VPN owner; a package-wide close broadcast could also stop ProxyService.
+        xraySession?.invalidate()
+        if (xrayStartGate.reportDeath()) stopService()
     }
 
     internal fun sendNotification(notification: Notification) {

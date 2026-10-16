@@ -22,8 +22,11 @@ import io.nekohasekai.sfa.utils.CommandTarget
 import io.nekohasekai.sfa.utils.HTTPClient
 import io.nekohasekai.sfa.utils.PxlAuthClient
 import io.nekohasekai.sfa.utils.PxlRoutingPreferences
+import io.nekohasekai.sfa.utils.PxlServerProbeCache
 import io.nekohasekai.sfa.utils.PxlSecureTokenStore
 import io.nekohasekai.sfa.utils.PxlSubscriptionConverter
+import io.nekohasekai.sfa.utils.PxlXhttpSidecar
+import io.nekohasekai.sfa.utils.PxlXhttpConfig
 import io.nekohasekai.sfa.utils.RemoteControlManager
 import io.nekohasekai.sfa.utils.SubscriptionInfoStore
 import kotlinx.coroutines.Dispatchers
@@ -61,6 +64,7 @@ data class DashboardUiState(
     val profiles: List<Profile> = emptyList(),
     val selectedProfileId: Long = -1L,
     val selectedProfileName: String? = null,
+    val singleChoiceTargets: Map<String, String> = emptyMap(),
     val skippedXhttpCount: Int = 0,
     val isLoading: Boolean = false,
     val hasGroups: Boolean = false,
@@ -138,6 +142,7 @@ data class DashboardUiState(
     val telegramLoginError: String? = null,
     val accountServiceAvailable: Boolean? = null,
     val availableServerTags: List<String> = emptyList(),
+    val xhttpServers: Map<String, XhttpServer> = emptyMap(),
     val preferredServerTag: String = "AUTO",
     val switchingServerTag: String? = null,
     val serverSwitchFailed: Boolean = false,
@@ -145,6 +150,7 @@ data class DashboardUiState(
     val ecosystemLastCheckedAt: Long? = null,
 ) {
     data class DeprecatedNote(val message: String, val migrationLink: String?)
+    data class XhttpServer(val label: String, val type: String)
 }
 
 // DashboardViewModel now only uses UiEvent for all events
@@ -153,6 +159,7 @@ data class DashboardUiState(
 class DashboardViewModel :
     BaseViewModel<DashboardUiState, UiEvent>(),
     CommandClient.Handler {
+    val serverProbeCache = PxlServerProbeCache()
     private val _serviceStatus = MutableStateFlow(Status.Stopped)
     val serviceStatus: StateFlow<Status> = _serviceStatus.asStateFlow()
 
@@ -242,8 +249,9 @@ class DashboardViewModel :
                 val profiles = ProfileManager.list()
                 val selectedId = Settings.selectedProfile
                 val selectedProfile = profiles.find { it.id == selectedId }
-                val serverSelection = selectedProfile?.let(::prepareStoredProfile)
-                    ?: PxlSubscriptionConverter.ServerSelection(emptyList(), "AUTO")
+                val storedServers = selectedProfile?.let(::prepareStoredProfile)
+                    ?: StoredServers(PxlSubscriptionConverter.ServerSelection(emptyList(), "AUTO"), emptyMap())
+                val serverSelection = storedServers.selection
 
                 withContext(Dispatchers.Main) {
                     updateState {
@@ -251,9 +259,12 @@ class DashboardViewModel :
                             profiles = profiles,
                             selectedProfileId = selectedId,
                             selectedProfileName = selectedProfile?.name,
-                            skippedXhttpCount = SubscriptionInfoStore.skippedXhttp(Application.application, selectedId),
+                            skippedXhttpCount = (SubscriptionInfoStore.skippedXhttp(Application.application, selectedId) -
+                                storedServers.xhttpServers.size).coerceAtLeast(0),
                             availableServerTags = serverSelection.tags,
+                            xhttpServers = storedServers.xhttpServers,
                             preferredServerTag = serverSelection.selectedTag,
+                            singleChoiceTargets = serverSelection.singleChoiceTargets,
                         )
                     }
                 }
@@ -263,18 +274,32 @@ class DashboardViewModel :
         }
     }
 
-    private fun prepareStoredProfile(profile: Profile): PxlSubscriptionConverter.ServerSelection {
+    private data class StoredServers(
+        val selection: PxlSubscriptionConverter.ServerSelection,
+        val xhttpServers: Map<String, DashboardUiState.XhttpServer>,
+    )
+
+    private fun prepareStoredProfile(profile: Profile): StoredServers {
         val file = File(profile.typed.path)
-        if (!file.exists()) return PxlSubscriptionConverter.ServerSelection(emptyList(), "AUTO")
+        val empty = StoredServers(PxlSubscriptionConverter.ServerSelection(emptyList(), "AUTO"), emptyMap())
+        if (!file.exists()) return empty
         return runCatching {
             val original = file.readText()
             val migrated = PxlSubscriptionConverter.sanitizeConfig(original)
             if (migrated != original) {
                 Libbox.checkConfig(migrated)
-                file.writeText(migrated)
+                val xhttpSnapshot = PxlXhttpSidecar.read(file)
+                check(PxlXhttpSidecar.replaceConfig(file, migrated)) { "Cannot save profile config" }
+                xhttpSnapshot?.let { check(PxlXhttpSidecar.write(file, it.links, it.smartRevisions, it.preferredTag)) }
             }
-            PxlSubscriptionConverter.serverSelection(migrated)
-        }.getOrDefault(PxlSubscriptionConverter.ServerSelection(emptyList(), "AUTO"))
+            val base = PxlSubscriptionConverter.serverSelection(migrated)
+            val snapshot = PxlXhttpSidecar.read(file)
+            val xhttpServers = snapshot?.links.orEmpty().map { PxlXhttpConfig.presentation(it) }
+                .associate { it.tag to DashboardUiState.XhttpServer(it.label, it.type) }
+            val tags = (base.tags + xhttpServers.keys).distinct()
+            val selected = snapshot?.preferredTag?.takeIf(tags::contains) ?: base.selectedTag
+            StoredServers(PxlSubscriptionConverter.ServerSelection(tags, selected, base.singleChoiceTargets), xhttpServers)
+        }.getOrDefault(empty)
     }
 
     private fun checkDeprecatedNotes() {
@@ -415,13 +440,27 @@ class DashboardViewModel :
         // Handled directly in ProfilesCard
     }
 
-    fun setSmartRouting(enabled: Boolean) {
-        if (currentState.smartRoutingEnabled == enabled) return
+    fun setSmartRouting(enabled: Boolean, onCompleted: (Boolean) -> Unit = {}) {
+        if (currentState.smartRoutingEnabled == enabled) {
+            onCompleted(true)
+            return
+        }
+        val previousEnabled = currentState.smartRoutingEnabled
         PxlRoutingPreferences.setSmartRouting(Application.application, enabled)
         updateState { copy(smartRoutingEnabled = enabled) }
-        currentState.profiles
+        val selectedRemoteProfile = currentState.profiles
             .firstOrNull { it.id == currentState.selectedProfileId && it.typed.type == TypedProfile.Type.Remote }
-            ?.let(::updateProfile)
+        if (selectedRemoteProfile == null) {
+            onCompleted(true)
+            return
+        }
+        updateProfile(selectedRemoteProfile, smartRoutingEnabled = enabled) { updated ->
+            if (!updated) {
+                PxlRoutingPreferences.setSmartRouting(Application.application, previousEnabled)
+                updateState { copy(smartRoutingEnabled = previousEnabled) }
+            }
+            onCompleted(updated)
+        }
     }
 
     fun selectPreferredServer(tag: String) {
@@ -437,9 +476,18 @@ class DashboardViewModel :
                     ?: error(Application.application.getString(R.string.pxlnet_selected_profile_unavailable))
                 val file = File(profile.typed.path)
                 check(file.exists()) { Application.application.getString(R.string.pxlnet_selected_profile_file_unavailable) }
-                val updated = PxlSubscriptionConverter.selectServer(file.readText(), tag)
-                Libbox.checkConfig(updated)
-                file.writeText(updated)
+                val xhttpSnapshot = PxlXhttpSidecar.read(file)
+                if (tag in currentState.xhttpServers) {
+                    check(xhttpSnapshot?.links?.any { PxlXhttpConfig.presentation(it).tag == tag } == true) {
+                        "XHTTP server is no longer available"
+                    }
+                    check(PxlXhttpSidecar.select(file, tag)) { "Cannot save XHTTP server selection" }
+                } else {
+                    val updated = PxlSubscriptionConverter.selectServer(file.readText(), tag)
+                    Libbox.checkConfig(updated)
+                    check(PxlXhttpSidecar.replaceConfig(file, updated)) { "Cannot save profile config" }
+                    xhttpSnapshot?.let { check(PxlXhttpSidecar.write(file, it.links, it.smartRevisions)) }
+                }
                 updateState { copy(preferredServerTag = tag) }
                 if (_serviceStatus.value == Status.Started) {
                     CommandTarget.standaloneClient().selectOutbound("PXLNET", tag)
@@ -708,17 +756,27 @@ class DashboardViewModel :
             Application.application.getString(R.string.pxlnet_unsafe_subscription_url)
         }
         val response = HTTPClient().use { it.get(url) }
+        val existing = ProfileManager.list().firstOrNull {
+            it.typed.type == TypedProfile.Type.Remote && it.name == "PXLNET"
+        }
+        if (existing != null && SubscriptionInfoStore.recordExplicitInactiveResponse(
+                Application.application, existing.id, response.subscriptionStatus,
+            )
+        ) {
+            check(PxlXhttpSidecar.remove(File(existing.typed.path))) { "Cannot remove inactive XHTTP profile snapshot" }
+        }
         val conversion =
             PxlSubscriptionConverter.convert(
                 response.content,
                 PxlRoutingPreferences.isSmartRouting(Application.application),
+                response.subscriptionStatus,
+                response.subscriptionFormat,
+                response.omittedXhttpCount,
             )
-        val content = conversion.config
+        val previous = existing?.typed?.path?.let { File(it).takeIf(File::exists)?.readText() }
+        val content = previous?.let { PxlSubscriptionConverter.preserveSelectedServer(conversion.config, it) }
+            ?: conversion.config
         Libbox.checkConfig(content)
-
-        val existing = ProfileManager.list().firstOrNull {
-            it.typed.type == TypedProfile.Type.Remote && it.name == "PXLNET"
-        }
         val profile = existing ?: Profile(name = "PXLNET", typed = TypedProfile()).apply {
             userOrder = ProfileManager.nextOrder()
             typed.type = TypedProfile.Type.Remote
@@ -726,10 +784,11 @@ class DashboardViewModel :
             typed.path = File(Application.application.filesDir, "configs/$fileID.json").path
         }
         File(profile.typed.path).parentFile?.mkdirs()
-        File(profile.typed.path).writeText(content)
+        val configFile = File(profile.typed.path)
+        check(PxlXhttpSidecar.replaceConfig(configFile, content, response)) { "Cannot save XHTTP profile snapshot" }
         profile.typed.remoteURL = url
         profile.typed.autoUpdate = true
-        profile.typed.autoUpdateInterval = 60
+        profile.typed.autoUpdateInterval = Settings.subscriptionUpdateIntervalMinutes
         profile.typed.lastUpdated = Date()
         if (existing == null) {
             ProfileManager.create(profile, andSelect = true)
@@ -738,6 +797,7 @@ class DashboardViewModel :
             Settings.selectedProfile = profile.id
         }
         SubscriptionInfoStore.save(Application.application, profile.id, response.subscriptionUserInfo)
+        SubscriptionInfoStore.saveSmartStatus(Application.application, profile.id, response.subscriptionStatus)
         SubscriptionInfoStore.saveSkippedXhttp(Application.application, profile.id, conversion.skippedXhttpCount)
         UpdateProfileWork.reconfigureUpdater()
         if (_serviceStatus.value == Status.Started) {
@@ -755,7 +815,11 @@ class DashboardViewModel :
         }
     }
 
-    fun updateProfile(profile: Profile) {
+    fun updateProfile(
+        profile: Profile,
+        smartRoutingEnabled: Boolean? = null,
+        onCompleted: (Boolean) -> Unit = {},
+    ) {
         if (profile.typed.type != TypedProfile.Type.Remote) return
 
         viewModelScope.launch(Dispatchers.IO) {
@@ -766,26 +830,41 @@ class DashboardViewModel :
 
             try {
                 // Fetch remote config
+                val file = File(profile.typed.path)
+                val previousXhttp = PxlXhttpSidecar.read(file)
                 val response = HTTPClient().use { it.get(profile.typed.remoteURL) }
+                if (SubscriptionInfoStore.recordExplicitInactiveResponse(
+                        Application.application, profile.id, response.subscriptionStatus,
+                    )
+                ) {
+                    check(PxlXhttpSidecar.remove(File(profile.typed.path))) { "Cannot remove inactive XHTTP profile snapshot" }
+                }
                 val conversion =
                     PxlSubscriptionConverter.convert(
                         response.content,
-                        PxlRoutingPreferences.isSmartRouting(Application.application),
+                        smartRoutingEnabled ?: PxlRoutingPreferences.isSmartRouting(Application.application),
+                        response.subscriptionStatus,
+                        response.subscriptionFormat,
+                        response.omittedXhttpCount,
                     )
-                val content = conversion.config
+                val previous = file.takeIf(File::exists)?.readText()
+                val content = previous?.let { PxlSubscriptionConverter.preserveSelectedServer(conversion.config, it) }
+                    ?: conversion.config
                 Libbox.checkConfig(content)
-
                 // Check if content changed
-                val file = File(profile.typed.path)
                 var contentChanged = false
-                if (!file.exists() || file.readText() != content) {
-                    file.writeText(content)
+                check(PxlXhttpSidecar.replaceConfig(file, content, response)) { "Cannot save XHTTP profile snapshot" }
+                val xhttpChanged = (previousXhttp != null || response.xhttpLinks.isNotEmpty()) &&
+                    (previousXhttp?.links != response.xhttpLinks ||
+                        previousXhttp.smartRevisions != response.smartRevisions)
+                if (previous != content || xhttpChanged) {
                     contentChanged = true
                 }
 
                 // Update last updated time
                 profile.typed.lastUpdated = Date()
                 SubscriptionInfoStore.save(Application.application, profile.id, response.subscriptionUserInfo)
+                SubscriptionInfoStore.saveSmartStatus(Application.application, profile.id, response.subscriptionStatus)
                 SubscriptionInfoStore.saveSkippedXhttp(Application.application, profile.id, conversion.skippedXhttpCount)
                 ProfileManager.update(profile)
 
@@ -795,6 +874,7 @@ class DashboardViewModel :
                 // Show success state
                 withContext(Dispatchers.Main) {
                     updateState { copy(updatingProfileId = null, updatedProfileId = profile.id) }
+                    onCompleted(true)
                 }
 
                 // Clear success state after delay
@@ -814,6 +894,7 @@ class DashboardViewModel :
                 // Clear updating state on error
                 withContext(Dispatchers.Main) {
                     updateState { copy(updatingProfileId = null) }
+                    onCompleted(false)
                 }
             }
         }

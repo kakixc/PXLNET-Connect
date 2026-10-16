@@ -11,6 +11,7 @@ import io.nekohasekai.sfa.compose.MainActivity
 import io.nekohasekai.sfa.constant.ServiceMode
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Settings
+import io.nekohasekai.sfa.utils.SubscriptionInfoStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -27,6 +28,7 @@ internal object StartServiceCoordinator {
 
     enum class Decision {
         START,
+        BLOCKED_BY_INACTIVE_SUBSCRIPTION,
         OPEN_APP_FOR_NOTIFICATION_PERMISSION,
         OPEN_APP_FOR_VPN_PERMISSION,
         ALREADY_IN_PROGRESS,
@@ -36,6 +38,7 @@ internal object StartServiceCoordinator {
         val currentStatus: Status,
         val notificationPermissionGranted: Boolean,
         val vpnPermissionGranted: Boolean,
+        val connectionAccess: SubscriptionInfoStore.ConnectionAccess = SubscriptionInfoStore.ConnectionAccess.ALLOWED,
     )
 
     private data class PendingStart(
@@ -54,6 +57,7 @@ internal object StartServiceCoordinator {
     fun decide(prerequisites: Prerequisites): Decision =
         when {
             prerequisites.currentStatus != Status.Stopped -> Decision.ALREADY_IN_PROGRESS
+            prerequisites.connectionAccess != SubscriptionInfoStore.ConnectionAccess.ALLOWED -> Decision.BLOCKED_BY_INACTIVE_SUBSCRIPTION
             !prerequisites.notificationPermissionGranted -> Decision.OPEN_APP_FOR_NOTIFICATION_PERMISSION
             !prerequisites.vpnPermissionGranted -> Decision.OPEN_APP_FOR_VPN_PERMISSION
             else -> Decision.START
@@ -62,6 +66,9 @@ internal object StartServiceCoordinator {
     /** Rebuilds the service type before checking VPN permission, like the Home path does. */
     suspend fun preflight(context: Context, currentStatus: Status): Decision {
         if (isStartPending()) return Decision.ALREADY_IN_PROGRESS
+        if (SubscriptionInfoStore.connectionAccess(context, Settings.selectedProfile) != SubscriptionInfoStore.ConnectionAccess.ALLOWED) {
+            return Decision.BLOCKED_BY_INACTIVE_SUBSCRIPTION
+        }
         withContext(Dispatchers.IO) { Settings.rebuildServiceMode() }
         val vpnPermissionGranted =
             if (Settings.serviceMode != ServiceMode.VPN) {
@@ -74,12 +81,17 @@ internal object StartServiceCoordinator {
                 currentStatus = currentStatus,
                 notificationPermissionGranted = ServiceNotification.checkPermission(),
                 vpnPermissionGranted = vpnPermissionGranted,
+                connectionAccess = SubscriptionInfoStore.connectionAccess(context, Settings.selectedProfile),
             ),
         )
     }
 
     /** Starts only after [preflight] returned [Decision.START]. */
     fun start(source: Source): Boolean {
+        if (SubscriptionInfoStore.connectionAccess(Application.application, Settings.selectedProfile) != SubscriptionInfoStore.ConnectionAccess.ALLOWED) {
+            Log.i(TAG, "start blocked: inactive selected subscription source=$source")
+            return false
+        }
         val request = PendingStart(source, SystemClock.elapsedRealtime())
         if (!reserveStart(request)) {
             Log.d(TAG, "duplicate request ignored: source=$source status=${currentStatus()}")

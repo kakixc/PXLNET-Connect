@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa
 
+import android.app.ActivityManager
 import android.app.Application
 import android.app.NotificationManager
 import android.content.ClipboardManager
@@ -8,7 +9,9 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.net.ConnectivityManager
 import android.net.wifi.WifiManager
+import android.os.Build
 import android.os.PowerManager
+import android.os.Process
 import android.util.Log
 import androidx.core.content.getSystemService
 import io.nekohasekai.libbox.Libbox
@@ -37,6 +40,9 @@ class Application : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        val processName = currentProcessName()
+        if (PxlProcessRole.isXraySidecar(processName, packageName) ||
+            PxlProcessRole.isXrayProbe(processName, packageName)) return
         AppLifecycleObserver.register(this)
 
 //        Seq.setContext(this)
@@ -73,6 +79,20 @@ class Application : Application() {
                 },
             )
         }
+    }
+
+    private fun currentProcessName(): String? {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            return android.app.Application.getProcessName()
+        }
+        val manager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val fromManager = manager.runningAppProcesses?.firstOrNull { it.pid == Process.myPid() }?.processName
+        if (fromManager != null) return fromManager
+        return runCatching {
+            val bytes = File("/proc/self/cmdline").readBytes()
+            val end = bytes.indexOf(0).takeIf { it >= 0 } ?: bytes.size
+            String(bytes, 0, end, Charsets.UTF_8)
+        }.getOrNull()
     }
 
     private fun initialize(baseDir: File, workingDir: File?, tempDir: File) {

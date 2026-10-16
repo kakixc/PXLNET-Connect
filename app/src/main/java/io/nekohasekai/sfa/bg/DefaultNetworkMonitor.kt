@@ -1,7 +1,6 @@
 package io.nekohasekai.sfa.bg
 
 import android.net.Network
-import android.os.Build
 import io.nekohasekai.libbox.InterfaceUpdateListener
 import io.nekohasekai.sfa.Application
 import java.net.NetworkInterface
@@ -16,11 +15,9 @@ object DefaultNetworkMonitor {
             defaultNetwork = it
             checkDefaultInterfaceUpdate(it)
         }
-        defaultNetwork = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            Application.connectivity.activeNetwork
-        } else {
-            DefaultNetworkListener.get()
-        }
+        // activeNetwork may already be our VPN during a service reload. The listener
+        // tracks the underlying network selected for outbound sockets and DNS.
+        defaultNetwork = DefaultNetworkListener.get()
     }
 
     suspend fun stop() {

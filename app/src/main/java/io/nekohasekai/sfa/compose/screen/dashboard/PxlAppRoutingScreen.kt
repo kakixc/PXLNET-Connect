@@ -35,7 +35,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,10 +52,8 @@ import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.utils.PxlRoutingPreset
 import io.nekohasekai.sfa.utils.PxlRoutingPresets
+import io.nekohasekai.sfa.utils.PxlRoutingDiagnostics
 import io.nekohasekai.sfa.utils.PxlRoutingPreferences
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @Composable
 fun PxlAppRoutingScreen(
@@ -66,7 +63,6 @@ fun PxlAppRoutingScreen(
     onManageApps: () -> Unit,
 ) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
     val notifyApplyChange = rememberApplyServiceChangeNotifier(serviceStatus)
     val savedPreset = remember {
         PxlRoutingPreset.fromKey(Settings.pxlnetRoutingPreset).let { preset ->
@@ -82,6 +78,7 @@ fun PxlAppRoutingScreen(
         }
     }
     var mode by remember { mutableStateOf(savedPreset) }
+    var modeChangeInProgress by remember { mutableStateOf(false) }
     val presetPackages = remember {
         mapOf(
             PxlRoutingPreset.Games to PxlRoutingPresets.matchedPackages(context, PxlRoutingPreset.Games),
@@ -90,24 +87,35 @@ fun PxlAppRoutingScreen(
         )
     }
 
-    fun applyMode(next: PxlRoutingPreset) {
-        if (mode == next) return
+    fun applyMode(next: PxlRoutingPreset, onApplied: () -> Unit = {}) {
+        if (mode == next || modeChangeInProgress) return
         val packages = presetPackages[next].orEmpty()
         if (next in setOf(PxlRoutingPreset.Games, PxlRoutingPreset.Video, PxlRoutingPreset.Banks) && packages.isEmpty()) {
-            PxlRoutingPresets.apply(context, PxlRoutingPreset.SelectedApps)
-            viewModel.setSmartRouting(false)
-            mode = PxlRoutingPreset.SelectedApps
-            Toast.makeText(context, R.string.pxlnet_preset_no_matches, Toast.LENGTH_LONG).show()
-            onManageApps()
+            if (mode == PxlRoutingPreset.SelectedApps) {
+                Toast.makeText(context, R.string.pxlnet_preset_no_matches, Toast.LENGTH_LONG).show()
+                onManageApps()
+                return
+            }
+            applyMode(PxlRoutingPreset.SelectedApps) {
+                Toast.makeText(context, R.string.pxlnet_preset_no_matches, Toast.LENGTH_LONG).show()
+                onManageApps()
+            }
             return
         }
-        mode = next
+        val previous = PxlRoutingPresets.snapshot(context)
         PxlRoutingPresets.apply(context, next, packages)
-        viewModel.setSmartRouting(next == PxlRoutingPreset.Smart)
-        coroutineScope.launch(Dispatchers.IO) {
-            withContext(Dispatchers.Main) {
+        modeChangeInProgress = true
+        viewModel.setSmartRouting(next == PxlRoutingPreset.Smart) { updated ->
+            modeChangeInProgress = false
+            if (updated) {
+                PxlRoutingDiagnostics.record(context, next, PxlRoutingDiagnostics.Outcome.Applied)
+                mode = next
                 notifyApplyChange(UiEvent.ApplyServiceChange.Mode.Reload)
                 Toast.makeText(context, R.string.pxlnet_mode_applied, Toast.LENGTH_SHORT).show()
+                onApplied()
+            } else {
+                PxlRoutingPresets.restore(context, previous)
+                PxlRoutingDiagnostics.record(context, next, PxlRoutingDiagnostics.Outcome.Reverted)
             }
         }
     }
@@ -152,6 +160,7 @@ fun PxlAppRoutingScreen(
                 title = stringResource(R.string.pxlnet_route_all_title),
                 description = stringResource(R.string.pxlnet_route_all_description),
                 selected = mode == PxlRoutingPreset.Full,
+                enabled = !modeChangeInProgress,
                 onClick = { applyMode(PxlRoutingPreset.Full) },
             )
         }
@@ -161,6 +170,7 @@ fun PxlAppRoutingScreen(
                 title = stringResource(R.string.pxlnet_route_smart_title),
                 description = stringResource(R.string.pxlnet_route_smart_description),
                 selected = mode == PxlRoutingPreset.Smart,
+                enabled = !modeChangeInProgress,
                 onClick = { applyMode(PxlRoutingPreset.Smart) },
             )
         }
@@ -173,6 +183,7 @@ fun PxlAppRoutingScreen(
                     presetPackages[PxlRoutingPreset.Games].orEmpty().size,
                 ),
                 selected = mode == PxlRoutingPreset.Games,
+                enabled = !modeChangeInProgress,
                 onClick = { applyMode(PxlRoutingPreset.Games) },
             )
         }
@@ -185,6 +196,7 @@ fun PxlAppRoutingScreen(
                     presetPackages[PxlRoutingPreset.Video].orEmpty().size,
                 ),
                 selected = mode == PxlRoutingPreset.Video,
+                enabled = !modeChangeInProgress,
                 onClick = { applyMode(PxlRoutingPreset.Video) },
             )
         }
@@ -197,6 +209,7 @@ fun PxlAppRoutingScreen(
                     presetPackages[PxlRoutingPreset.Banks].orEmpty().size,
                 ),
                 selected = mode == PxlRoutingPreset.Banks,
+                enabled = !modeChangeInProgress,
                 onClick = { applyMode(PxlRoutingPreset.Banks) },
             )
         }
@@ -206,6 +219,7 @@ fun PxlAppRoutingScreen(
                 title = stringResource(R.string.pxlnet_route_selected_title),
                 description = stringResource(R.string.pxlnet_route_selected_description),
                 selected = mode == PxlRoutingPreset.SelectedApps,
+                enabled = !modeChangeInProgress,
                 onClick = { applyMode(PxlRoutingPreset.SelectedApps) },
             )
         }
@@ -276,10 +290,11 @@ private fun RoutingModeCard(
     title: String,
     description: String,
     selected: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit,
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (selected) {
@@ -308,7 +323,7 @@ private fun RoutingModeCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            RadioButton(selected = selected, onClick = onClick)
+            RadioButton(selected = selected, onClick = onClick, enabled = enabled)
         }
     }
 }

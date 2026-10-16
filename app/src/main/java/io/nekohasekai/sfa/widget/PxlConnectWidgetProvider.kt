@@ -7,9 +7,11 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.widget.RemoteViews
+import androidx.core.content.ContextCompat
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.MainActivity
 import io.nekohasekai.sfa.bg.BoxService
@@ -18,6 +20,7 @@ import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.ProfileManager
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.utils.PxlLinks
+import io.nekohasekai.sfa.utils.PxlUiPreferences
 import io.nekohasekai.sfa.utils.PxlSubscriptionConverter
 import io.nekohasekai.sfa.utils.SubscriptionInfoStore
 import kotlinx.coroutines.CoroutineScope
@@ -59,6 +62,9 @@ class PxlConnectWidgetProvider : AppWidgetProvider() {
                             }
                         }
 
+                        StartServiceCoordinator.Decision.BLOCKED_BY_INACTIVE_SUBSCRIPTION ->
+                            updateAll(context, Status.Stopped)
+
                         StartServiceCoordinator.Decision.OPEN_APP_FOR_NOTIFICATION_PERMISSION,
                         StartServiceCoordinator.Decision.OPEN_APP_FOR_VPN_PERMISSION ->
                             withContext(Dispatchers.Main) {
@@ -81,10 +87,19 @@ class PxlConnectWidgetProvider : AppWidgetProvider() {
         fun updateAll(context: Context, status: Status? = null) {
             val appContext = context.applicationContext
             scope.launch {
+                updateAllNow(appContext, status)
+            }
+        }
+
+        /** Configuration activities must draw the new widget before reporting success to the launcher. */
+        suspend fun updateAllNow(context: Context, status: Status? = null, newWidgetId: Int? = null) {
+            withContext(Dispatchers.IO) {
+                val appContext = context.applicationContext
                 val manager = AppWidgetManager.getInstance(appContext)
                 val component = ComponentName(appContext, PxlConnectWidgetProvider::class.java)
-                val ids = manager.getAppWidgetIds(component)
-                if (ids.isEmpty()) return@launch
+                val ids = manager.getAppWidgetIds(component).toMutableSet()
+                if (newWidgetId != null && newWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) ids.add(newWidgetId)
+                if (ids.isEmpty()) return@withContext
                 val snapshot = readSnapshot(appContext, status)
                 ids.forEach { id ->
                     manager.updateAppWidget(
@@ -97,7 +112,9 @@ class PxlConnectWidgetProvider : AppWidgetProvider() {
 
         private suspend fun readSnapshot(context: Context, explicitStatus: Status?): WidgetSnapshot {
             val profile = runCatching { ProfileManager.get(Settings.selectedProfile) }.getOrNull()
-            val expiry = SubscriptionInfoStore.effectiveExpiry(context, Settings.selectedProfile)
+            // Account-wide PXLNET expiry must not describe an independent imported VPN profile.
+            val expiry = SubscriptionInfoStore.read(context, Settings.selectedProfile)?.expire ?: 0L
+            val access = SubscriptionInfoStore.connectionAccess(context, Settings.selectedProfile)
             val selectedServer = profile?.let {
                 runCatching {
                     val file = File(it.typed.path)
@@ -119,6 +136,7 @@ class PxlConnectWidgetProvider : AppWidgetProvider() {
                 profileName = profile?.name,
                 serverName = selectedServer,
                 daysLeft = daysLeft,
+                access = access,
             )
         }
 
@@ -127,14 +145,60 @@ class PxlConnectWidgetProvider : AppWidgetProvider() {
             options: Bundle,
             snapshot: WidgetSnapshot,
         ): RemoteViews {
-            val active = snapshot.status == Status.Started
-            val switching = snapshot.status == Status.Starting || snapshot.status == Status.Stopping
+            val inactiveSubscription = snapshot.access != SubscriptionInfoStore.ConnectionAccess.ALLOWED
+            val active = !inactiveSubscription && snapshot.status == Status.Started
+            val switching = !inactiveSubscription && (snapshot.status == Status.Starting || snapshot.status == Status.Stopping)
             val compact = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 180) < 180
+            val style = PxlUiPreferences.WidgetColorStyle.forAndroidVersion(
+                PxlUiPreferences.readWidgetColorStyle(context), Build.VERSION.SDK_INT,
+            )
+            val monet = style != PxlUiPreferences.WidgetColorStyle.CLASSIC
+            val soft = style == PxlUiPreferences.WidgetColorStyle.MONET_SOFT
             return RemoteViews(context.packageName, R.layout.pxlnet_widget).apply {
+                setInt(
+                    R.id.widget_root,
+                    "setBackgroundResource",
+                    when {
+                        soft -> R.drawable.pxlnet_widget_soft_background
+                        monet -> R.drawable.pxlnet_widget_monet_background
+                        else -> R.drawable.pxlnet_widget_background
+                    },
+                )
+                setImageViewResource(
+                    R.id.widget_brand_icon,
+                    when {
+                        soft -> R.drawable.ic_qs_pxlnet_soft
+                        monet -> R.drawable.ic_qs_pxlnet_monet
+                        else -> R.drawable.ic_qs_pxlnet
+                    },
+                )
+                setImageViewResource(
+                    R.id.widget_power,
+                    if (soft) R.drawable.ic_power_widget_soft else R.drawable.ic_power_widget,
+                )
+                val onSurface = ContextCompat.getColor(context, when {
+                    soft -> R.color.pxlnet_widget_soft_on_surface
+                    monet -> R.color.pxlnet_widget_monet_on_surface
+                    else -> R.color.pxlnet_widget_on_surface
+                })
+                setTextColor(R.id.widget_title, onSurface)
+                setTextColor(R.id.widget_server, onSurface)
+                setTextColor(R.id.widget_status, onSurface)
+                setTextColor(
+                    R.id.widget_expiry,
+                    ContextCompat.getColor(context,
+                        when {
+                            soft -> R.color.pxlnet_widget_soft_muted
+                            monet -> R.color.pxlnet_widget_monet_muted
+                            else -> R.color.pxlnet_widget_muted
+                        },
+                    ),
+                )
                 setTextViewText(
                     R.id.widget_status,
                     context.getString(
                         when {
+                            inactiveSubscription -> R.string.pxlnet_widget_subscription_inactive
                             switching -> R.string.pxlnet_widget_switching
                             active -> R.string.pxlnet_widget_protected
                             else -> R.string.pxlnet_widget_off
@@ -143,7 +207,8 @@ class PxlConnectWidgetProvider : AppWidgetProvider() {
                 )
                 setTextViewText(
                     R.id.widget_server,
-                    snapshot.serverName?.takeUnless { it.equals("AUTO", true) }
+                    if (inactiveSubscription) context.getString(R.string.pxlnet_widget_subscription_inactive)
+                    else snapshot.serverName?.takeUnless { it.equals("AUTO", true) }
                         ?: snapshot.profileName
                         ?: context.getString(R.string.pxlnet_widget_no_subscription),
                 )
@@ -157,18 +222,33 @@ class PxlConnectWidgetProvider : AppWidgetProvider() {
                 setInt(
                     R.id.widget_power,
                     "setBackgroundResource",
-                    if (active) R.drawable.pxlnet_widget_power_active else R.drawable.pxlnet_widget_power_idle,
+                    when {
+                        soft -> R.drawable.pxlnet_widget_soft_power
+                        monet && active -> R.drawable.pxlnet_widget_monet_power_active
+                        monet -> R.drawable.pxlnet_widget_monet_power_idle
+                        active -> R.drawable.pxlnet_widget_power_active
+                        else -> R.drawable.pxlnet_widget_power_idle
+                    },
                 )
                 setInt(
                     R.id.widget_state_dot,
                     "setBackgroundResource",
                     when {
+                        soft && (switching || active) -> R.drawable.pxlnet_widget_soft_dot_active
+                        soft -> R.drawable.pxlnet_widget_soft_dot_idle
+                        monet && (switching || active) -> R.drawable.pxlnet_widget_monet_dot_active
+                        monet -> R.drawable.pxlnet_widget_monet_dot_idle
                         switching -> R.drawable.pxlnet_widget_dot_switching
                         active -> R.drawable.pxlnet_widget_dot_active
                         else -> R.drawable.pxlnet_widget_dot_idle
                     },
                 )
-                setOnClickPendingIntent(R.id.widget_power, togglePendingIntent(context))
+                // An inactive selected profile cannot be started; open Home so the owner can
+                // choose another available profile instead of leaving the tap with no response.
+                setOnClickPendingIntent(
+                    R.id.widget_power,
+                    if (inactiveSubscription) openAppPendingIntent(context) else togglePendingIntent(context),
+                )
                 setOnClickPendingIntent(R.id.widget_root, openAppPendingIntent(context))
                 setOnClickPendingIntent(R.id.widget_expiry, renewPendingIntent(context))
             }
@@ -202,4 +282,5 @@ private data class WidgetSnapshot(
     val profileName: String?,
     val serverName: String?,
     val daysLeft: Long?,
+    val access: SubscriptionInfoStore.ConnectionAccess,
 )

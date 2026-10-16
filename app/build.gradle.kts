@@ -69,6 +69,7 @@ android {
 
     defaultConfig {
         applicationId = "net.pxlnet.connect"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         minSdk = 24
         targetSdk = 35
         versionCode = getVersionProps("VERSION_CODE").toInt()
@@ -126,7 +127,7 @@ android {
         }
         getByName("otherLegacy") {
             java.directories.addAll(listOf("src/minApi21/java", "src/github/java"))
-            aidl.directories.add("src/minApi24/aidl")
+            // Do not include API-24-only Xray IPC in the Android 5 legacy artifact.
         }
     }
 
@@ -187,6 +188,10 @@ dependencies {
     "playImplementation"(files("libs/libbox.aar"))
     "otherImplementation"(files("libs/libbox.aar"))
     "otherLegacyImplementation"(files("libs/libbox-legacy.aar"))
+
+    // Built from the pinned third_party/xray sources; Android 5 never packages this runtime.
+    "playImplementation"(files("libs/pxlnet-xray.aar"))
+    "otherImplementation"(files("libs/pxlnet-xray.aar"))
 
     // API level specific versions
     val lifecycleVersion24 = "2.11.0"
@@ -357,6 +362,8 @@ dependencies {
     implementation("sh.calvin.reorderable:reorderable:3.1.0")
     implementation("com.github.jeziellago:compose-markdown:0.7.2")
     implementation("org.kodein.emoji:emoji-kt:2.5.0")
+    // Haze 1.2.x tracks the Compose 1.7 API used by the API 21 legacy flavor.
+    implementation("dev.chrisbanes.haze:haze:1.2.2")
 
     // Terminal emulator
     implementation(project(":terminal-emulator"))

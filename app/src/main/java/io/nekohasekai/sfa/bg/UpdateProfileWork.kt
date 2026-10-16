@@ -16,7 +16,9 @@ import io.nekohasekai.sfa.database.TypedProfile
 import io.nekohasekai.sfa.utils.HTTPClient
 import io.nekohasekai.sfa.utils.PxlRoutingPreferences
 import io.nekohasekai.sfa.utils.PxlSubscriptionConverter
+import io.nekohasekai.sfa.utils.PxlXhttpSidecar
 import io.nekohasekai.sfa.utils.SubscriptionInfoStore
+import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.util.Date
 import java.util.concurrent.TimeUnit
@@ -43,16 +45,14 @@ class UpdateProfileWork {
                 return
             }
 
-            var minDelay =
-                remoteProfiles.minByOrNull { it.typed.autoUpdateInterval }!!.typed.autoUpdateInterval.toLong()
+            val intervalMinutes = Settings.subscriptionUpdateIntervalMinutes
             val nowSeconds = System.currentTimeMillis() / 1000L
             val minInitDelay =
-                remoteProfiles.minOf { (it.typed.autoUpdateInterval * 60) - (nowSeconds - (it.typed.lastUpdated.time / 1000L)) }
-            if (minDelay < 15) minDelay = 15
+                remoteProfiles.minOf { (intervalMinutes * 60L) - (nowSeconds - (it.typed.lastUpdated.time / 1000L)) }
             WorkManager.getInstance(Application.application).enqueueUniquePeriodicWork(
                 WORK_NAME,
                 ExistingPeriodicWorkPolicy.UPDATE,
-                PeriodicWorkRequest.Builder(UpdateTask::class.java, minDelay, TimeUnit.MINUTES)
+                PeriodicWorkRequest.Builder(UpdateTask::class.java, intervalMinutes.toLong(), TimeUnit.MINUTES)
                     .apply {
                         if (minInitDelay > 0) setInitialDelay(minInitDelay, TimeUnit.SECONDS)
                         setBackoffCriteria(BackoffPolicy.LINEAR, 15, TimeUnit.MINUTES)
@@ -60,43 +60,67 @@ class UpdateProfileWork {
                     .build(),
             )
         }
-    }
 
-    class UpdateTask(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
-        override suspend fun doWork(): Result {
+        suspend fun refreshNow(context: Context): Boolean = refreshProfiles(context, force = true)
+
+        internal fun isDue(lastUpdatedAtMillis: Long, nowMillis: Long, intervalMinutes: Int, force: Boolean): Boolean =
+            force || nowMillis - lastUpdatedAtMillis >= intervalMinutes * 60_000L
+
+        private suspend fun refreshProfiles(context: Context, force: Boolean): Boolean {
             var selectedProfileUpdated = false
             val remoteProfiles =
                 ProfileManager.list()
                     .filter { it.typed.type == TypedProfile.Type.Remote && it.typed.autoUpdate }
-            if (remoteProfiles.isEmpty()) return Result.success()
+            if (remoteProfiles.isEmpty()) return true
             var success = true
             val selectedProfile = Settings.selectedProfile
             for (profile in remoteProfiles) {
-                val lastSeconds =
-                    (System.currentTimeMillis() - profile.typed.lastUpdated.time) / 1000L
-                if (lastSeconds < profile.typed.autoUpdateInterval * 60) {
+                if (!isDue(
+                        profile.typed.lastUpdated.time,
+                        System.currentTimeMillis(),
+                        Settings.subscriptionUpdateIntervalMinutes,
+                        force,
+                    )
+                ) {
                     continue
                 }
                 try {
+                    val file = File(profile.typed.path)
+                    val previousXhttp = PxlXhttpSidecar.read(file)
                     val response = HTTPClient().use { it.get(profile.typed.remoteURL) }
+                    if (SubscriptionInfoStore.recordExplicitInactiveResponse(
+                            context, profile.id, response.subscriptionStatus,
+                        )
+                    ) {
+                        check(PxlXhttpSidecar.remove(File(profile.typed.path))) { "Cannot remove inactive XHTTP profile snapshot" }
+                    }
                     val conversion =
                         PxlSubscriptionConverter.convert(
                             response.content,
-                            PxlRoutingPreferences.isSmartRouting(applicationContext),
+                            PxlRoutingPreferences.isSmartRouting(context),
+                            response.subscriptionStatus,
+                            response.subscriptionFormat,
+                            response.omittedXhttpCount,
                         )
-                    val content = conversion.config
+                    val previous = file.readText()
+                    val content = PxlSubscriptionConverter.preserveSelectedServer(conversion.config, previous)
                     Libbox.checkConfig(content)
-                    val file = File(profile.typed.path)
-                    if (file.readText() != content) {
-                        File(profile.typed.path).writeText(content)
+                    check(PxlXhttpSidecar.replaceConfig(file, content, response)) { "Cannot save XHTTP profile snapshot" }
+                    val xhttpChanged = (previousXhttp != null || response.xhttpLinks.isNotEmpty()) &&
+                        (previousXhttp?.links != response.xhttpLinks ||
+                            previousXhttp.smartRevisions != response.smartRevisions)
+                    if (previous != content || xhttpChanged) {
                         if (profile.id == selectedProfile) {
                             selectedProfileUpdated = true
                         }
                     }
                     profile.typed.lastUpdated = Date()
-                    SubscriptionInfoStore.save(applicationContext, profile.id, response.subscriptionUserInfo)
-                    SubscriptionInfoStore.saveSkippedXhttp(applicationContext, profile.id, conversion.skippedXhttpCount)
+                    SubscriptionInfoStore.save(context, profile.id, response.subscriptionUserInfo)
+                    SubscriptionInfoStore.saveSmartStatus(context, profile.id, response.subscriptionStatus)
+                    SubscriptionInfoStore.saveSkippedXhttp(context, profile.id, conversion.skippedXhttpCount)
                     ProfileManager.update(profile)
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     Log.e(TAG, "update profile ${profile.name}", e)
                     success = false
@@ -107,11 +131,12 @@ class UpdateProfileWork {
                     Libbox.newStandaloneCommandClient().serviceReload()
                 }
             }
-            return if (success) {
-                Result.success()
-            } else {
-                Result.retry()
-            }
+            return success
         }
+    }
+
+    class UpdateTask(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
+        override suspend fun doWork(): Result =
+            if (refreshProfiles(applicationContext, force = false)) Result.success() else Result.retry()
     }
 }

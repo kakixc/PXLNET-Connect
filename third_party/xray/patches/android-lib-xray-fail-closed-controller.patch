@@ -1,0 +1,89 @@
+diff --git a/protected_controller_poc.go b/protected_controller_poc.go
+new file mode 100644
+index 0000000..caaa345
+--- /dev/null
++++ b/protected_controller_poc.go
+@@ -0,0 +1,83 @@
++package libv2ray
++
++import (
++	"context"
++	"errors"
++	"strings"
++	"sync"
++	"syscall"
++
++	xnet "github.com/xtls/xray-core/common/net"
++	"github.com/xtls/xray-core/transport/internet"
++)
++
++type VpnSocketProtector interface {
++	ProtectSocket(fd int64) bool
++}
++
++// This controller depends on the local xray-core patch that returns
++// controller errors instead of logging and continuing the dial.
++var protectedController struct {
++	registerOnce sync.Once
++	registerErr  error
++	lock         sync.RWMutex
++	protector    VpnSocketProtector
++}
++
++// RegisterFailClosedVpnProtector registers Android's VpnService.protect
++// callback. A missing, failing, or explicitly denied callback blocks every
++// new Xray TCP and UDP socket instead of risking a VPN routing loop.
++func RegisterFailClosedVpnProtector(protector VpnSocketProtector) error {
++	if protector == nil {
++		return errors.New("missing VPN socket protector")
++	}
++	protectedController.registerOnce.Do(func() {
++		protectedController.registerErr = internet.RegisterDialerController(func(_, _ string, raw syscall.RawConn) error {
++			protectedController.lock.RLock()
++			defer protectedController.lock.RUnlock()
++			if protectedController.protector == nil {
++				return errors.New("VPN socket protector is inactive")
++			}
++			protected := false
++			if err := raw.Control(func(fd uintptr) {
++				protected = protectedController.protector.ProtectSocket(int64(fd))
++			}); err != nil {
++				return err
++			}
++			if !protected {
++				return errors.New("VPN socket protection failed: refusing connection")
++			}
++			return nil
++		})
++	})
++	if protectedController.registerErr != nil {
++		return protectedController.registerErr
++	}
++	protectedController.lock.Lock()
++	protectedController.protector = protector
++	protectedController.lock.Unlock()
++	return nil
++}
++
++// ClearFailClosedVpnProtector waits for in-flight protect calls. Any later
++// dial fails closed while the Xray core is stopped or changing VPN ownership.
++func ClearFailClosedVpnProtector() {
++	protectedController.lock.Lock()
++	protectedController.protector = nil
++	protectedController.lock.Unlock()
++}
++
++// ProbeDeniedTcpDial is used only by the isolated Android harness. It proves
++// that a Java callback returning false makes Xray's default dialer fail.
++func ProbeDeniedTcpDial(port int) bool {
++	if port < 1 || port > 65535 {
++		return false
++	}
++	destination := xnet.TCPDestination(xnet.LocalHostIP, xnet.Port(port))
++	connection, err := (&internet.DefaultSystemDialer{}).Dial(context.Background(), nil, destination, nil)
++	if connection != nil {
++		connection.Close()
++		return false
++	}
++	return err != nil && strings.Contains(err.Error(), "VPN socket protection failed")
++}
