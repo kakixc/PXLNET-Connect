@@ -40,15 +40,20 @@ object PxlDiagnostics {
             process.inputStream.bufferedReader().use { it.readText().takeLast(250_000) }
         }.getOrDefault("")
         val probeLog = PxlProbeDiagnostics.read(context)
-        val logs = if (probeLog.isBlank()) appLogs else buildString {
+        val diagnosticEvents = if (probeLog.isBlank()) appLogs else buildString {
             appendLine("PXLNET VPN-server probe (categories only):")
             appendLine(probeLog)
             appendLine()
             append(appLogs)
         }
+        val logs = buildString {
+            appendLine(PxlRoutingDiagnostics.read(context))
+            appendLine()
+            append(diagnosticEvents)
+        }
 
         PxlSupportReport(
-            summary = context.getString(detectProblemResource(logs)),
+            summary = context.getString(detectProblemResource(diagnosticEvents)),
             logs = logs,
         )
     }
@@ -109,8 +114,8 @@ object PxlDiagnostics {
                 R.string.pxlnet_diagnostics_timeout
             "permission denied" in text ->
                 R.string.pxlnet_diagnostics_permission
-            "error" in text || "failed" in text || "fatal" in text ->
-                R.string.pxlnet_diagnostics_error
+            "preconnect: dns" in text ->
+                R.string.pxlnet_diagnostics_preconnect_dns
             else -> R.string.pxlnet_diagnostics_no_clear_error
         }
     }

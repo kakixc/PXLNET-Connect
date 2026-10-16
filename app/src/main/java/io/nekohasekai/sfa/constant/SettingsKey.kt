@@ -24,6 +24,7 @@ object SettingsKey {
     const val PXLNET_MASCOT_ANIMATIONS = "pxlnet_mascot_animations"
     const val PXLNET_MASCOT_TIPS = "pxlnet_mascot_tips"
     const val PXLNET_SUBSCRIPTION_REMINDERS = "pxlnet_subscription_reminders"
+    const val PXLNET_SUBSCRIPTION_UPDATE_INTERVAL = "pxlnet_subscription_update_interval"
     const val PXLNET_THEME_MODE = "pxlnet_theme_mode"
     const val PXLNET_DYNAMIC_COLOR = "pxlnet_dynamic_color"
     const val PXLNET_ACCENT = "pxlnet_accent"

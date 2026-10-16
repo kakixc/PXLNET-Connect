@@ -28,4 +28,30 @@ class PxlDiagnosticsTest {
             PxlDiagnostics.detectProblemResource("--------- beginning of main"),
         )
     }
+
+    @Test
+    fun ignoresVendorFailureMessageWithoutVpnFailureEvidence() {
+        assertEquals(
+            R.string.pxlnet_diagnostics_no_clear_error,
+            PxlDiagnostics.detectProblemResource("vendor component: operation failed"),
+        )
+    }
+
+    @Test
+    fun explainsDnsFailureFromPreconnectProbeSeparately() {
+        assertEquals(
+            R.string.pxlnet_diagnostics_preconnect_dns,
+            PxlDiagnostics.detectProblemResource("PXLNET VPN-server probe (categories only):\npreconnect: dns"),
+        )
+    }
+
+    @Test
+    fun activeNetworkFailureTakesPrecedenceOverStalePreconnectDnsProbe() {
+        assertEquals(
+            R.string.pxlnet_diagnostics_network,
+            PxlDiagnostics.detectProblemResource(
+                "PXLNET VPN-server probe (categories only):\npreconnect: dns\nBoxService: network is unreachable",
+            ),
+        )
+    }
 }

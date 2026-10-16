@@ -3,13 +3,16 @@ package io.nekohasekai.sfa.bg
 import android.app.PendingIntent
 import android.app.KeyguardManager
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import androidx.annotation.RequiresApi
 import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.compose.MainActivity
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.utils.PxlLocalPreferences
+import io.nekohasekai.sfa.utils.SubscriptionInfoStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -23,19 +26,26 @@ class TileService :
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onServiceStatusChanged(status: Status) {
+        val access = SubscriptionInfoStore.connectionAccess(this, io.nekohasekai.sfa.database.Settings.selectedProfile)
         qsTile?.apply {
             label = getString(R.string.pxlnet_tile_label)
             state =
-                when (status) {
+                if (access != SubscriptionInfoStore.ConnectionAccess.ALLOWED) {
+                    Tile.STATE_INACTIVE
+                } else when (status) {
                     Status.Started -> Tile.STATE_ACTIVE
                     Status.Stopped -> Tile.STATE_INACTIVE
                     else -> Tile.STATE_UNAVAILABLE
                 }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                subtitle = when (status) {
-                    Status.Started -> getString(R.string.pxlnet_tile_on)
-                    Status.Stopped -> getString(R.string.pxlnet_tile_off)
-                    else -> getString(R.string.pxlnet_tile_switching)
+                subtitle = if (access != SubscriptionInfoStore.ConnectionAccess.ALLOWED) {
+                    getString(R.string.pxlnet_tile_subscription_inactive)
+                } else {
+                    when (status) {
+                        Status.Started -> getString(R.string.pxlnet_tile_on)
+                        Status.Stopped -> getString(R.string.pxlnet_tile_off)
+                        else -> getString(R.string.pxlnet_tile_switching)
+                    }
                 }
             }
             updateTile()
@@ -89,6 +99,11 @@ class TileService :
                     BoxService.start(StartServiceCoordinator.Source.QUICK_SETTINGS)
                 }
 
+                StartServiceCoordinator.Decision.BLOCKED_BY_INACTIVE_SUBSCRIPTION -> {
+                    onServiceStatusChanged(Status.Stopped)
+                    openActivity(Intent(this@TileService, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP))
+                }
+
                 StartServiceCoordinator.Decision.OPEN_APP_FOR_NOTIFICATION_PERMISSION,
                 StartServiceCoordinator.Decision.OPEN_APP_FOR_VPN_PERMISSION ->
                     openPermissionActivity()
@@ -99,7 +114,10 @@ class TileService :
     }
 
     private fun openPermissionActivity() {
-        val intent = StartServiceCoordinator.permissionIntent(this)
+        openActivity(StartServiceCoordinator.permissionIntent(this))
+    }
+
+    private fun openActivity(intent: Intent) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             val pendingIntent = PendingIntent.getActivity(
                 this,

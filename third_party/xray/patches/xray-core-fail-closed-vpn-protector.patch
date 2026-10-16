@@ -1,0 +1,22 @@
+diff --git a/transport/internet/system_dialer.go b/transport/internet/system_dialer.go
+index 05adc77..ac6e153 100644
+--- a/transport/internet/system_dialer.go
++++ b/transport/internet/system_dialer.go
+@@ -65,7 +65,7 @@ func (d *DefaultSystemDialer) Dial(ctx context.Context, src net.Address, dest ne
+ 		lc.Control = func(network, address string, c syscall.RawConn) error {
+ 			for _, ctl := range Controllers {
+ 				if err := ctl(network, address, c); err != nil {
+-					errors.LogInfoInner(ctx, err, "failed to apply external controller")
++					return errors.New("failed to apply external controller").Base(err)
+ 				}
+ 			}
+ 			return c.Control(func(fd uintptr) {
+@@ -122,7 +122,7 @@ func (d *DefaultSystemDialer) Dial(ctx context.Context, src net.Address, dest ne
+ 		dialer.Control = func(network, address string, c syscall.RawConn) error {
+ 			for _, ctl := range Controllers {
+ 				if err := ctl(network, address, c); err != nil {
+-					errors.LogInfoInner(ctx, err, "failed to apply external controller")
++					return errors.New("failed to apply external controller").Base(err)
+ 				}
+ 			}
+ 			return c.Control(func(fd uintptr) {

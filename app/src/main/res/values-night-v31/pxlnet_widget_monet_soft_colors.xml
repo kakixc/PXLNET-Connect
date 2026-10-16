@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="pxlnet_widget_soft_surface">@android:color/system_accent1_800</color>
+    <color name="pxlnet_widget_soft_on_surface">@android:color/system_neutral1_50</color>
+    <color name="pxlnet_widget_soft_muted">@android:color/system_neutral2_200</color>
+    <color name="pxlnet_widget_soft_outline">@android:color/system_accent1_600</color>
+    <color name="pxlnet_widget_soft_power">@android:color/system_accent1_300</color>
+    <color name="pxlnet_widget_soft_power_icon">@android:color/system_accent1_900</color>
+    <color name="pxlnet_widget_soft_brand">@android:color/system_accent1_200</color>
+    <color name="pxlnet_widget_soft_dot_idle">@android:color/system_accent2_500</color>
+</resources>

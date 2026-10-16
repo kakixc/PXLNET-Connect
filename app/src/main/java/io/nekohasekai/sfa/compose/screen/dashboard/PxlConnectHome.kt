@@ -1,6 +1,8 @@
 package io.nekohasekai.sfa.compose.screen.dashboard
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
@@ -72,10 +74,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -99,12 +103,16 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import io.nekohasekai.sfa.BuildConfig
+import io.nekohasekai.sfa.Application
 import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.bg.DefaultNetworkMonitor
 import io.nekohasekai.sfa.compose.component.PxlRootTopBar
 import io.nekohasekai.sfa.compose.component.PxlCatEasterEggDialog
 import io.nekohasekai.sfa.compose.component.rememberPxlCatEasterEggState
 import io.nekohasekai.sfa.compose.theme.performPxlConfirmation
 import io.nekohasekai.sfa.compose.navigation.NewProfileArgs
+import io.nekohasekai.sfa.compose.component.LocalPxlTopBarInset
+import io.nekohasekai.sfa.compose.component.LocalPxlFloatingNavInset
 import io.nekohasekai.sfa.compose.screen.dashboard.groups.GroupsViewModel
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.constant.Status
@@ -112,12 +120,18 @@ import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.utils.PxlLocalPreferences
 import io.nekohasekai.sfa.utils.PxlLatencySource
 import io.nekohasekai.sfa.utils.PxlServerLatencyProbe
+import io.nekohasekai.sfa.utils.PxlXhttpServerProbe
+import io.nekohasekai.sfa.utils.PxlServerProbeCache
 import io.nekohasekai.sfa.utils.PxlGuard
 import io.nekohasekai.sfa.utils.PxlMascotSettings
 import io.nekohasekai.sfa.utils.PxlQuickTile
+import io.nekohasekai.sfa.utils.PxlLinks
 import io.nekohasekai.sfa.utils.SubscriptionInfoStore
+import io.nekohasekai.sfa.widget.PxlConnectWidgetProvider
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -128,6 +142,7 @@ private data class ServerChoice(
     val tag: String,
     val type: String,
     val delay: Int? = null,
+    val displayTag: String = tag,
 )
 
 private sealed interface ServerProbeDisplay {
@@ -158,6 +173,8 @@ fun DashboardScreen(
     val mascotAnimationsEnabled by PxlMascotSettings.animationsEnabled.collectAsState()
     val mascotTipsEnabled by PxlMascotSettings.tipsEnabled.collectAsState()
     var showServerPicker by remember { mutableStateOf(false) }
+    var pickerProbeRequested by remember { mutableStateOf(false) }
+    var showAvailableProfiles by remember { mutableStateOf(false) }
     var showOnboarding by remember { mutableStateOf(PxlLocalPreferences.shouldShowOnboarding(context)) }
     var showAccountHelp by remember { mutableStateOf(false) }
     var showXhttpDetails by remember { mutableStateOf(false) }
@@ -168,10 +185,56 @@ fun DashboardScreen(
     var pixTapCount by remember { mutableIntStateOf(0) }
     var latencySource by remember { mutableStateOf(PxlLocalPreferences.latencySource(context)) }
     var probeRevision by remember { mutableIntStateOf(0) }
+    fun currentProbeNetworkId(): String =
+        (if (serviceStatus == Status.Started) {
+            DefaultNetworkMonitor.defaultNetwork ?: Application.connectivity.activeNetwork
+        } else {
+            Application.connectivity.activeNetwork
+        })?.toString() ?: "offline"
+    var probeNetworkId by remember { mutableStateOf(currentProbeNetworkId()) }
+    DisposableEffect(context, serviceStatus) {
+        probeNetworkId = currentProbeNetworkId()
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) { probeNetworkId = currentProbeNetworkId() }
+            override fun onLost(network: Network) { probeNetworkId = currentProbeNetworkId() }
+        }
+        val registered = runCatching {
+            Application.connectivity.registerDefaultNetworkCallback(callback)
+        }.isSuccess
+        onDispose {
+            if (registered) runCatching { Application.connectivity.unregisterNetworkCallback(callback) }
+        }
+    }
     val serverProbeResults = remember { mutableStateMapOf<String, ServerProbeDisplay>() }
+    val summaryRevision by SubscriptionInfoStore.summaryRevision.collectAsState()
+    var accessClock by remember { mutableLongStateOf(System.currentTimeMillis() / 1000) }
+    LaunchedEffect(uiState.profiles, summaryRevision, accessClock) {
+        val nextExpiry = uiState.profiles.mapNotNull { profile ->
+            SubscriptionInfoStore.read(context, profile.id)?.expire?.takeIf { it > accessClock }
+        }.minOrNull()
+        if (nextExpiry != null) {
+            delay(((nextExpiry - accessClock) * 1000).coerceIn(1_000, 86_400_000))
+            accessClock = System.currentTimeMillis() / 1000
+            PxlConnectWidgetProvider.updateAll(context)
+        }
+    }
+    val subscriptionSummary = remember(uiState.selectedProfileId, summaryRevision, accessClock) {
+        SubscriptionInfoStore.summary(context, uiState.selectedProfileId)
+    }
+    val connectionAccess = remember(uiState.selectedProfileId, summaryRevision, accessClock) {
+        SubscriptionInfoStore.connectionAccess(context, uiState.selectedProfileId)
+    }
+    val subscriptionInactive = connectionAccess != SubscriptionInfoStore.ConnectionAccess.ALLOWED
+    val availableOtherProfiles = remember(uiState.profiles, uiState.selectedProfileId, summaryRevision, accessClock) {
+        uiState.profiles.filter { profile ->
+            profile.id != uiState.selectedProfileId &&
+                SubscriptionInfoStore.connectionAccess(context, profile.id) == SubscriptionInfoStore.ConnectionAccess.ALLOWED
+        }
+    }
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         latencySource = PxlLocalPreferences.latencySource(context)
+        probeNetworkId = currentProbeNetworkId()
     }
 
     LaunchedEffect(serviceStatus) {
@@ -187,36 +250,76 @@ fun DashboardScreen(
     }
     val selector = groupsState.groups.firstOrNull { it.tag == "PXLNET" }
         ?: groupsState.groups.firstOrNull { it.selectable }
+    fun serverChoice(tag: String, type: String, delay: Int? = null): ServerChoice {
+        val xhttp = uiState.xhttpServers[tag]
+        return ServerChoice(tag, xhttp?.type ?: type, delay, xhttp?.label ?: tag)
+    }
     val serverChoices = selector?.items
-        ?.map { ServerChoice(it.tag, it.type, it.urlTestDelay) }
-        ?.takeIf { it.isNotEmpty() }
-        ?: uiState.availableServerTags.map { ServerChoice(it, type = "") }
+        ?.map { serverChoice(it.tag, it.type, it.urlTestDelay) }
+        ?.takeIf { serviceStatus == Status.Started && it.isNotEmpty() }
+        ?: uiState.availableServerTags.map { serverChoice(it, type = "") }
     val automaticChoices = serverChoices.filter { serverRegion(it.tag) == ServerRegion.AUTO }
     val manualChoices = serverChoices.filter { serverRegion(it.tag) != ServerRegion.AUTO }
-    val selectedServer = selector?.selected ?: uiState.preferredServerTag
+    val selectedServer = selector?.selected?.takeIf { serviceStatus == Status.Started } ?: uiState.preferredServerTag
+    val unavailableXhttpCount = uiState.skippedXhttpCount +
+        if (serviceStatus == Status.Started) uiState.xhttpServers.keys.count { tag ->
+            selector?.items?.none { it.tag == tag } != false
+        } else 0
     val selectedItem = serverChoices.firstOrNull { it.tag == selectedServer }
+    val selectedProbeTag = if (serverRegion(selectedServer) == ServerRegion.AUTO) {
+        selectedVpnServerNode(groupsState.groups, selectedServer, uiState.singleChoiceTargets, uiState.xhttpServers.keys)
+            .takeIf { serviceStatus == Status.Started }
+    } else selectedServer
+    val autoProbeTags = if (serviceStatus == Status.Started) automaticChoices.mapNotNull {
+        selectedVpnServerNode(groupsState.groups, it.tag, uiState.singleChoiceTargets, uiState.xhttpServers.keys)
+    } else emptyList()
     val hasProfile = uiState.selectedProfileId > 0
+    val profileUpdatedAtMillis = uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }
+        ?.typed?.lastUpdated?.time ?: 0L
     var healthCheckTimedOut by remember { mutableStateOf(false) }
 
-    LaunchedEffect(serviceStatus, selectedServer, showServerPicker, latencySource, probeRevision, uiState.selectedProfileId, manualChoices.map { it.tag }) {
+    LaunchedEffect(serviceStatus, selectedServer, showServerPicker, pickerProbeRequested, latencySource, probeRevision, probeNetworkId,
+        uiState.selectedProfileId, profileUpdatedAtMillis, manualChoices.map { it.tag }, selectedProbeTag, autoProbeTags) {
         serverProbeResults.clear()
-        if (latencySource != PxlLatencySource.VPN_SERVER || !hasProfile ||
-            serviceStatus !in setOf(Status.Started, Status.Stopped)) return@LaunchedEffect
-        val tags = if (showServerPicker) manualChoices.map { it.tag } else listOfNotNull(
-            selectedServer.takeIf { tag -> manualChoices.any { it.tag == tag } },
+        if (!hasProfile || serviceStatus !in setOf(Status.Started, Status.Stopped)) return@LaunchedEffect
+        val tags = serverProbeTargets(
+            pickerOpen = showServerPicker,
+            measureAllRequested = pickerProbeRequested,
+            homeServerMode = latencySource == PxlLatencySource.VPN_SERVER,
+            manualTags = manualChoices.map { it.tag },
+            autoTags = autoProbeTags,
+            selectedTag = selectedProbeTag,
         )
+        if (tags.isEmpty()) return@LaunchedEffect
         // A pre-connect probe creates a temporary outbound-only core. Keep it
         // sequential so opening the picker cannot allocate several cores.
         val limiter = Semaphore(if (serviceStatus == Status.Started) 2 else 1)
         coroutineScope {
-            tags.distinct().forEach { tag ->
+            tags.forEach { tag ->
+                val cacheKey = PxlServerProbeCache.Key(
+                    uiState.selectedProfileId, tag, serviceStatus == Status.Started, probeNetworkId,
+                    profileUpdatedAtMillis,
+                )
+                viewModel.serverProbeCache.get(cacheKey, System.currentTimeMillis())?.let { cached ->
+                    serverProbeResults[tag] = cached.milliseconds?.let(ServerProbeDisplay::Measured)
+                        ?: ServerProbeDisplay.Unavailable
+                    return@forEach
+                }
                 serverProbeResults[tag] = ServerProbeDisplay.Loading
                 launch {
-                    val delay = limiter.withPermit {
-                        if (serviceStatus == Status.Started) PxlServerLatencyProbe.measure(tag)
-                        else PxlServerLatencyProbe.measureBeforeStart(uiState.selectedProfileId, tag)
+                    val measured = limiter.withPermit {
+                        when {
+                            tag in uiState.xhttpServers ->
+                                PxlXhttpServerProbe.measure(context, uiState.selectedProfileId, tag)
+                            serviceStatus == Status.Started -> PxlServerLatencyProbe.measure(tag)
+                            else -> PxlServerLatencyProbe.measureBeforeStart(uiState.selectedProfileId, tag)
+                        }
                     }
-                    serverProbeResults[tag] = delay?.let(ServerProbeDisplay::Measured) ?: ServerProbeDisplay.Unavailable
+                    // Native probes may finish after a sheet/profile/network change.
+                    // Their old result must not overwrite the new generation's UI or cache.
+                    currentCoroutineContext().ensureActive()
+                    viewModel.serverProbeCache.record(cacheKey, measured, System.currentTimeMillis())
+                    serverProbeResults[tag] = measured?.let(ServerProbeDisplay::Measured) ?: ServerProbeDisplay.Unavailable
                 }
             }
         }
@@ -242,12 +345,18 @@ fun DashboardScreen(
         healthCheckTimedOut -> ConnectionReachability.Unreachable
         else -> ConnectionReachability.Checking
     }
+    val displayedServiceStatus = if (subscriptionInactive) Status.Stopped else serviceStatus
     val connectionState = connectionPresentationState(
-        serviceStatus = serviceStatus,
+        serviceStatus = displayedServiceStatus,
         isSwitchingServer = uiState.switchingServerTag != null,
         reachability = if (uiState.serverSwitchFailed) ConnectionReachability.Unreachable else reachability,
     )
-    val selectedProbe = serverProbeResults[selectedServer]
+    val selectedProbe = serverProbeResults[selectedProbeTag]
+    val bestPreconnectDelay = if (serviceStatus == Status.Stopped && pickerProbeRequested) {
+        bestMeasuredServerDelay(manualChoices.map { it.tag }, serverProbeResults.mapValues { (_, result) ->
+            (result as? ServerProbeDisplay.Measured)?.milliseconds
+        })
+    } else null
     val selectedDisplayedDelay = if (latencySource == PxlLatencySource.VPN_SERVER) {
         (selectedProbe as? ServerProbeDisplay.Measured)?.milliseconds
     } else {
@@ -312,6 +421,8 @@ fun DashboardScreen(
     if (showOnboarding) {
         PxlOnboardingSheet(
             smartRouting = uiState.smartRoutingEnabled,
+            hasTelegramSession = uiState.hasTelegramSession,
+            telegramLoginPending = uiState.telegramLoginPending,
             onSmartRoutingChanged = viewModel::setSmartRouting,
             onTelegramLogin = viewModel::startTelegramLogin,
             onImportClipboard = importFromClipboard,
@@ -339,7 +450,7 @@ fun DashboardScreen(
         AlertDialog(
             onDismissRequest = { showXhttpDetails = false },
             title = { Text(stringResource(R.string.pxlnet_xhttp_details_title)) },
-            text = { Text(stringResource(R.string.pxlnet_xhttp_nodes_skipped, uiState.skippedXhttpCount)) },
+            text = { Text(stringResource(R.string.pxlnet_xhttp_nodes_skipped, unavailableXhttpCount)) },
             confirmButton = {
                 TextButton(onClick = { showXhttpDetails = false }) {
                     Text(stringResource(R.string.ok))
@@ -348,9 +459,35 @@ fun DashboardScreen(
         )
     }
 
+    if (showAvailableProfiles && availableOtherProfiles.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { showAvailableProfiles = false },
+            title = { Text(stringResource(R.string.pxlnet_choose_available_profile)) },
+            text = {
+                Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                    availableOtherProfiles.forEach { profile ->
+                        TextButton(
+                            onClick = {
+                                showAvailableProfiles = false
+                                viewModel.selectProfile(profile.id)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(profile.name) }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAvailableProfiles = false }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+
     if (showServerPicker && serverChoices.isNotEmpty()) {
         ModalBottomSheet(
-            onDismissRequest = { showServerPicker = false },
+            onDismissRequest = {
+                showServerPicker = false
+                pickerProbeRequested = false
+            },
             containerColor = MaterialTheme.colorScheme.surface,
         ) {
           Column(Modifier.fillMaxWidth().heightIn(max = 600.dp).verticalScroll(rememberScrollState())) {
@@ -377,35 +514,22 @@ fun DashboardScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                IconButton(
-                    onClick = {
-                        if (latencySource == PxlLatencySource.VPN_SERVER) {
-                            probeRevision++
-                        } else {
-                            selector?.let { resolvedGroupsViewModel.urlTest(it.tag) }
-                        }
-                    },
-                    enabled = if (latencySource == PxlLatencySource.VPN_SERVER) {
-                        serviceStatus in setOf(Status.Started, Status.Stopped) && hasProfile && manualChoices.isNotEmpty()
-                    } else {
-                        selector != null
-                    },
-                ) {
-                    Icon(
-                        Icons.Default.Refresh,
-                        contentDescription = stringResource(
-                            if (latencySource == PxlLatencySource.VPN_SERVER) {
-                                R.string.pxlnet_check_server_delay
-                            } else {
-                                R.string.pxlnet_check_website_delay
-                            },
-                        ),
-                    )
-                }
+            }
+            TextButton(
+                onClick = {
+                    viewModel.serverProbeCache.clear()
+                    pickerProbeRequested = true
+                    probeRevision++
+                },
+                modifier = Modifier.padding(horizontal = 12.dp),
+                enabled = serviceStatus in setOf(Status.Started, Status.Stopped) && hasProfile && manualChoices.isNotEmpty(),
+            ) {
+                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text(stringResource(R.string.pxlnet_measure_all_servers), modifier = Modifier.padding(start = 8.dp))
             }
             Text(
                 stringResource(
-                    if (latencySource == PxlLatencySource.VPN_SERVER) {
+                    if (pickerProbeRequested || latencySource == PxlLatencySource.VPN_SERVER) {
                         R.string.pxlnet_latency_server_title
                     } else {
                         R.string.pxlnet_website_delay_label
@@ -416,25 +540,39 @@ fun DashboardScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             @Composable fun choiceRow(item: ServerChoice) {
-                val probe = serverProbeResults[item.tag]
+                val probeTag = if (serverRegion(item.tag) == ServerRegion.AUTO) {
+                    selectedVpnServerNode(groupsState.groups, item.tag, uiState.singleChoiceTargets, uiState.xhttpServers.keys)
+                        .takeIf { serviceStatus == Status.Started }
+                } else item.tag
+                val probe = serverProbeResults[probeTag]
+                val autoBest = serverRegion(item.tag) == ServerRegion.AUTO && bestPreconnectDelay != null
+                val autoLoading = serverRegion(item.tag) == ServerRegion.AUTO && autoBestMeasurementLoading(
+                    pickerProbeRequested,
+                    serviceStatus == Status.Stopped,
+                    bestPreconnectDelay,
+                    manualChoices.any { serverProbeResults[it.tag] == ServerProbeDisplay.Loading },
+                )
                 ServerPickerRow(
                     item = item,
                     selected = item.tag == selectedServer,
-                    delay = if (latencySource == PxlLatencySource.VPN_SERVER) {
-                        (probe as? ServerProbeDisplay.Measured)?.milliseconds
+                    delay = if (pickerProbeRequested || latencySource == PxlLatencySource.VPN_SERVER) {
+                        if (autoBest) bestPreconnectDelay else (probe as? ServerProbeDisplay.Measured)?.milliseconds
                     } else {
                         item.delay
                     },
-                    loading = latencySource == PxlLatencySource.VPN_SERVER && probe == ServerProbeDisplay.Loading,
+                    loading = (pickerProbeRequested || latencySource == PxlLatencySource.VPN_SERVER) &&
+                        (probe == ServerProbeDisplay.Loading || autoLoading),
+                    hint = if (autoBest) stringResource(R.string.pxlnet_latency_best_found) else null,
                 ) {
                     hapticFeedback.performPxlConfirmation()
                     viewModel.selectPreferredServer(item.tag)
                     showServerPicker = false
+                    pickerProbeRequested = false
                 }
             }
             if (automaticChoices.isNotEmpty()) {
                 ServerPickerSectionTitle(stringResource(R.string.pxlnet_server_section_auto))
-                if (latencySource == PxlLatencySource.VPN_SERVER) {
+                if (pickerProbeRequested || latencySource == PxlLatencySource.VPN_SERVER) {
                     Text(
                         stringResource(R.string.pxlnet_latency_auto_explanation),
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
@@ -458,19 +596,21 @@ fun DashboardScreen(
         }
     }
 
+    val topBarInset = LocalPxlTopBarInset.current
+    val floatingNavInset = LocalPxlFloatingNavInset.current
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = 20.dp),
-        contentPadding = PaddingValues(top = 16.dp, bottom = 32.dp),
+        contentPadding = PaddingValues(top = topBarInset + 16.dp, bottom = floatingNavInset + 32.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         if (hasProfile || uiState.hasTelegramSession) {
             item {
                 AccessStrip(
                     profileName = uiState.selectedProfileName,
-                    summary = SubscriptionInfoStore.summary(context, uiState.selectedProfileId),
+                    summary = subscriptionSummary,
                     accountName = uiState.telegramUsername?.let { "@$it" } ?: uiState.telegramAccountName,
                     hasAccountSession = uiState.hasTelegramSession,
                     accountVerified = uiState.accountLastVerifiedAt != null,
@@ -488,13 +628,33 @@ fun DashboardScreen(
                 )
             }
         }
+        if (subscriptionInactive) {
+            item {
+                val isPxlManaged = SubscriptionInfoStore.isPxlManagedInactive(connectionAccess)
+                InactiveSubscriptionCard(
+                    isPxlManaged = isPxlManaged,
+                    onChooseProfile = if (availableOtherProfiles.isNotEmpty()) {
+                        { showAvailableProfiles = true }
+                    } else null,
+                    onSecondaryAction = {
+                        if (isPxlManaged) {
+                            context.startActivity(
+                                android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(PxlLinks.TELEGRAM_BOT)),
+                            )
+                        } else {
+                            onOpenNewProfile(NewProfileArgs())
+                        }
+                    },
+                )
+            }
+        }
         item {
             ConnectionControl(
-                serviceStatus = serviceStatus,
+                serviceStatus = displayedServiceStatus,
                 state = connectionState,
                 reachability = reachability,
                 delay = selectedDisplayedDelay,
-                enabled = hasProfile && connectionState !in setOf(
+                enabled = (availableOtherProfiles.isNotEmpty() || !subscriptionInactive) && hasProfile && connectionState !in setOf(
                     ConnectionPresentationState.Connecting,
                     ConnectionPresentationState.Disconnecting,
                     ConnectionPresentationState.Switching,
@@ -520,7 +680,7 @@ fun DashboardScreen(
                 },
                 onClick = {
                     hapticFeedback.performPxlConfirmation()
-                    viewModel.toggleService()
+                    if (subscriptionInactive) showAvailableProfiles = true else viewModel.toggleService()
                 },
             )
         }
@@ -538,7 +698,7 @@ fun DashboardScreen(
 
         item {
             ServerCard(
-                serverTag = selectedServer,
+                serverTag = selectedItem?.displayTag ?: selectedServer,
                 serverType = selectedItem?.type.orEmpty(),
                 delay = selectedDisplayedDelay,
                 loading = latencySource == PxlLatencySource.VPN_SERVER && selectedProbe == ServerProbeDisplay.Loading,
@@ -548,7 +708,7 @@ fun DashboardScreen(
             )
         }
 
-        if (uiState.skippedXhttpCount > 0) {
+        if (unavailableXhttpCount > 0) {
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth().clickable { showXhttpDetails = true },
@@ -567,7 +727,7 @@ fun DashboardScreen(
                         )
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                stringResource(R.string.pxlnet_xhttp_summary, uiState.skippedXhttpCount),
+                                stringResource(R.string.pxlnet_xhttp_summary, unavailableXhttpCount),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             Text(
@@ -679,6 +839,50 @@ fun DashboardScreen(
                 ) {
                     MetricCard(stringResource(R.string.pxlnet_download), uiState.downlink, Modifier.weight(1f))
                     MetricCard(stringResource(R.string.pxlnet_upload), uiState.uplink, Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InactiveSubscriptionCard(
+    isPxlManaged: Boolean,
+    onChooseProfile: (() -> Unit)?,
+    onSecondaryAction: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Default.CloudOff, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    stringResource(R.string.pxlnet_subscription_connection_blocked_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    stringResource(
+                        if (onChooseProfile != null) R.string.pxlnet_subscription_choose_another_description
+                        else if (isPxlManaged) R.string.pxlnet_subscription_connection_blocked_description
+                        else R.string.pxlnet_other_profile_expired_description,
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                if (onChooseProfile != null) {
+                    TextButton(onClick = onChooseProfile) {
+                        Text(stringResource(R.string.pxlnet_choose_available_profile))
+                    }
+                }
+                TextButton(onClick = onSecondaryAction) {
+                    Text(stringResource(if (isPxlManaged) R.string.pxlnet_subscription_manage else R.string.pxlnet_add_another_profile))
                 }
             }
         }
@@ -1266,6 +1470,8 @@ private fun GuardCard(
 @Composable
 private fun PxlOnboardingSheet(
     smartRouting: Boolean,
+    hasTelegramSession: Boolean,
+    telegramLoginPending: Boolean,
     onSmartRoutingChanged: (Boolean) -> Unit,
     onTelegramLogin: () -> Unit,
     onImportClipboard: () -> Unit,
@@ -1274,6 +1480,17 @@ private fun PxlOnboardingSheet(
     onFinish: () -> Unit,
 ) {
     var step by remember { mutableIntStateOf(0) }
+    var awaitingTelegramLogin by remember { mutableStateOf(false) }
+    var showTelegramSuccess by remember { mutableStateOf(false) }
+    LaunchedEffect(hasTelegramSession, awaitingTelegramLogin) {
+        if (awaitingTelegramLogin && hasTelegramSession) {
+            showTelegramSuccess = true
+            kotlinx.coroutines.delay(850)
+            step = 1
+            awaitingTelegramLogin = false
+            showTelegramSuccess = false
+        }
+    }
     val titles = listOf(
         stringResource(R.string.pxlnet_onboarding_add),
         stringResource(R.string.pxlnet_onboarding_mode),
@@ -1309,8 +1526,22 @@ private fun PxlOnboardingSheet(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Button(onClick = onTelegramLogin, modifier = Modifier.fillMaxWidth()) {
-                        Text(stringResource(R.string.pxlnet_login_telegram))
+                    if (showTelegramSuccess || hasTelegramSession) {
+                        Text(
+                            stringResource(R.string.pxlnet_onboarding_telegram_success),
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            awaitingTelegramLogin = true
+                            onTelegramLogin()
+                        },
+                        enabled = !telegramLoginPending && !hasTelegramSession,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(if (telegramLoginPending) R.string.pxlnet_login_waiting_telegram else R.string.pxlnet_login_telegram))
                     }
                     OutlinedButton(onClick = onAddLink, modifier = Modifier.fillMaxWidth()) {
                         Text(stringResource(R.string.pxlnet_add_subscription))
@@ -1435,6 +1666,7 @@ private fun ServerPickerRow(
     selected: Boolean,
     delay: Int?,
     loading: Boolean,
+    hint: String? = null,
     onClick: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -1443,11 +1675,12 @@ private fun ServerPickerRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        ServerLocationIcon(item.tag)
+        ServerLocationIcon(item.displayTag)
         Column(modifier = Modifier.weight(1f)) {
-            Text(serverTitle(context, item.tag, item.type), fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
-            val protocol = serverProtocol(item.tag, item.type)
+            Text(serverTitle(context, item.displayTag, item.type), fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+            val protocol = serverProtocol(item.displayTag, item.type)
             if (protocol.isNotBlank()) Text(protocol, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (hint != null) Text(hint, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         DelayIndicator(delay, loading)
         if (selected) {
@@ -1506,7 +1739,12 @@ private fun MetricCard(label: String, value: String, modifier: Modifier = Modifi
 }
 
 private fun serverTitle(context: Context, tag: String, type: String = ""): String = when (serverRegion(tag)) {
-    ServerRegion.AUTO -> context.getString(R.string.pxlnet_server_auto)
+    ServerRegion.AUTO -> when {
+        tag.equals("Fast", ignoreCase = true) -> context.getString(R.string.pxlnet_smart_fast)
+        tag.equals("Stable", ignoreCase = true) -> context.getString(R.string.pxlnet_smart_stable)
+        tag.equals("Anti-Block", ignoreCase = true) -> context.getString(R.string.pxlnet_smart_anti_block)
+        else -> context.getString(R.string.pxlnet_server_auto)
+    }
     ServerRegion.GERMANY -> context.getString(R.string.pxlnet_country_germany)
     ServerRegion.FINLAND -> context.getString(R.string.pxlnet_country_finland)
     ServerRegion.OTHER -> cleanServerTag(tag)

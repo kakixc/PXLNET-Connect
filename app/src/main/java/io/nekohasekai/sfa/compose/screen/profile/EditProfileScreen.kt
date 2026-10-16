@@ -414,24 +414,6 @@ fun EditProfileScreen(
                                 )
                             }
 
-                            AnimatedVisibility(visible = uiState.autoUpdate) {
-                                OutlinedTextField(
-                                    value = uiState.autoUpdateInterval.toString(),
-                                    onValueChange = viewModel::updateAutoUpdateInterval,
-                                    label = { Text(stringResource(R.string.profile_auto_update_interval)) },
-                                    supportingText = {
-                                        uiState.autoUpdateIntervalError?.let { error ->
-                                            Text(
-                                                text = error,
-                                                color = MaterialTheme.colorScheme.error,
-                                            )
-                                        } ?: Text(stringResource(R.string.profile_auto_update_interval_minimum_hint))
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true,
-                                    isError = uiState.autoUpdateIntervalError != null,
-                                )
-                            }
                         }
                     }
                 }
@@ -537,7 +519,7 @@ fun EditProfileScreen(
                     Button(
                         onClick = { viewModel.saveChanges() },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = !uiState.isSaving && uiState.autoUpdateIntervalError == null,
+                        enabled = !uiState.isSaving,
                     ) {
                         if (uiState.isSaving) {
                             CircularProgressIndicator(

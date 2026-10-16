@@ -32,6 +32,27 @@ class StartServiceCoordinatorTest {
     }
 
     @Test
+    fun inactiveSubscriptionBlocksEveryStoppedEntryPointBeforePermissionsOrStart() {
+        listOf(
+            StartServiceCoordinator.Source.HOME,
+            StartServiceCoordinator.Source.WIDGET,
+            StartServiceCoordinator.Source.QUICK_SETTINGS,
+        ).forEach {
+            assertEquals(
+                StartServiceCoordinator.Decision.BLOCKED_BY_INACTIVE_SUBSCRIPTION,
+                StartServiceCoordinator.decide(
+                    StartServiceCoordinator.Prerequisites(
+                        Status.Stopped,
+                        notificationPermissionGranted = false,
+                        vpnPermissionGranted = false,
+                        connectionAccess = io.nekohasekai.sfa.utils.SubscriptionInfoStore.ConnectionAccess.LEGACY_EXPIRED,
+                    ),
+                ),
+            )
+        }
+    }
+
+    @Test
     fun doesNotStartAgainWhileTheServiceIsTransitioningOrRunning() {
         listOf(Status.Starting, Status.Started, Status.Stopping).forEach { status ->
             assertEquals(

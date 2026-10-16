@@ -11,6 +11,16 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application>
+        <service
+            android:name=".xray.PxlXrayService"
+            android:exported="false"
+            android:process=":pxlxray" />
+
+        <service
+            android:name=".xray.PxlXrayProbeService"
+            android:exported="false"
+            android:process=":pxlxrayprobe" />
+
         <meta-data
             android:name="moe.shizuku.client.V3_SUPPORT"
             tools:node="remove" />

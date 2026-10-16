@@ -8,6 +8,16 @@
         tools:node="remove" />
 
     <application>
+        <service
+            android:name=".xray.PxlXrayService"
+            android:exported="false"
+            android:process=":pxlxray" />
+
+        <service
+            android:name=".xray.PxlXrayProbeService"
+            android:exported="false"
+            android:process=":pxlxrayprobe" />
+
         <provider
             android:name="rikka.shizuku.ShizukuProvider"
             android:authorities="${applicationId}.shizuku"

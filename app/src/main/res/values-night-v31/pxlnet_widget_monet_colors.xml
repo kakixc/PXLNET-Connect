@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="pxlnet_widget_monet_surface">@android:color/system_accent1_900</color>
+    <color name="pxlnet_widget_monet_on_surface">@android:color/system_accent1_50</color>
+    <color name="pxlnet_widget_monet_muted">@android:color/system_accent2_200</color>
+    <color name="pxlnet_widget_monet_outline">@android:color/system_accent1_700</color>
+    <color name="pxlnet_widget_monet_power_idle">@android:color/system_accent2_600</color>
+    <color name="pxlnet_widget_monet_power_active">@android:color/system_accent1_600</color>
+</resources>

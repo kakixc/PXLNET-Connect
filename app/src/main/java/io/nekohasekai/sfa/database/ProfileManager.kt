@@ -3,6 +3,9 @@ package io.nekohasekai.sfa.database
 import androidx.room.Room
 import io.nekohasekai.sfa.Application
 import io.nekohasekai.sfa.constant.Path
+import io.nekohasekai.sfa.utils.PxlXhttpSidecar
+import io.nekohasekai.sfa.utils.SubscriptionInfoStore
+import java.io.File
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
@@ -74,7 +77,12 @@ object ProfileManager {
 
     suspend fun delete(profile: Profile): Int {
         try {
-            return instance.profileDao().delete(profile)
+            check(PxlXhttpSidecar.remove(File(profile.typed.path))) { "Could not remove XHTTP profile snapshot" }
+            val deleted = instance.profileDao().delete(profile)
+            if (deleted > 0 && instance.profileDao().get(profile.id) == null) {
+                SubscriptionInfoStore.clearProfile(Application.application, profile.id)
+            }
+            return deleted
         } finally {
             for (callback in callbacks.toList()) {
                 callback()
@@ -84,7 +92,16 @@ object ProfileManager {
 
     suspend fun delete(profiles: List<Profile>): Int {
         try {
-            return instance.profileDao().delete(profiles)
+            profiles.forEach { profile ->
+                check(PxlXhttpSidecar.remove(File(profile.typed.path))) { "Could not remove XHTTP profile snapshot" }
+            }
+            val deleted = instance.profileDao().delete(profiles)
+            profiles.forEach { profile ->
+                if (instance.profileDao().get(profile.id) == null) {
+                    SubscriptionInfoStore.clearProfile(Application.application, profile.id)
+                }
+            }
+            return deleted
         } finally {
             for (callback in callbacks.toList()) {
                 callback()

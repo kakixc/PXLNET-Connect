@@ -16,6 +16,7 @@ import io.nekohasekai.sfa.database.TypedProfile
 import io.nekohasekai.sfa.utils.HTTPClient
 import io.nekohasekai.sfa.utils.PxlRoutingPreferences
 import io.nekohasekai.sfa.utils.PxlSubscriptionConverter
+import io.nekohasekai.sfa.utils.PxlXhttpSidecar
 import io.nekohasekai.sfa.utils.SubscriptionInfoStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,14 +37,12 @@ data class EditProfileUiState(
     val profileType: TypedProfile.Type? = null,
     val remoteUrl: String = "",
     val autoUpdate: Boolean = false,
-    val autoUpdateInterval: Int = 60,
     val lastUpdated: Date? = null,
     // Original values for change detection
     val originalName: String = "",
     val originalIcon: String? = null,
     val originalRemoteUrl: String = "",
     val originalAutoUpdate: Boolean = false,
-    val originalAutoUpdateInterval: Int = 60,
     // State flags
     val hasChanges: Boolean = false,
     val isLoading: Boolean = true,
@@ -51,7 +50,6 @@ data class EditProfileUiState(
     val showUpdateSuccess: Boolean = false,
     val isSaving: Boolean = false,
     val errorMessage: String? = null,
-    val autoUpdateIntervalError: String? = null,
     val showIconDialog: Boolean = false,
 )
 
@@ -90,8 +88,6 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
                         originalRemoteUrl = typedProfile.remoteURL,
                         autoUpdate = typedProfile.autoUpdate,
                         originalAutoUpdate = typedProfile.autoUpdate,
-                        autoUpdateInterval = typedProfile.autoUpdateInterval,
-                        originalAutoUpdateInterval = typedProfile.autoUpdateInterval,
                         lastUpdated = typedProfile.lastUpdated,
                         isLoading = false,
                     )
@@ -163,42 +159,14 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun updateAutoUpdateInterval(interval: String) {
-        val intValue = interval.toIntOrNull() ?: 60
-        val error =
-            when {
-                interval.isBlank() -> getApplication<Application>().getString(R.string.profile_input_required)
-                intValue < 15 -> getApplication<Application>().getString(R.string.profile_auto_update_interval_minimum_hint)
-                else -> null
-            }
-
-        _uiState.update { state ->
-            state.copy(
-                autoUpdateInterval = intValue,
-                autoUpdateIntervalError = error,
-                hasChanges =
-                if (error == null) {
-                    checkHasChanges(state.copy(autoUpdateInterval = intValue))
-                } else {
-                    state.hasChanges
-                },
-            )
-        }
-    }
-
     private fun checkHasChanges(state: EditProfileUiState): Boolean = state.name != state.originalName ||
         state.icon != state.originalIcon ||
         state.remoteUrl != state.originalRemoteUrl ||
-        state.autoUpdate != state.originalAutoUpdate ||
-        state.autoUpdateInterval != state.originalAutoUpdateInterval
+        state.autoUpdate != state.originalAutoUpdate
 
     fun saveChanges() {
         val state = _uiState.value
         val profile = state.profile ?: return
-
-        if (state.autoUpdateIntervalError != null) {
-            return
-        }
 
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.update { it.copy(isSaving = true) }
@@ -212,13 +180,13 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
                 // Handle auto-update changes
                 val autoUpdateChanged = state.autoUpdate != state.originalAutoUpdate
                 profile.typed.autoUpdate = state.autoUpdate
-                profile.typed.autoUpdateInterval = state.autoUpdateInterval
+                profile.typed.autoUpdateInterval = Settings.subscriptionUpdateIntervalMinutes
 
                 // Save to database
                 ProfileManager.update(profile)
 
-                // Reconfigure updater if auto-update was enabled
-                if (autoUpdateChanged && state.autoUpdate) {
+                // Both enabling and disabling a profile can change the worker schedule.
+                if (autoUpdateChanged) {
                     UpdateProfileWork.reconfigureUpdater()
                 }
 
@@ -229,7 +197,6 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
                         originalIcon = state.icon,
                         originalRemoteUrl = state.remoteUrl,
                         originalAutoUpdate = state.autoUpdate,
-                        originalAutoUpdateInterval = state.autoUpdateInterval,
                         hasChanges = false,
                         isSaving = false,
                     )
@@ -258,19 +225,33 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
                 var selectedProfileUpdated = false
 
                 // Fetch remote config
+                val file = File(profile.typed.path)
+                val previousXhttp = PxlXhttpSidecar.read(file)
                 val response = HTTPClient().use { it.get(profile.typed.remoteURL) }
+                if (SubscriptionInfoStore.recordExplicitInactiveResponse(
+                        getApplication(), profile.id, response.subscriptionStatus,
+                    )
+                ) {
+                    check(PxlXhttpSidecar.remove(File(profile.typed.path))) { "Cannot remove inactive XHTTP profile snapshot" }
+                }
                 val conversion =
                     PxlSubscriptionConverter.convert(
                         response.content,
                         PxlRoutingPreferences.isSmartRouting(getApplication()),
+                        response.subscriptionStatus,
+                        response.subscriptionFormat,
+                        response.omittedXhttpCount,
                     )
-                val content = conversion.config
+                val previous = file.takeIf(File::exists)?.readText()
+                val content = previous?.let { PxlSubscriptionConverter.preserveSelectedServer(conversion.config, it) }
+                    ?: conversion.config
                 Libbox.checkConfig(content)
-
                 // Check if content changed
-                val file = File(profile.typed.path)
-                if (!file.exists() || file.readText() != content) {
-                    file.writeText(content)
+                check(PxlXhttpSidecar.replaceConfig(file, content, response)) { "Cannot save XHTTP profile snapshot" }
+                val xhttpChanged = (previousXhttp != null || response.xhttpLinks.isNotEmpty()) &&
+                    (previousXhttp?.links != response.xhttpLinks ||
+                        previousXhttp.smartRevisions != response.smartRevisions)
+                if (previous != content || xhttpChanged) {
                     if (profile.id == Settings.selectedProfile) {
                         selectedProfileUpdated = true
                     }
@@ -279,6 +260,7 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
                 // Update last updated time
                 profile.typed.lastUpdated = Date()
                 SubscriptionInfoStore.save(getApplication(), profile.id, response.subscriptionUserInfo)
+                SubscriptionInfoStore.saveSmartStatus(getApplication(), profile.id, response.subscriptionStatus)
                 SubscriptionInfoStore.saveSkippedXhttp(getApplication(), profile.id, conversion.skippedXhttpCount)
                 ProfileManager.update(profile)
 

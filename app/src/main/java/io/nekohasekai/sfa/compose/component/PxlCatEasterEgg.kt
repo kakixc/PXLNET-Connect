@@ -28,8 +28,10 @@ class PxlCatEasterEggState {
         private set
     private var tapCount = 0
     private var lastTapAt = 0L
+    private var openedAt = 0L
 
     fun tap(context: Context) {
+        if (isVisible) return
         val now = SystemClock.elapsedRealtime()
         tapCount = if (now - lastTapAt > 10_000) 1 else tapCount + 1
         lastTapAt = now
@@ -42,8 +44,14 @@ class PxlCatEasterEggState {
         if (hint != null) Toast.makeText(context, hint, Toast.LENGTH_SHORT).show()
         if (tapCount >= 8) {
             tapCount = 0
+            openedAt = now
             isVisible = true
         }
+    }
+
+    fun dismissFromOutside() {
+        // The eighth tap can land on the newly composed dialog scrim on some devices.
+        if (SystemClock.elapsedRealtime() - openedAt >= 600) dismiss()
     }
 
     fun dismiss() {
@@ -58,7 +66,7 @@ fun rememberPxlCatEasterEggState(): PxlCatEasterEggState = remember { PxlCatEast
 fun PxlCatEasterEggDialog(state: PxlCatEasterEggState) {
     if (!state.isVisible) return
     AlertDialog(
-        onDismissRequest = state::dismiss,
+        onDismissRequest = state::dismissFromOutside,
         title = { Text(stringResource(R.string.pxlnet_cat_found)) },
         text = {
             Image(

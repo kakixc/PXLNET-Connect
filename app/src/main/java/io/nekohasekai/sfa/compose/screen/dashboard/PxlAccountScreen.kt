@@ -1,6 +1,7 @@
 package io.nekohasekai.sfa.compose.screen.dashboard
 
 import android.widget.Toast
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -35,6 +36,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -50,6 +52,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.component.PxlRootTopBar
+import io.nekohasekai.sfa.compose.component.LocalPxlTopBarInset
+import io.nekohasekai.sfa.compose.component.LocalPxlFloatingNavInset
 import io.nekohasekai.sfa.compose.navigation.NewProfileArgs
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.utils.PxlLinks
@@ -76,13 +80,15 @@ fun PxlAccountScreen(
         )
     }
 
+    val topBarInset = LocalPxlTopBarInset.current
+    val floatingNavInset = LocalPxlFloatingNavInset.current
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = topBarInset + 12.dp, bottom = floatingNavInset + 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            PxlAccountCard {
+            PxlAccountCard(compact = true) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -100,16 +106,26 @@ fun PxlAccountScreen(
                                 ?: stringResource(if (hasSession) R.string.pxlnet_account_title else R.string.pxlnet_guest_mode),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
                         )
-                        Text(
-                            stringResource(when {
+                        val accountStatus = stringResource(when {
                                 !hasSession -> R.string.pxlnet_guest_mode_description
                                 !hasVerifiedAccount -> R.string.pxlnet_account_not_verified
                                 uiState.accountServiceAvailable == false -> R.string.pxlnet_account_saved_data_offline
                                 else -> R.string.pxlnet_signed_in_telegram
-                            }),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                            })
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            shape = RoundedCornerShape(50),
+                        ) {
+                            Text(
+                                accountStatus,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                maxLines = 1,
+                            )
+                        }
                     }
                 }
 
@@ -127,7 +143,7 @@ fun PxlAccountScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 stringResource(R.string.pxlnet_tariff_access),
-                                style = MaterialTheme.typography.titleMedium,
+                                style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Medium,
                             )
                             Text(
@@ -148,7 +164,7 @@ fun PxlAccountScreen(
                                     MaterialTheme.colorScheme.error
                                 },
                             )
-                            if (uiState.selectedProfileId > 0) {
+                            if (uiState.selectedProfileId > 0 && hasVerifiedAccount) {
                                 Text(
                                     stringResource(R.string.pxlnet_subscription_synced),
                                     style = MaterialTheme.typography.bodySmall,
@@ -183,7 +199,10 @@ fun PxlAccountScreen(
                             }
                         }
                     }
-                    TextButton(onClick = viewModel::logoutTelegram) {
+                    TextButton(
+                        onClick = viewModel::logoutTelegram,
+                        modifier = Modifier.align(Alignment.End),
+                    ) {
                         Text(stringResource(R.string.pxlnet_sign_out))
                     }
                 } else {
@@ -201,11 +220,7 @@ fun PxlAccountScreen(
                             Text(stringResource(R.string.pxlnet_login_telegram))
                         }
                     }
-                    Text(
-                        stringResource(R.string.pxlnet_login_description),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Text(stringResource(R.string.pxlnet_login_description), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -306,11 +321,9 @@ fun PxlAccountScreen(
 
         if (uiState.accountServiceAvailable == false) {
             item {
-                Text(
-                    stringResource(R.string.pxlnet_service_unavailable_guest),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
+                PxlAccountCard(compact = true) {
+                    Text(stringResource(R.string.pxlnet_service_unavailable_guest), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
             }
         }
     }
@@ -442,17 +455,24 @@ private fun PulseMetric(label: String, value: String, modifier: Modifier = Modif
 }
 
 @Composable
-private fun PxlAccountCard(content: @Composable ColumnScope.() -> Unit) {
+private fun PxlAccountCard(
+    compact: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(if (compact) 16.dp else 12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (compact) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surface,
+        ),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier
+                .animateContentSize()
+                .padding(if (compact) 16.dp else 18.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp),
             content = content,
         )
     }

@@ -166,7 +166,12 @@ class ServiceNotification(private val status: MutableLiveData<Status>, private v
         val tag = selectedServerTag ?: return statusText
         if (statusTextId != R.string.status_started) return statusText
         val serverName = when (serverRegion(tag)) {
-            ServerRegion.AUTO -> service.getString(R.string.pxlnet_server_auto)
+            ServerRegion.AUTO -> when {
+                tag.equals("Fast", ignoreCase = true) -> service.getString(R.string.pxlnet_smart_fast)
+                tag.equals("Stable", ignoreCase = true) -> service.getString(R.string.pxlnet_smart_stable)
+                tag.equals("Anti-Block", ignoreCase = true) -> service.getString(R.string.pxlnet_smart_anti_block)
+                else -> service.getString(R.string.pxlnet_server_auto)
+            }
             ServerRegion.GERMANY -> service.getString(R.string.pxlnet_country_germany)
             ServerRegion.FINLAND -> service.getString(R.string.pxlnet_country_finland)
             ServerRegion.OTHER -> cleanServerTag(tag).take(48).ifBlank { profileName }

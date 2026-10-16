@@ -217,9 +217,6 @@ fun AppSettingsScreen(
         val appLocales = AppCompatDelegate.getApplicationLocales()
         mutableStateOf(if (appLocales.isEmpty) "" else appLocales.toLanguageTags())
     }
-    var showThemeDialog by remember { mutableStateOf(false) }
-    var themeMode by remember { mutableStateOf(AppThemeMode.fromPersisted(Settings.themeMode)) }
-    var accent by remember { mutableStateOf(AppAccent.fromPersisted(Settings.accent)) }
 
     var cacheSize by remember { mutableStateOf(0L) }
     var cacheSizeText by remember { mutableStateOf("") }
@@ -517,24 +514,6 @@ fun AppSettingsScreen(
         )
     }
 
-    if (showThemeDialog) {
-        ThemeDialog(
-            currentThemeMode = themeMode,
-            currentAccent = accent,
-            dynamicColorSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
-            onThemeSelected = { selectedMode ->
-                themeMode = selectedMode
-                Settings.themeMode = selectedMode.persistedValue
-            },
-            onAccentSelected = { selectedAccent ->
-                accent = selectedAccent
-                Settings.accent = selectedAccent.persistedValue
-                Settings.dynamicColor = selectedAccent == AppAccent.WALLPAPER
-            },
-            onDismiss = { showThemeDialog = false },
-        )
-    }
-
     Column(
         modifier =
         Modifier
@@ -682,13 +661,13 @@ fun AppSettingsScreen(
                 ListItem(
                     headlineContent = {
                         Text(
-                            stringResource(R.string.theme),
+                            stringResource(R.string.pxlnet_settings_appearance),
                             style = MaterialTheme.typography.bodyLarge,
                         )
                     },
                     supportingContent = {
                         Text(
-                            "${themeMode.label()} · ${accent.label()}",
+                            stringResource(R.string.pxlnet_app_appearance_summary),
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     },
@@ -699,7 +678,7 @@ fun AppSettingsScreen(
                             tint = MaterialTheme.colorScheme.primary,
                         )
                     },
-                    modifier = Modifier.clickable { showThemeDialog = true },
+                    modifier = Modifier.clickable { navController.navigate("settings/app/appearance") },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 )
 
@@ -1710,14 +1689,14 @@ private fun UpdateSourceDialog(
 }
 
 @Composable
-private fun AppThemeMode.label(): String = when (this) {
+internal fun AppThemeMode.label(): String = when (this) {
     AppThemeMode.SYSTEM -> stringResource(R.string.theme_system)
     AppThemeMode.LIGHT -> stringResource(R.string.theme_light)
     AppThemeMode.DARK -> stringResource(R.string.theme_dark)
 }
 
 @Composable
-private fun AppAccent.label(): String = when (this) {
+internal fun AppAccent.label(): String = when (this) {
     AppAccent.WALLPAPER -> stringResource(R.string.accent_wallpaper)
     AppAccent.GREEN -> stringResource(R.string.accent_green)
     AppAccent.SKY -> stringResource(R.string.accent_sky)
@@ -1729,7 +1708,7 @@ private fun AppAccent.label(): String = when (this) {
 }
 
 @Composable
-private fun ThemeDialog(
+internal fun ThemeDialog(
     currentThemeMode: AppThemeMode,
     currentAccent: AppAccent,
     dynamicColorSupported: Boolean,

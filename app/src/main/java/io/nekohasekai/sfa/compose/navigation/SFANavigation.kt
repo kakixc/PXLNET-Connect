@@ -8,7 +8,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavBackStackEntry
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -30,6 +32,7 @@ import io.nekohasekai.sfa.compose.screen.log.LogViewModel
 import io.nekohasekai.sfa.compose.screen.profile.EditProfileRoute
 import io.nekohasekai.sfa.compose.screen.profileoverride.PerAppProxyScreen
 import io.nekohasekai.sfa.compose.screen.settings.AppSettingsScreen
+import io.nekohasekai.sfa.compose.screen.settings.AppearanceSettingsScreen
 import io.nekohasekai.sfa.compose.screen.settings.CoreSettingsScreen
 import io.nekohasekai.sfa.compose.screen.settings.EditRemoteServerScreen
 import io.nekohasekai.sfa.compose.screen.settings.FDroidMirrorScreen
@@ -37,6 +40,7 @@ import io.nekohasekai.sfa.compose.screen.settings.ProfileOverrideScreen
 import io.nekohasekai.sfa.compose.screen.settings.RemoteControlScreen
 import io.nekohasekai.sfa.compose.screen.settings.ServiceSettingsScreen
 import io.nekohasekai.sfa.compose.screen.settings.SettingsScreen
+import io.nekohasekai.sfa.compose.screen.settings.SubscriptionSettingsScreen
 import io.nekohasekai.sfa.compose.screen.settings.TailscaleFontPickerScreen
 import io.nekohasekai.sfa.compose.screen.settings.TailscaleTerminalConfigScreen
 import io.nekohasekai.sfa.compose.screen.settings.TailscaleThemePickerScreen
@@ -87,6 +91,7 @@ private val slideOutToLeft: AnimatedContentTransitionScope<*>.() -> androidx.com
 @Composable
 fun SFANavHost(
     navController: NavHostController,
+    rootTabRoutes: List<String> = bottomNavigationScreens.map { it.route },
     serviceStatus: Status = Status.Stopped,
     showStartFab: Boolean = false,
     showStatusBar: Boolean = false,
@@ -104,14 +109,42 @@ fun SFANavHost(
     openVPNStatusViewModel: OpenVPNStatusViewModel? = null,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
+    val animateTabs = android.provider.Settings.Global.getFloat(
+        context.contentResolver,
+        android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+        1f,
+    ) > 0f
+    val tabEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
+        val from = rootTabRoutes.indexOf(initialState.destination.route)
+        val to = rootTabRoutes.indexOf(targetState.destination.route)
+        if (animateTabs && from >= 0 && to >= 0 && from != to) {
+            slideIntoContainer(
+                if (to > from) AnimatedContentTransitionScope.SlideDirection.Left
+                else AnimatedContentTransitionScope.SlideDirection.Right,
+                animationSpec = tween(220),
+            )
+        } else EnterTransition.None
+    }
+    val tabExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
+        val from = rootTabRoutes.indexOf(initialState.destination.route)
+        val to = rootTabRoutes.indexOf(targetState.destination.route)
+        if (animateTabs && from >= 0 && to >= 0 && from != to) {
+            slideOutOfContainer(
+                if (to > from) AnimatedContentTransitionScope.SlideDirection.Left
+                else AnimatedContentTransitionScope.SlideDirection.Right,
+                animationSpec = tween(220),
+            )
+        } else ExitTransition.None
+    }
     NavHost(
         navController = navController,
         startDestination = Screen.Dashboard.route,
         modifier = modifier,
-        enterTransition = { EnterTransition.None },
-        exitTransition = { ExitTransition.None },
-        popEnterTransition = { EnterTransition.None },
-        popExitTransition = { ExitTransition.None },
+        enterTransition = tabEnter,
+        exitTransition = tabExit,
+        popEnterTransition = tabEnter,
+        popExitTransition = tabExit,
     ) {
         composable(Screen.Dashboard.route) {
             if (dashboardViewModel != null) {
@@ -568,6 +601,16 @@ fun SFANavHost(
             SettingsScreen(navController = navController)
         }
 
+        composable(
+            route = "settings/subscriptions",
+            enterTransition = slideInFromRight,
+            exitTransition = slideOutToLeft,
+            popEnterTransition = slideInFromLeft,
+            popExitTransition = slideOutToRight,
+        ) {
+            SubscriptionSettingsScreen(navController = navController)
+        }
+
         // Settings subscreens with slide animations
         composable(
             route = "settings/app",
@@ -577,6 +620,16 @@ fun SFANavHost(
             popExitTransition = slideOutToRight,
         ) {
             AppSettingsScreen(navController = navController, serviceStatus = serviceStatus)
+        }
+
+        composable(
+            route = "settings/app/appearance",
+            enterTransition = slideInFromRight,
+            exitTransition = slideOutToLeft,
+            popEnterTransition = slideInFromLeft,
+            popExitTransition = slideOutToRight,
+        ) {
+            AppearanceSettingsScreen(navController = navController)
         }
 
         composable(
