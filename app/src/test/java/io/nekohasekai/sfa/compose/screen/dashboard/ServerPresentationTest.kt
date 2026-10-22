@@ -2,6 +2,7 @@ package io.nekohasekai.sfa.compose.screen.dashboard
 
 import io.nekohasekai.sfa.compose.model.Group
 import io.nekohasekai.sfa.compose.model.GroupItem
+import io.nekohasekai.sfa.utils.PxlServerProbeCache
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -86,6 +87,27 @@ class ServerPresentationTest {
         assertEquals(manual, serverProbeTargets(true, true, false, manual, auto, "vless-de"))
         assertEquals(listOf("vless-de"), serverProbeTargets(false, false, true, manual, auto, "vless-de"))
         assertEquals(emptyList<String>(), serverProbeTargets(false, false, false, manual, auto, "vless-de"))
+    }
+
+    @Test
+    fun reopeningPickerRestoresOnlyCurrentCachedServerMeasurements() {
+        val cache = PxlServerProbeCache(ttlMillis = 120_000)
+        val key = PxlServerProbeCache.Key(1, "", true, "wifi", 20)
+        cache.record(key.copy(tag = "de"), 87, 1_000)
+        cache.record(key.copy(tag = "fi"), null, 1_000)
+
+        val restored = cachedPickerMeasurements(cache, key, listOf("de", "fi", "other"), 2_000)
+        assertEquals(87, restored["de"]?.milliseconds)
+        assertEquals(setOf("de", "fi"), restored.keys)
+        assertEquals(null, restored["fi"]?.milliseconds)
+        assertEquals(restored, cachedPickerMeasurements(cache, key, listOf("de", "fi"), 3_000))
+        assertEquals(emptyMap<String, PxlServerProbeCache.Entry>(), cachedPickerMeasurements(cache, key.copy(networkId = "mobile"), listOf("de"), 3_000))
+        assertEquals(emptyMap<String, PxlServerProbeCache.Entry>(), cachedPickerMeasurements(cache, key.copy(profileId = 2), listOf("de"), 3_000))
+        assertEquals(emptyMap<String, PxlServerProbeCache.Entry>(), cachedPickerMeasurements(cache, key.copy(serviceStarted = false), listOf("de"), 3_000))
+        assertEquals(emptyMap<String, PxlServerProbeCache.Entry>(), cachedPickerMeasurements(cache, key.copy(profileUpdatedAtMillis = 21), listOf("de"), 3_000))
+        assertEquals(emptyMap<String, PxlServerProbeCache.Entry>(), cachedPickerMeasurements(cache, key, listOf("de"), 121_000))
+        cache.clear()
+        assertEquals(emptyMap<String, PxlServerProbeCache.Entry>(), cachedPickerMeasurements(cache, key, listOf("de"), 3_000))
     }
 
     @Test

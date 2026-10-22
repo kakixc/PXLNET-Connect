@@ -1,10 +1,75 @@
 package io.nekohasekai.sfa.compose.theme
 
 import androidx.compose.material3.Typography
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontVariation
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.unit.sp
+import io.nekohasekai.sfa.R
+
+val PxlDefaultFontFamily = FontFamily(
+    Font(R.font.roboto_flex, FontWeight.Light),
+    Font(R.font.roboto_flex, FontWeight.Normal),
+    Font(R.font.roboto_flex, FontWeight.Medium),
+    Font(R.font.roboto_flex, FontWeight.SemiBold),
+    Font(R.font.roboto_flex, FontWeight.Bold),
+    Font(R.font.roboto_flex, FontWeight.ExtraBold),
+    Font(R.font.roboto_flex, FontWeight.Black),
+)
+
+/** Roboto Flex's GRAD axis changes apparent weight without shifting line breaks. */
+@OptIn(ExperimentalTextApi::class)
+fun pxlDefaultFontFamily(weightLevel: Int): FontFamily {
+    val grade = when (weightLevel.coerceIn(0, 2)) {
+        0 -> 0
+        1 -> 75
+        else -> 150
+    }
+    return FontFamily(
+        *listOf(
+            FontWeight.Light,
+            FontWeight.Normal,
+            FontWeight.Medium,
+            FontWeight.SemiBold,
+            FontWeight.Bold,
+            FontWeight.ExtraBold,
+            FontWeight.Black,
+        ).map { weight ->
+            Font(
+                R.font.roboto_flex,
+                weight = weight,
+                variationSettings = FontVariation.Settings(weight, FontStyle.Normal, FontVariation.grade(grade)),
+            )
+        }.toTypedArray(),
+    )
+}
+
+private fun TextStyle.withFont(family: FontFamily, weightLevel: Int) = copy(
+    fontFamily = family,
+    fontWeight = FontWeight(((fontWeight?.weight ?: 400) + weightLevel * 100).coerceIn(100, 900)),
+)
+
+fun Typography.withFontFamily(family: FontFamily, weightLevel: Int) = Typography(
+    displayLarge = displayLarge.withFont(family, weightLevel),
+    displayMedium = displayMedium.withFont(family, weightLevel),
+    displaySmall = displaySmall.withFont(family, weightLevel),
+    headlineLarge = headlineLarge.withFont(family, weightLevel),
+    headlineMedium = headlineMedium.withFont(family, weightLevel),
+    headlineSmall = headlineSmall.withFont(family, weightLevel),
+    titleLarge = titleLarge.withFont(family, weightLevel),
+    titleMedium = titleMedium.withFont(family, weightLevel),
+    titleSmall = titleSmall.withFont(family, weightLevel),
+    bodyLarge = bodyLarge.withFont(family, weightLevel),
+    bodyMedium = bodyMedium.withFont(family, weightLevel),
+    bodySmall = bodySmall.withFont(family, weightLevel),
+    labelLarge = labelLarge.withFont(family, weightLevel),
+    labelMedium = labelMedium.withFont(family, weightLevel),
+    labelSmall = labelSmall.withFont(family, weightLevel),
+)
 
 // Material 3 Typography
 val Typography =

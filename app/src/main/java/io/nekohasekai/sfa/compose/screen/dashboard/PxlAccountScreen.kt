@@ -2,7 +2,6 @@ package io.nekohasekai.sfa.compose.screen.dashboard
 
 import android.widget.Toast
 import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -93,12 +92,17 @@ fun PxlAccountScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Icon(
-                        Icons.Default.AccountCircle,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(32.dp),
-                    )
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    ) {
+                        Icon(
+                            Icons.Default.AccountCircle,
+                            contentDescription = null,
+                            modifier = Modifier.padding(10.dp).size(28.dp),
+                        )
+                    }
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             uiState.telegramAccountName
@@ -106,7 +110,6 @@ fun PxlAccountScreen(
                                 ?: stringResource(if (hasSession) R.string.pxlnet_account_title else R.string.pxlnet_guest_mode),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
                         )
                         val accountStatus = stringResource(when {
                                 !hasSession -> R.string.pxlnet_guest_mode_description
@@ -123,7 +126,6 @@ fun PxlAccountScreen(
                                 accountStatus,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                                 style = MaterialTheme.typography.labelMedium,
-                                maxLines = 1,
                             )
                         }
                     }
@@ -181,7 +183,7 @@ fun PxlAccountScreen(
                             onClick = viewModel::refreshTelegramAccount,
                             enabled = !uiState.telegramLoginPending,
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(18.dp),
                         ) {
                             if (uiState.telegramLoginPending) {
                                 CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -193,7 +195,7 @@ fun PxlAccountScreen(
                             Button(
                                 onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) },
                                 modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(18.dp),
                             ) {
                                 Text(stringResource(if (uiState.telegramSubscriptionActive) R.string.pxlnet_renew else R.string.pxlnet_buy))
                             }
@@ -210,7 +212,7 @@ fun PxlAccountScreen(
                         onClick = viewModel::startTelegramLogin,
                         enabled = !uiState.telegramLoginPending,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(18.dp),
                     ) {
                         if (uiState.telegramLoginPending) {
                             CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -265,14 +267,14 @@ fun PxlAccountScreen(
                         Button(
                             onClick = { onOpenNewProfile(NewProfileArgs()) },
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(18.dp),
                         ) {
                             Text(stringResource(R.string.pxlnet_add_existing_subscription))
                         }
                         OutlinedButton(
                             onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) },
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(18.dp),
                         ) {
                             Text(stringResource(R.string.pxlnet_buy_in_bot))
                         }
@@ -411,7 +413,7 @@ private fun PxlPulsePanel(
             onClick = onRefresh,
             enabled = !checking,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
+            shape = RoundedCornerShape(18.dp),
         ) {
             if (checking) {
                 CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -435,8 +437,8 @@ private fun PxlPulsePanel(
 private fun PulseMetric(label: String, value: String, modifier: Modifier = Modifier) {
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(
@@ -447,9 +449,8 @@ private fun PulseMetric(label: String, value: String, modifier: Modifier = Modif
                 label,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
             )
-            Text(value, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+            Text(value, style = MaterialTheme.typography.labelLarge)
         }
     }
 }
@@ -461,11 +462,10 @@ private fun PxlAccountCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(if (compact) 16.dp else 12.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (compact) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surface,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(

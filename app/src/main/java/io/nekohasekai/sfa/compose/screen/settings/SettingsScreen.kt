@@ -8,15 +8,16 @@ import android.provider.Settings as AndroidSettings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -55,10 +56,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
@@ -182,14 +185,14 @@ fun SettingsScreen(navController: NavController) {
     ) {
         Card(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         ) {
             ListItem(
                 headlineContent = { Text(stringResource(R.string.title_app_settings)) },
                 supportingContent = { Text(stringResource(R.string.pxlnet_app_settings_summary)) },
                 leadingContent = {
-                    Icon(Icons.Outlined.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    PxlSettingsIcon(Icons.Outlined.Info)
                 },
                 trailingContent = {
                     if (hasUpdate) Badge(containerColor = MaterialTheme.colorScheme.primary)
@@ -206,15 +209,15 @@ fun SettingsScreen(navController: NavController) {
         )
         Card(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         ) {
             Column {
             ListItem(
                 headlineContent = { Text(stringResource(R.string.pxlnet_settings_subscriptions)) },
                 supportingContent = { Text(stringResource(R.string.pxlnet_settings_subscriptions_summary)) },
                 leadingContent = {
-                    Icon(Icons.Outlined.Sync, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    PxlSettingsIcon(Icons.Outlined.Sync)
                 },
                 modifier = Modifier.clickable { navController.navigate("settings/subscriptions") },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
@@ -223,7 +226,7 @@ fun SettingsScreen(navController: NavController) {
                 headlineContent = { Text(stringResource(R.string.pxlnet_settings_always_on_title)) },
                 supportingContent = { Text(stringResource(R.string.pxlnet_settings_always_on_summary)) },
                 leadingContent = {
-                    Icon(Icons.Outlined.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    PxlSettingsIcon(Icons.Outlined.Security)
                 },
                 trailingContent = {
                     Icon(
@@ -239,7 +242,7 @@ fun SettingsScreen(navController: NavController) {
                 headlineContent = { Text("PXL Guard") },
                 supportingContent = { Text(stringResource(R.string.pxlnet_settings_guard_summary)) },
                 leadingContent = {
-                    Icon(Icons.Outlined.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    PxlSettingsIcon(Icons.Outlined.Security)
                 },
                 trailingContent = {
                     Switch(
@@ -263,11 +266,7 @@ fun SettingsScreen(navController: NavController) {
                         Text(stringResource(R.string.pxlnet_battery_request_summary))
                     },
                     leadingContent = {
-                        Icon(
-                            Icons.Outlined.BatteryChargingFull,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+                        PxlSettingsIcon(Icons.Outlined.BatteryChargingFull)
                     },
                     modifier = Modifier.clickable {
                         val intent = Intent(AndroidSettings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
@@ -294,14 +293,14 @@ fun SettingsScreen(navController: NavController) {
         )
         Card(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         ) {
             ListItem(
                 headlineContent = { Text(stringResource(R.string.pxlnet_settings_app_rules)) },
                 supportingContent = { Text(stringResource(R.string.pxlnet_settings_app_rules_summary)) },
                 leadingContent = {
-                    Icon(Icons.Outlined.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    PxlSettingsIcon(Icons.Outlined.Tune)
                 },
                 modifier = Modifier.clickable { navController.navigate("pxlnet/app_routing") },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
@@ -316,8 +315,8 @@ fun SettingsScreen(navController: NavController) {
         )
         Card(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         ) {
             ListItem(
                 headlineContent = { Text(stringResource(R.string.pxlnet_settings_diagnostics)) },
@@ -331,7 +330,7 @@ fun SettingsScreen(navController: NavController) {
                     )
                 },
                 leadingContent = {
-                    Icon(Icons.Outlined.BugReport, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    PxlSettingsIcon(Icons.Outlined.BugReport)
                 },
                 modifier =
                 Modifier
@@ -355,9 +354,9 @@ fun SettingsScreen(navController: NavController) {
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             colors =
             CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             ),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            shape = RoundedCornerShape(24.dp),
         ) {
             Column {
                 Text(
@@ -371,11 +370,7 @@ fun SettingsScreen(navController: NavController) {
                     headlineContent = { Text(stringResource(R.string.pxlnet_subscription_reminders_title)) },
                     supportingContent = { Text(stringResource(R.string.pxlnet_subscription_reminders_description)) },
                     leadingContent = {
-                        Icon(
-                            Icons.Outlined.NotificationsActive,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+                        PxlSettingsIcon(Icons.Outlined.NotificationsActive)
                     },
                     trailingContent = {
                         Switch(
@@ -401,7 +396,7 @@ fun SettingsScreen(navController: NavController) {
                     headlineContent = { Text(stringResource(R.string.pxlnet_settings_developer_mode)) },
                     supportingContent = { Text(stringResource(R.string.pxlnet_settings_developer_mode_summary)) },
                     leadingContent = {
-                        Icon(Icons.Outlined.Code, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        PxlSettingsIcon(Icons.Outlined.Code)
                     },
                     trailingContent = {
                         Switch(
@@ -430,11 +425,7 @@ fun SettingsScreen(navController: NavController) {
                         headlineContent = { Text(stringResource(R.string.pxlnet_update_test_notification_setting)) },
                         supportingContent = { Text(stringResource(R.string.pxlnet_update_test_notification_setting_summary)) },
                         leadingContent = {
-                            Icon(
-                                Icons.Outlined.NotificationsActive,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
+                            PxlSettingsIcon(Icons.Outlined.NotificationsActive)
                         },
                         modifier = Modifier.clickable {
                             val shown = UpdateNotification.showTest(context)
@@ -458,11 +449,7 @@ fun SettingsScreen(navController: NavController) {
                             )
                         },
                         leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.Settings,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
+                            PxlSettingsIcon(Icons.Outlined.Settings)
                         },
                         modifier =
                         Modifier
@@ -481,11 +468,7 @@ fun SettingsScreen(navController: NavController) {
                             )
                         },
                         leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.Tune,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
+                            PxlSettingsIcon(Icons.Outlined.Tune)
                         },
                         modifier = Modifier.clickable { navController.navigate("settings/service") },
                         colors =
@@ -502,11 +485,7 @@ fun SettingsScreen(navController: NavController) {
                             )
                         },
                         leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.FilterAlt,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
+                            PxlSettingsIcon(Icons.Outlined.FilterAlt)
                         },
                         modifier =
                         Modifier
@@ -525,11 +504,7 @@ fun SettingsScreen(navController: NavController) {
                             )
                         },
                         leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.SettingsRemote,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
+                            PxlSettingsIcon(Icons.Outlined.SettingsRemote)
                         },
                         modifier =
                         Modifier
@@ -558,9 +533,9 @@ fun SettingsScreen(navController: NavController) {
                 .padding(horizontal = 16.dp),
             colors =
             CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             ),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            shape = RoundedCornerShape(24.dp),
         ) {
             Column {
                 ListItem(
@@ -571,11 +546,7 @@ fun SettingsScreen(navController: NavController) {
                         )
                     },
                     leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.Campaign,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+                        PxlSettingsIcon(Icons.Outlined.Campaign)
                     },
                     trailingContent = {
                         Icon(
@@ -596,11 +567,7 @@ fun SettingsScreen(navController: NavController) {
                         )
                     },
                     leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.CloudDownload,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+                        PxlSettingsIcon(Icons.Outlined.CloudDownload)
                     },
                     trailingContent = {
                         Icon(
@@ -631,11 +598,7 @@ fun SettingsScreen(navController: NavController) {
                         )
                     },
                     leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.Code,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+                        PxlSettingsIcon(Icons.Outlined.Code)
                     },
                     trailingContent = {
                         Icon(
@@ -666,11 +629,7 @@ fun SettingsScreen(navController: NavController) {
                         )
                     },
                     leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.SupportAgent,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+                        PxlSettingsIcon(Icons.Outlined.SupportAgent)
                     },
                     trailingContent = {
                         Icon(
@@ -698,7 +657,7 @@ fun SettingsScreen(navController: NavController) {
                         Text(stringResource(R.string.pxlnet_settings_credits_summary))
                     },
                     leadingContent = {
-                        Icon(Icons.Outlined.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        PxlSettingsIcon(Icons.Outlined.Info)
                     },
                     trailingContent = {
                         Icon(
@@ -717,5 +676,21 @@ fun SettingsScreen(navController: NavController) {
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun PxlSettingsIcon(imageVector: ImageVector) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(14.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = imageVector,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+        )
     }
 }

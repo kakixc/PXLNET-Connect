@@ -219,9 +219,10 @@ fun EditProfileScreen(
                 // Basic Information Card
                 Card(
                     modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
                     colors =
                     CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     ),
                 ) {
                     Column(
@@ -259,10 +260,10 @@ fun EditProfileScreen(
                             modifier =
                             Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(16.dp))
                                 .clickable { viewModel.showIconDialog() },
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shape = RoundedCornerShape(16.dp),
                         ) {
                             Row(
                                 modifier =
@@ -310,9 +311,10 @@ fun EditProfileScreen(
                 if (uiState.profileType == TypedProfile.Type.Remote) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
                         colors =
                         CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                         ),
                     ) {
                         Column(
@@ -421,9 +423,10 @@ fun EditProfileScreen(
                 // Content Card (for both Local and Remote profiles) - placed at the end
                 Card(
                     modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
                     colors =
                     CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f),
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     ),
                 ) {
                     Column(
@@ -452,14 +455,14 @@ fun EditProfileScreen(
                             modifier =
                             Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(16.dp))
                                 .clickable {
                                     onNavigateToEditContent(
                                         uiState.profileType == TypedProfile.Type.Remote,
                                     )
                                 },
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shape = RoundedCornerShape(16.dp),
                         ) {
                             Row(
                                 modifier =
