@@ -1,12 +1,15 @@
 package io.nekohasekai.sfa.compose.screen.settings
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -15,6 +18,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
@@ -26,8 +30,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import io.nekohasekai.sfa.R
@@ -81,20 +87,39 @@ fun SubscriptionSettingsScreen(navController: NavController) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
         )
-        listOf(
-            60 to R.string.pxlnet_subscription_interval_1h,
-            360 to R.string.pxlnet_subscription_interval_6h,
-            720 to R.string.pxlnet_subscription_interval_12h,
-        ).forEach { (minutes, label) ->
-            ListItem(
-                headlineContent = { Text(stringResource(label)) },
-                leadingContent = { RadioButton(selected = interval == minutes, onClick = null) },
-                modifier = Modifier.fillMaxWidth().clickable {
-                    interval = minutes
-                    Settings.subscriptionUpdateIntervalMinutes = minutes
-                    scope.launch(Dispatchers.IO) { UpdateProfileWork.reconfigureUpdater() }
-                },
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).selectableGroup(),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            val intervals = listOf(
+                60 to R.string.pxlnet_subscription_interval_1h,
+                360 to R.string.pxlnet_subscription_interval_6h,
+                720 to R.string.pxlnet_subscription_interval_12h,
             )
+            intervals.forEachIndexed { index, (minutes, label) ->
+                val selected = interval == minutes
+                val shape = when (index) {
+                    0 -> RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 5.dp, bottomEnd = 5.dp)
+                    intervals.lastIndex -> RoundedCornerShape(topStart = 5.dp, topEnd = 5.dp, bottomStart = 20.dp, bottomEnd = 20.dp)
+                    else -> RoundedCornerShape(5.dp)
+                }
+                ListItem(
+                    headlineContent = { Text(stringResource(label)) },
+                    leadingContent = { RadioButton(selected = selected, onClick = null) },
+                    colors = ListItemDefaults.colors(
+                        containerColor = if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainerLow,
+                    ),
+                    modifier = Modifier.fillMaxWidth().clip(shape).selectable(
+                        selected = selected,
+                        role = Role.RadioButton,
+                        onClick = {
+                            interval = minutes
+                            Settings.subscriptionUpdateIntervalMinutes = minutes
+                            scope.launch(Dispatchers.IO) { UpdateProfileWork.reconfigureUpdater() }
+                        },
+                    ),
+                )
+            }
         }
         Button(
             onClick = {

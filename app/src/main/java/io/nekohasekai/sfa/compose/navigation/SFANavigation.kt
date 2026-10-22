@@ -1,21 +1,30 @@
 package io.nekohasekai.sfa.compose.navigation
 
+import android.app.Activity
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavDeepLink
+import androidx.navigation.NavGraphBuilder
+import androidx.navigation.NamedNavArgument
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
+import androidx.navigation.compose.composable as navComposable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import io.nekohasekai.sfa.compose.screen.configuration.NewProfileScreen
 import io.nekohasekai.sfa.compose.screen.connections.ConnectionDetailsRoute
@@ -71,6 +80,7 @@ import io.nekohasekai.sfa.compose.screen.usbip.USBIPDeviceDetailScreen
 import io.nekohasekai.sfa.compose.screen.usbip.USBIPServerScreen
 import io.nekohasekai.sfa.compose.screen.usbip.USBIPStatusViewModel
 import io.nekohasekai.sfa.constant.Status
+import io.nekohasekai.sfa.utils.PxlUiPreferences
 
 private val slideInFromRight: AnimatedContentTransitionScope<*>.() -> androidx.compose.animation.EnterTransition = {
     slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, animationSpec = tween(300))
@@ -91,6 +101,7 @@ private val slideOutToLeft: AnimatedContentTransitionScope<*>.() -> androidx.com
 @Composable
 fun SFANavHost(
     navController: NavHostController,
+    destinationChrome: @Composable (NavBackStackEntry, @Composable () -> Unit) -> Unit = { _, content -> content() },
     rootTabRoutes: List<String> = bottomNavigationScreens.map { it.route },
     serviceStatus: Status = Status.Stopped,
     showStartFab: Boolean = false,
@@ -109,7 +120,37 @@ fun SFANavHost(
     openVPNStatusViewModel: OpenVPNStatusViewModel? = null,
     modifier: Modifier = Modifier,
 ) {
+    // Keep each destination's top bar in its AnimatedContent, so a predictive pop
+    // moves the bar and page together instead of leaving Activity chrome behind.
+    fun NavGraphBuilder.composable(
+        route: String,
+        arguments: List<NamedNavArgument> = emptyList(),
+        deepLinks: List<NavDeepLink> = emptyList(),
+        enterTransition: (AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition?)? = null,
+        exitTransition: (AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition?)? = null,
+        popEnterTransition: (AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition?)? = enterTransition,
+        popExitTransition: (AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition?)? = exitTransition,
+        sizeTransform: (AnimatedContentTransitionScope<NavBackStackEntry>.() -> SizeTransform?)? = null,
+        content: @Composable AnimatedContentScope.(NavBackStackEntry) -> Unit,
+    ) {
+        navComposable(
+            route = route,
+            arguments = arguments,
+            deepLinks = deepLinks,
+            enterTransition = enterTransition,
+            exitTransition = exitTransition,
+            popEnterTransition = popEnterTransition,
+            popExitTransition = popExitTransition,
+            sizeTransform = sizeTransform,
+        ) { entry ->
+            val animatedScope = this
+            destinationChrome(entry) { animatedScope.content(entry) }
+        }
+    }
+
     val context = LocalContext.current
+    val predictiveBackEnabled = PxlUiPreferences.predictiveBack.collectAsState().value
+    val backStackEntry = navController.currentBackStackEntryAsState().value
     val animateTabs = android.provider.Settings.Global.getFloat(
         context.contentResolver,
         android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
@@ -597,7 +638,23 @@ fun SFANavHost(
             OOMReportFileContentScreen(navController = navController, reportId = reportId, fileKind = fileKind)
         }
 
-        composable(Screen.Settings.route) {
+        composable(
+            route = Screen.Settings.route,
+            exitTransition = {
+                if (targetState.destination.route?.startsWith("settings/") == true) {
+                    slideOutToLeft()
+                } else {
+                    tabExit()
+                }
+            },
+            popEnterTransition = {
+                if (initialState.destination.route?.startsWith("settings/") == true) {
+                    slideInFromLeft()
+                } else {
+                    tabEnter()
+                }
+            },
+        ) {
             SettingsScreen(navController = navController)
         }
 
@@ -645,8 +702,8 @@ fun SFANavHost(
         composable(
             route = "settings/core",
             enterTransition = slideInFromRight,
-            exitTransition = slideOutToRight,
-            popEnterTransition = slideInFromRight,
+            exitTransition = slideOutToLeft,
+            popEnterTransition = slideInFromLeft,
             popExitTransition = slideOutToRight,
         ) {
             CoreSettingsScreen(navController = navController)
@@ -745,5 +802,11 @@ fun SFANavHost(
         ) {
             TailscaleFontPickerScreen(navController = navController)
         }
+    }
+    // Compose registers back callbacks in composition order. This handler must
+    // come after NavHost so the disabled setting takes precedence over NavHost's
+    // predictive callback instead of only handling the final pop.
+    BackHandler(enabled = !predictiveBackEnabled && backStackEntry != null) {
+        if (!navController.popBackStack()) (context as? Activity)?.finish()
     }
 }

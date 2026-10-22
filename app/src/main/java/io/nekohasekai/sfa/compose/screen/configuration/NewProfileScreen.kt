@@ -61,6 +61,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -173,9 +175,10 @@ fun NewProfileScreen(
             // Profile Name
             Card(
                 modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
                 colors =
                 CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                 ),
             ) {
                 Column(
@@ -209,9 +212,10 @@ fun NewProfileScreen(
             // Profile Type Selection
             Card(
                 modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
                 colors =
                 CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                 ),
             ) {
                 Column(
@@ -226,18 +230,12 @@ fun NewProfileScreen(
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy((-1).dp), // Overlap borders
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         OutlinedButton(
                             onClick = { viewModel.updateProfileType(ProfileType.Local) },
-                            modifier = Modifier.weight(1f),
-                            shape =
-                            RoundedCornerShape(
-                                topStart = 12.dp,
-                                bottomStart = 12.dp,
-                                topEnd = 0.dp,
-                                bottomEnd = 0.dp,
-                            ),
+                            modifier = Modifier.weight(1f).semantics { selected = uiState.profileType == ProfileType.Local },
+                            shape = RoundedCornerShape(18.dp),
                             colors =
                             if (uiState.profileType == ProfileType.Local) {
                                 ButtonDefaults.buttonColors(
@@ -261,14 +259,8 @@ fun NewProfileScreen(
                         }
                         OutlinedButton(
                             onClick = { viewModel.updateProfileType(ProfileType.Remote) },
-                            modifier = Modifier.weight(1f),
-                            shape =
-                            RoundedCornerShape(
-                                topStart = 0.dp,
-                                bottomStart = 0.dp,
-                                topEnd = 12.dp,
-                                bottomEnd = 12.dp,
-                            ),
+                            modifier = Modifier.weight(1f).semantics { selected = uiState.profileType == ProfileType.Remote },
+                            shape = RoundedCornerShape(18.dp),
                             colors =
                             if (uiState.profileType == ProfileType.Remote) {
                                 ButtonDefaults.buttonColors(
@@ -302,9 +294,10 @@ fun NewProfileScreen(
             ) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
                     colors =
                     CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f),
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     ),
                 ) {
                     Column(
@@ -319,18 +312,12 @@ fun NewProfileScreen(
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy((-1).dp), // Overlap borders
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             OutlinedButton(
                                 onClick = { viewModel.updateProfileSource(ProfileSource.CreateNew) },
-                                modifier = Modifier.weight(1f),
-                                shape =
-                                RoundedCornerShape(
-                                    topStart = 12.dp,
-                                    bottomStart = 12.dp,
-                                    topEnd = 0.dp,
-                                    bottomEnd = 0.dp,
-                                ),
+                                modifier = Modifier.weight(1f).semantics { selected = uiState.profileSource == ProfileSource.CreateNew },
+                                shape = RoundedCornerShape(18.dp),
                                 colors =
                                 if (uiState.profileSource == ProfileSource.CreateNew) {
                                     ButtonDefaults.buttonColors(
@@ -360,14 +347,8 @@ fun NewProfileScreen(
                             }
                             OutlinedButton(
                                 onClick = { viewModel.updateProfileSource(ProfileSource.Import) },
-                                modifier = Modifier.weight(1f),
-                                shape =
-                                RoundedCornerShape(
-                                    topStart = 0.dp,
-                                    bottomStart = 0.dp,
-                                    topEnd = 12.dp,
-                                    bottomEnd = 12.dp,
-                                ),
+                                modifier = Modifier.weight(1f).semantics { selected = uiState.profileSource == ProfileSource.Import },
+                                shape = RoundedCornerShape(18.dp),
                                 colors =
                                 if (uiState.profileSource == ProfileSource.Import) {
                                     ButtonDefaults.buttonColors(
@@ -471,9 +452,10 @@ fun NewProfileScreen(
             ) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
                     colors =
                     CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f),
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     ),
                 ) {
                     Column(

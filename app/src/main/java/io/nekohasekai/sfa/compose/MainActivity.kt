@@ -18,8 +18,15 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -38,6 +45,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.horizontalScroll
@@ -100,10 +109,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.Role
 import androidx.core.os.ConfigurationCompat
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
@@ -441,6 +452,10 @@ class MainActivity :
     fun SFAApp() {
         val navController = rememberNavController()
         val navBackStackEntry by navController.currentBackStackEntryAsState()
+        val visibleEntries by navController.visibleEntries.collectAsState()
+        val outgoingRoute = visibleEntries.firstOrNull {
+            it.lifecycle.currentState == Lifecycle.State.CREATED
+        }?.destination?.route
         val currentDestination = navBackStackEntry?.destination
         val currentRoute = currentDestination?.route
         val scope = rememberCoroutineScope()
@@ -482,7 +497,6 @@ class MainActivity :
         val floatingNavigationLabels by PxlUiPreferences.floatingNavigationLabels.collectAsState()
         val hazeState = remember { HazeState() }
         var floatingNavHeightPx by remember { mutableIntStateOf(0) }
-        var glassTopBarHeightPx by remember { mutableIntStateOf(0) }
 
         // Snackbar state
         val snackbarHostState = remember { SnackbarHostState() }
@@ -587,7 +601,8 @@ class MainActivity :
         }
         val topBarState = remember { mutableStateOf(emptyList<TopBarEntry>()) }
         val topBarController = remember { TopBarController(topBarState) }
-        val topBarOverride = topBarState.value.lastOrNull()?.content
+        val topBarOverride = topBarState.value.lastOrNull { it.owner === navBackStackEntry }?.content
+            ?: topBarState.value.lastOrNull()?.content
         val openNewProfile: (NewProfileArgs) -> Unit = { args ->
             newProfileArgs = args
             navController.navigate(ProfileRoutes.NewProfile) {
@@ -960,14 +975,15 @@ class MainActivity :
             )
         }
 
-        val isSettingsSubScreen = currentRoute?.startsWith("settings/") == true ||
-            currentRoute == "pxlnet/app_routing"
+        val isSettingsSubScreen = currentRoute?.startsWith("settings/") == true
+        val isAppRoutingSubScreen = currentRoute == "pxlnet/app_routing"
         val isToolsSubScreen = currentRoute?.startsWith("tools/") == true
         val isConnectionsDetail = currentRoute?.startsWith("connections/detail") == true
         val isProfileRoute = currentRoute?.startsWith("profile/") == true
         val currentRootRoute =
             when {
                 isSettingsSubScreen -> Screen.Settings.route
+                isAppRoutingSubScreen -> Screen.Dashboard.route
                 isToolsSubScreen -> Screen.Tools.route
                 currentRoute?.startsWith(Screen.Connections.route) == true -> Screen.Connections.route
                 currentRoute?.startsWith(Screen.Log.route) == true -> Screen.Log.route
@@ -979,7 +995,20 @@ class MainActivity :
         val isLogRoute = currentRootRoute == Screen.Log.route
         val isDashboardRoute = currentRootRoute == Screen.Dashboard.route
 
-        val isSubScreen = isSettingsSubScreen || isToolsSubScreen || isConnectionsDetail || isProfileRoute
+        // Keep the outgoing screen's chrome geometry until its transition finishes.
+        // Otherwise Home changes its top/bottom insets before the App routing slide starts,
+        // which makes the still-visible Home list jump under the user's finger.
+        val chromeRoute = outgoingRoute ?: currentRoute
+        val isSubScreen = chromeRoute?.startsWith("settings/") == true ||
+            chromeRoute == "pxlnet/app_routing" ||
+            chromeRoute?.startsWith("tools/") == true ||
+            chromeRoute?.startsWith("connections/detail") == true ||
+            chromeRoute?.startsWith("profile/") == true
+        val currentIsSubScreen = currentRoute?.startsWith("settings/") == true ||
+            currentRoute == "pxlnet/app_routing" ||
+            currentRoute?.startsWith("tools/") == true ||
+            currentRoute?.startsWith("connections/detail") == true ||
+            currentRoute?.startsWith("profile/") == true
         // Get LogViewModel instance if we're on the Log screen
         val logViewModel: LogViewModel? =
             if (isLogRoute) {
@@ -1156,6 +1185,56 @@ class MainActivity :
             topBarOverride?.invoke()
         }
 
+        val destinationChrome: @Composable (NavBackStackEntry, @Composable () -> Unit) -> Unit = { entry, page ->
+            if (useNavigationRail) {
+                page()
+            } else {
+                val rootGlass = floatingNavigation && navigationBlur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    entry.destination.route in setOf(Screen.Dashboard.route, Screen.Account.route, Screen.Settings.route)
+                var topBarHeightPx by remember(entry) { mutableIntStateOf(0) }
+                val topInset = if (rootGlass) {
+                    if (topBarHeightPx > 0) with(LocalDensity.current) { topBarHeightPx.toDp() } else 88.dp
+                } else 0.dp
+                val destinationTopBar = topBarState.value.lastOrNull { it.owner === entry }?.content
+                val glassSurface = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)
+                val canBlur = floatingNavigation && navigationBlur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    visibleBottomNavigationScreens.any { it.route == entry.destination.route }
+                CompositionLocalProvider(
+                    LocalPxlTopBarOverlay provides rootGlass,
+                    LocalPxlTopBarInset provides topInset,
+                ) {
+                    if (rootGlass) {
+                        Box(Modifier.fillMaxSize()) {
+                            Box(Modifier.fillMaxSize().hazeSource(hazeState)) { page() }
+                            destinationTopBar?.let { bar ->
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopCenter)
+                                        .fillMaxWidth()
+                                        .onSizeChanged { topBarHeightPx = it.height }
+                                        .hazeEffect(hazeState) {
+                                            backgroundColor = glassSurface
+                                            blurRadius = 22.dp
+                                        },
+                                ) {
+                                    bar()
+                                }
+                            }
+                        }
+                    } else {
+                        Column(Modifier.fillMaxSize()) {
+                            destinationTopBar?.invoke()
+                            Box(
+                                Modifier.weight(1f).fillMaxWidth().then(
+                                    if (canBlur) Modifier.hazeSource(hazeState) else Modifier,
+                                ),
+                            ) { page() }
+                        }
+                    }
+                }
+            }
+        }
+
         val scaffoldContent: @Composable (PaddingValues) -> Unit = { paddingValues ->
             val floatingPanelInset = LocalPxlFloatingNavInset.current
             Box(
@@ -1172,6 +1251,7 @@ class MainActivity :
 
                 SFANavHost(
                     navController = navController,
+                    destinationChrome = destinationChrome,
                     rootTabRoutes = (if (useNavigationRail) railScreens else visibleBottomNavigationScreens).map { it.route },
                     serviceStatus = currentServiceStatus,
                     showStartFab = showStartFab,
@@ -1383,9 +1463,6 @@ class MainActivity :
         val floatingRoot = !useNavigationRail && floatingNavigation && !isSubScreen &&
             currentRootRoute in setOf(Screen.Dashboard.route, Screen.Account.route, Screen.Settings.route)
         val floatingPanelVisible = !useNavigationRail && floatingNavigation && !isSubScreen
-        val glassTopInset = if (glassChrome) {
-            if (glassTopBarHeightPx > 0) with(LocalDensity.current) { glassTopBarHeightPx.toDp() } else 88.dp
-        } else 0.dp
         val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
         val floatingNavInset = if (floatingPanelVisible) {
             (if (floatingNavHeightPx > 0) with(LocalDensity.current) { floatingNavHeightPx.toDp() } else 76.dp) +
@@ -1395,7 +1472,7 @@ class MainActivity :
         CompositionLocalProvider(
             LocalTopBarController provides topBarController,
             LocalPxlTopBarOverlay provides glassChrome,
-            LocalPxlTopBarInset provides glassTopInset,
+            LocalPxlTopBarInset provides 0.dp,
             LocalPxlFloatingNavInset provides floatingNavInset,
             LocalPxlTopBarServiceStatus provides if (floatingPanelVisible && !isDashboardRoute) currentServiceStatus else Status.Stopped,
             LocalPxlTopBarStatusText provides if (floatingPanelVisible && !isDashboardRoute && isRemote) {
@@ -1453,9 +1530,14 @@ class MainActivity :
                 }
             } else {
                 Scaffold(
-                    modifier = Modifier.fillMaxSize(),
+                    // A stable owner for the system top inset keeps every destination's
+                    // app bar aligned during both forward and predictive-back transitions.
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background)
+                        .windowInsetsPadding(WindowInsets.statusBars),
                     snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-                    topBar = { if (!glassChrome) topBarContent() },
+                    topBar = {},
                     bottomBar = {
                         if (!isSubScreen && !floatingNavigation) {
                             val hasUpdate by UpdateState.hasUpdate
@@ -1511,17 +1593,7 @@ class MainActivity :
                     },
                 ) { paddingValues ->
                     Box(modifier = Modifier.fillMaxSize()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .then(
-                                    if (floatingNavigation && navigationBlur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                        Modifier.hazeSource(hazeState)
-                                    } else {
-                                        Modifier
-                                    },
-                                ),
-                        ) {
+                        Box(modifier = Modifier.fillMaxSize()) {
                             val contentPadding = if (!isSubScreen && floatingNavigation) {
                                 val layoutDirection = LocalLayoutDirection.current
                                 val navHeight = with(LocalDensity.current) { floatingNavHeightPx.toDp() }
@@ -1536,28 +1608,30 @@ class MainActivity :
                             }
                             scaffoldContent(contentPadding)
                         }
-                        if (glassChrome) {
-                            val topGlassSurface = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopCenter)
-                                    .fillMaxWidth()
-                                    .onSizeChanged { glassTopBarHeightPx = it.height }
-                                    .hazeEffect(hazeState) {
-                                        backgroundColor = topGlassSurface
-                                        blurRadius = 22.dp
-                                    },
-                            ) {
-                                topBarContent()
-                            }
-                        }
-                        if (!isSubScreen && floatingNavigation) {
+                        AnimatedVisibility(
+                            visible = !currentIsSubScreen && floatingNavigation,
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                            enter = slideInVertically(
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = Spring.StiffnessMedium,
+                                ),
+                                initialOffsetY = { it },
+                            ) + fadeIn(animationSpec = tween(120)),
+                            exit = slideOutVertically(
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = Spring.StiffnessMedium,
+                                ),
+                                targetOffsetY = { it },
+                            ) + fadeOut(animationSpec = tween(120)),
+                            label = "floating-navigation",
+                        ) {
                             val canBlurNavigation = navigationBlur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
                             val capsuleShape = RoundedCornerShape(36.dp)
                             val capsuleSurface = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)
                             Row(
                                 modifier = Modifier
-                                    .align(Alignment.BottomCenter)
                                     .padding(start = 16.dp, end = 16.dp, bottom = navigationBarInset + 12.dp)
                                     .fillMaxWidth()
                                     .onSizeChanged { floatingNavHeightPx = it.height }

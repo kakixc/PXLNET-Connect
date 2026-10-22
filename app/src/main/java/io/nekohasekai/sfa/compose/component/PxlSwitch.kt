@@ -6,8 +6,6 @@ import androidx.compose.material3.SwitchColors
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 
 /** Vibrates only for a user-triggered toggle, never when state is restored or updated externally. */
 @Composable
@@ -20,12 +18,12 @@ fun PxlSwitch(
     colors: SwitchColors = SwitchDefaults.colors(),
     interactionSource: MutableInteractionSource? = null,
 ) {
-    val haptics = LocalHapticFeedback.current
+    val haptics = rememberPxlHaptics()
     Switch(
         checked = checked,
         onCheckedChange = onCheckedChange?.let { change ->
             { value ->
-                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                haptics.toggle(value)
                 change(value)
             }
         },

@@ -3,13 +3,17 @@ package io.nekohasekai.sfa.compose.screen.dashboard
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -18,7 +22,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,6 +56,7 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.DashboardCustomize
 import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
@@ -62,7 +69,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -83,6 +90,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -95,6 +103,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -151,6 +160,16 @@ private sealed interface ServerProbeDisplay {
     data class Measured(val milliseconds: Int) : ServerProbeDisplay
 }
 
+/** Restore only measurements belonging to the current profile, network and VPN state. */
+internal fun cachedPickerMeasurements(
+    cache: PxlServerProbeCache,
+    key: PxlServerProbeCache.Key,
+    tags: List<String>,
+    nowMillis: Long,
+): Map<String, PxlServerProbeCache.Entry> = tags.distinct().mapNotNull { tag ->
+    cache.get(key.copy(tag = tag), nowMillis)?.let { tag to it }
+}.toMap()
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
@@ -173,6 +192,8 @@ fun DashboardScreen(
     val mascotAnimationsEnabled by PxlMascotSettings.animationsEnabled.collectAsState()
     val mascotTipsEnabled by PxlMascotSettings.tipsEnabled.collectAsState()
     var showServerPicker by remember { mutableStateOf(false) }
+    var showProfilePicker by remember { mutableStateOf(false) }
+    var pendingDeleteProfileId by remember { mutableLongStateOf(-1L) }
     var pickerProbeRequested by remember { mutableStateOf(false) }
     var showAvailableProfiles by remember { mutableStateOf(false) }
     var showOnboarding by remember { mutableStateOf(PxlLocalPreferences.shouldShowOnboarding(context)) }
@@ -282,6 +303,18 @@ fun DashboardScreen(
         uiState.selectedProfileId, profileUpdatedAtMillis, manualChoices.map { it.tag }, selectedProbeTag, autoProbeTags) {
         serverProbeResults.clear()
         if (!hasProfile || serviceStatus !in setOf(Status.Started, Status.Stopped)) return@LaunchedEffect
+        val cacheKey = PxlServerProbeCache.Key(
+            uiState.selectedProfileId, "", serviceStatus == Status.Started, probeNetworkId, profileUpdatedAtMillis,
+        )
+        if (showServerPicker) {
+            cachedPickerMeasurements(
+                viewModel.serverProbeCache, cacheKey, manualChoices.map { it.tag } + autoProbeTags,
+                System.currentTimeMillis(),
+            ).forEach { (tag, cached) ->
+                serverProbeResults[tag] = cached.milliseconds?.let(ServerProbeDisplay::Measured)
+                    ?: ServerProbeDisplay.Unavailable
+            }
+        }
         val tags = serverProbeTargets(
             pickerOpen = showServerPicker,
             measureAllRequested = pickerProbeRequested,
@@ -296,11 +329,8 @@ fun DashboardScreen(
         val limiter = Semaphore(if (serviceStatus == Status.Started) 2 else 1)
         coroutineScope {
             tags.forEach { tag ->
-                val cacheKey = PxlServerProbeCache.Key(
-                    uiState.selectedProfileId, tag, serviceStatus == Status.Started, probeNetworkId,
-                    profileUpdatedAtMillis,
-                )
-                viewModel.serverProbeCache.get(cacheKey, System.currentTimeMillis())?.let { cached ->
+                val tagCacheKey = cacheKey.copy(tag = tag)
+                viewModel.serverProbeCache.get(tagCacheKey, System.currentTimeMillis())?.let { cached ->
                     serverProbeResults[tag] = cached.milliseconds?.let(ServerProbeDisplay::Measured)
                         ?: ServerProbeDisplay.Unavailable
                     return@forEach
@@ -318,7 +348,7 @@ fun DashboardScreen(
                     // Native probes may finish after a sheet/profile/network change.
                     // Their old result must not overwrite the new generation's UI or cache.
                     currentCoroutineContext().ensureActive()
-                    viewModel.serverProbeCache.record(cacheKey, measured, System.currentTimeMillis())
+                    viewModel.serverProbeCache.record(tagCacheKey, measured, System.currentTimeMillis())
                     serverProbeResults[tag] = measured?.let(ServerProbeDisplay::Measured) ?: ServerProbeDisplay.Unavailable
                 }
             }
@@ -352,7 +382,9 @@ fun DashboardScreen(
         reachability = if (uiState.serverSwitchFailed) ConnectionReachability.Unreachable else reachability,
     )
     val selectedProbe = serverProbeResults[selectedProbeTag]
-    val bestPreconnectDelay = if (serviceStatus == Status.Stopped && pickerProbeRequested) {
+    val pickerShowingServerProbes = pickerProbeRequested || latencySource == PxlLatencySource.VPN_SERVER ||
+        (showServerPicker && serverProbeResults.values.any { it != ServerProbeDisplay.Loading })
+    val bestPreconnectDelay = if (serviceStatus == Status.Stopped && pickerShowingServerProbes) {
         bestMeasuredServerDelay(manualChoices.map { it.tag }, serverProbeResults.mapValues { (_, result) ->
             (result as? ServerProbeDisplay.Measured)?.milliseconds
         })
@@ -482,6 +514,47 @@ fun DashboardScreen(
         )
     }
 
+    if (showProfilePicker && uiState.profiles.size > 1) {
+        ProfilePickerSheet(
+            profiles = uiState.profiles,
+            selectedProfileId = uiState.selectedProfileId,
+            onProfileSelected = { profile -> viewModel.selectProfile(profile.id) },
+            onProfileEdit = viewModel::editProfile,
+            onProfileDelete = { pendingDeleteProfileId = it.id },
+            onProfileMove = viewModel::moveProfile,
+            onDismiss = { showProfilePicker = false },
+            onAddProfile = { onOpenNewProfile(NewProfileArgs()) },
+            showManagementActions = true,
+            titleRes = R.string.pxlnet_settings_subscriptions,
+        )
+    }
+
+    uiState.profiles.firstOrNull { it.id == pendingDeleteProfileId }?.let { profile ->
+        val activeProfileIsRunning = profile.id == uiState.selectedProfileId && serviceStatus != Status.Stopped
+        AlertDialog(
+            onDismissRequest = { pendingDeleteProfileId = -1L },
+            title = { Text(stringResource(R.string.pxlnet_delete_subscription_title, profile.name)) },
+            text = {
+                Text(stringResource(
+                    if (activeProfileIsRunning) R.string.pxlnet_delete_subscription_disconnect
+                    else R.string.pxlnet_delete_subscription_confirm,
+                ))
+            },
+            confirmButton = {
+                if (!activeProfileIsRunning) TextButton(onClick = {
+                    pendingDeleteProfileId = -1L
+                    viewModel.deleteProfile(profile)
+                }) { Text(stringResource(R.string.menu_delete)) }
+                else TextButton(onClick = { pendingDeleteProfileId = -1L }) { Text(stringResource(R.string.ok)) }
+            },
+            dismissButton = {
+                if (!activeProfileIsRunning) TextButton(onClick = { pendingDeleteProfileId = -1L }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+
     if (showServerPicker && serverChoices.isNotEmpty()) {
         ModalBottomSheet(
             onDismissRequest = {
@@ -515,13 +588,14 @@ fun DashboardScreen(
                     )
                 }
             }
-            TextButton(
+            FilledTonalButton(
                 onClick = {
                     viewModel.serverProbeCache.clear()
                     pickerProbeRequested = true
                     probeRevision++
                 },
-                modifier = Modifier.padding(horizontal = 12.dp),
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                shape = RoundedCornerShape(18.dp),
                 enabled = serviceStatus in setOf(Status.Started, Status.Stopped) && hasProfile && manualChoices.isNotEmpty(),
             ) {
                 Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -529,7 +603,7 @@ fun DashboardScreen(
             }
             Text(
                 stringResource(
-                    if (pickerProbeRequested || latencySource == PxlLatencySource.VPN_SERVER) {
+                    if (pickerShowingServerProbes) {
                         R.string.pxlnet_latency_server_title
                     } else {
                         R.string.pxlnet_website_delay_label
@@ -555,12 +629,12 @@ fun DashboardScreen(
                 ServerPickerRow(
                     item = item,
                     selected = item.tag == selectedServer,
-                    delay = if (pickerProbeRequested || latencySource == PxlLatencySource.VPN_SERVER) {
+                    delay = if (pickerShowingServerProbes) {
                         if (autoBest) bestPreconnectDelay else (probe as? ServerProbeDisplay.Measured)?.milliseconds
                     } else {
                         item.delay
                     },
-                    loading = (pickerProbeRequested || latencySource == PxlLatencySource.VPN_SERVER) &&
+                    loading = pickerShowingServerProbes &&
                         (probe == ServerProbeDisplay.Loading || autoLoading),
                     hint = if (autoBest) stringResource(R.string.pxlnet_latency_best_found) else null,
                 ) {
@@ -572,7 +646,7 @@ fun DashboardScreen(
             }
             if (automaticChoices.isNotEmpty()) {
                 ServerPickerSectionTitle(stringResource(R.string.pxlnet_server_section_auto))
-                if (pickerProbeRequested || latencySource == PxlLatencySource.VPN_SERVER) {
+                if (pickerShowingServerProbes) {
                     Text(
                         stringResource(R.string.pxlnet_latency_auto_explanation),
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
@@ -584,11 +658,8 @@ fun DashboardScreen(
             }
             if (manualChoices.isNotEmpty()) {
                 ServerPickerSectionTitle(stringResource(R.string.pxlnet_server_section_manual))
-                manualChoices.forEachIndexed { index, item ->
+                manualChoices.forEach { item ->
                     choiceRow(item)
-                    if (index != manualChoices.lastIndex) {
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    }
                 }
             }
             Spacer(Modifier.height(24.dp))
@@ -626,6 +697,51 @@ fun DashboardScreen(
                         }
                     },
                 )
+            }
+        }
+        if (uiState.profiles.size > 1) {
+            item {
+                val selectedProfile = uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }
+                Surface(
+                    onClick = { showProfilePicker = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Icon(Icons.Default.Description, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                stringResource(R.string.pxlnet_subscription_title),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                selectedProfile?.name ?: stringResource(R.string.pxlnet_choose_available_profile),
+                                style = MaterialTheme.typography.titleSmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            selectedProfile?.typed?.remoteURL?.let { url ->
+                                Uri.parse(url).host?.let { host ->
+                                    Text(
+                                        host,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        }
+                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
+                    }
+                }
             }
         }
         if (subscriptionInactive) {
@@ -1156,6 +1272,7 @@ private fun ConnectionControl(
     onMascotTap: () -> Unit,
     onClick: () -> Unit,
 ) {
+    val context = LocalContext.current
     val label = when (state) {
         ConnectionPresentationState.Connected -> when (reachability) {
             ConnectionReachability.Reachable -> if (delay != null && delay > 0) {
@@ -1221,6 +1338,23 @@ private fun ConnectionControl(
         animationSpec = tween(360),
         label = "connect-entrance",
     )
+    val buttonInteraction = remember { MutableInteractionSource() }
+    val isButtonPressed by buttonInteraction.collectIsPressedAsState()
+    val tapMotion = remember { Animatable(0f) }
+    val clickScope = rememberCoroutineScope()
+    val motionEnabled = android.provider.Settings.Global.getFloat(
+        context.contentResolver,
+        android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+        1f,
+    ) > 0f
+    val pressMotion by animateFloatAsState(
+        targetValue = if (motionEnabled && isButtonPressed) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.78f, stiffness = 650f),
+        label = "connect-press",
+    )
+    // Hold is restrained; the released tap has the stronger spring, without over-rounding.
+    val buttonScale = 1f - maxOf(pressMotion * 0.035f, tapMotion.value * 0.11f)
+    val buttonCorner = (52f + maxOf(pressMotion * 12f, tapMotion.value * 7f)).dp
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
@@ -1244,13 +1378,20 @@ private fun ConnectionControl(
             verticalAlignment = Alignment.Bottom,
         ) {
             Button(
-                onClick = onClick,
+                onClick = {
+                    if (motionEnabled) clickScope.launch {
+                        tapMotion.snapTo(0.22f)
+                        tapMotion.animateTo(0f, spring(dampingRatio = 0.82f, stiffness = 850f))
+                    }
+                    onClick()
+                },
                 enabled = enabled,
                 modifier = Modifier.size(164.dp).graphicsLayer {
-                    scaleX = entranceScale
-                    scaleY = entranceScale
+                    scaleX = entranceScale * buttonScale
+                    scaleY = entranceScale * buttonScale
                 },
-                shape = CircleShape,
+                shape = RoundedCornerShape(buttonCorner),
+                interactionSource = buttonInteraction,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = containerColor,
                     contentColor = contentColor,
@@ -1318,7 +1459,7 @@ private fun ConnectionControl(
 private fun QuickTileCard(onAdd: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -1342,7 +1483,7 @@ private fun QuickTileCard(onAdd: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            OutlinedButton(onClick = onAdd, shape = RoundedCornerShape(8.dp)) {
+            OutlinedButton(onClick = onAdd, shape = RoundedCornerShape(50)) {
                 Text(stringResource(R.string.pxlnet_add))
             }
         }
@@ -1362,9 +1503,8 @@ private fun ServerCard(
     val context = LocalContext.current
     Card(
         modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Row(
@@ -1407,7 +1547,7 @@ private fun RoutingCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -1430,7 +1570,7 @@ private fun RoutingCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
         }
     }
 }
@@ -1442,7 +1582,7 @@ private fun GuardCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -1502,7 +1642,9 @@ private fun PxlOnboardingSheet(
         containerColor = MaterialTheme.colorScheme.surface,
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().fillMaxHeight(0.82f).padding(horizontal = 24.dp, vertical = 16.dp),
+            modifier = Modifier.fillMaxWidth().fillMaxHeight(0.82f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             LinearProgressIndicator(
@@ -1590,7 +1732,7 @@ private fun PxlOnboardingSheet(
                     )
                 }
             }
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(16.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1670,21 +1812,30 @@ private fun ServerPickerRow(
     onClick: () -> Unit,
 ) {
     val context = LocalContext.current
+    val rowShape = RoundedCornerShape(20.dp)
+    val titleColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+    val supportColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 3.dp)
+            .clip(rowShape)
+            .background(if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         ServerLocationIcon(item.displayTag)
         Column(modifier = Modifier.weight(1f)) {
-            Text(serverTitle(context, item.displayTag, item.type), fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+            Text(serverTitle(context, item.displayTag, item.type), color = titleColor, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
             val protocol = serverProtocol(item.displayTag, item.type)
-            if (protocol.isNotBlank()) Text(protocol, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (hint != null) Text(hint, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (protocol.isNotBlank()) Text(protocol, style = MaterialTheme.typography.bodySmall, color = supportColor)
+            if (hint != null) Text(hint, style = MaterialTheme.typography.labelSmall, color = supportColor)
         }
         DelayIndicator(delay, loading)
         if (selected) {
-            Box(Modifier.size(8.dp).background(PxlGreen, CircleShape))
+            Box(Modifier.size(8.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
         }
     }
 }

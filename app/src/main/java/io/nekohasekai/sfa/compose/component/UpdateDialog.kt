@@ -75,7 +75,7 @@ fun UpdateAvailableDialog(
     val processedNotes = remember(updateInfo.releaseNotes) {
         updateInfo.releaseNotes?.let(emojiCatalog::replaceShortcodes)
     }
-    var showFullNotes by remember(updateInfo.versionCode) { mutableStateOf(false) }
+    var showFullNotes by remember(updateInfo.versionCode) { mutableStateOf(true) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,

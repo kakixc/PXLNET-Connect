@@ -20,14 +20,18 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -88,10 +92,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -523,8 +528,9 @@ fun AppSettingsScreen(
             .padding(vertical = 8.dp),
     ) {
         Card(
+            shape = RoundedCornerShape(24.dp),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         ) {
             ListItem(
                 headlineContent = { Text(stringResource(R.string.pxlnet_latency_setting_title)) },
@@ -540,25 +546,26 @@ fun AppSettingsScreen(
                     )
                 },
                 leadingContent = {
-                    Icon(Icons.Outlined.Speed, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    AppSettingsIcon(Icons.Outlined.Speed)
                 },
                 modifier = Modifier.clickable { showLatencySourceDialog = true },
-                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
             )
         }
 
         // Info Card
         Card(
+            shape = RoundedCornerShape(24.dp),
             modifier =
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
             colors =
             CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                containerColor = MaterialTheme.colorScheme.surface,
             ),
         ) {
-            Column {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Box {
                     ListItem(
                         headlineContent = {
@@ -574,11 +581,7 @@ fun AppSettingsScreen(
                             )
                         },
                         leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.Info,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
+                            AppSettingsIcon(Icons.Outlined.Info)
                         },
                         trailingContent = {
                             if (hasUpdate) {
@@ -596,7 +599,7 @@ fun AppSettingsScreen(
                             ),
                         colors =
                         ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                         ),
                     )
                     Box(modifier = Modifier.align(Alignment.BottomEnd)) {
@@ -643,18 +646,14 @@ fun AppSettingsScreen(
                         Text(displayName, style = MaterialTheme.typography.bodyMedium)
                     },
                     leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.Language,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+                        AppSettingsIcon(Icons.Outlined.Language)
                     },
                     modifier =
                     Modifier
                         .clickable { showLanguageDialog = true },
                     colors =
                     ListItemDefaults.colors(
-                        containerColor = Color.Transparent,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     ),
                 )
 
@@ -672,21 +671,17 @@ fun AppSettingsScreen(
                         )
                     },
                     leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.Palette,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+                        AppSettingsIcon(Icons.Outlined.Palette)
                     },
                     modifier = Modifier.clickable { navController.navigate("settings/app/appearance") },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
                 )
 
                 ListItem(
                     headlineContent = { Text(stringResource(R.string.pxlnet_restart_onboarding)) },
                     supportingContent = { Text(stringResource(R.string.pxlnet_restart_onboarding_summary)) },
                     leadingContent = {
-                        Icon(Icons.Outlined.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        AppSettingsIcon(Icons.Outlined.Info)
                     },
                     modifier = Modifier.clickable {
                         PxlLocalPreferences.requestOnboarding(context)
@@ -695,7 +690,7 @@ fun AppSettingsScreen(
                             launchSingleTop = true
                         }
                     },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
                 )
 
                 ListItem(
@@ -711,11 +706,7 @@ fun AppSettingsScreen(
                         }
                     },
                     leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.DeleteSweep,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+                        AppSettingsIcon(Icons.Outlined.DeleteSweep)
                     },
                     modifier =
                     Modifier
@@ -728,7 +719,7 @@ fun AppSettingsScreen(
                         ),
                     colors =
                     ListItemDefaults.colors(
-                        containerColor = Color.Transparent,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     ),
                 )
 
@@ -741,11 +732,7 @@ fun AppSettingsScreen(
                             )
                         },
                         leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.DeleteForever,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
+                            AppSettingsIcon(Icons.Outlined.DeleteForever)
                         },
                         modifier =
                         Modifier
@@ -761,7 +748,7 @@ fun AppSettingsScreen(
                             },
                         colors =
                         ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                         ),
                     )
                 }
@@ -778,13 +765,14 @@ fun AppSettingsScreen(
         )
 
         Card(
+            shape = RoundedCornerShape(24.dp),
             modifier =
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
             colors =
             CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                containerColor = MaterialTheme.colorScheme.surface,
             ),
         ) {
             ListItem(
@@ -795,11 +783,7 @@ fun AppSettingsScreen(
                     )
                 },
                 leadingContent = {
-                    Icon(
-                        imageVector = Icons.Default.Terminal,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
+                    AppSettingsIcon(Icons.Default.Terminal)
                 },
                 modifier =
                 Modifier
@@ -807,7 +791,7 @@ fun AppSettingsScreen(
                     .clickable { navController.navigate("settings/tailscale/terminal_config") },
                 colors =
                 ListItemDefaults.colors(
-                    containerColor = Color.Transparent,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                 ),
             )
         }
@@ -822,16 +806,17 @@ fun AppSettingsScreen(
         )
 
         Card(
+            shape = RoundedCornerShape(24.dp),
             modifier =
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
             colors =
             CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                containerColor = MaterialTheme.colorScheme.surface,
             ),
         ) {
-            Column {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 ListItem(
                     headlineContent = {
                         Text(
@@ -840,11 +825,7 @@ fun AppSettingsScreen(
                         )
                     },
                     leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.Notifications,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+                        AppSettingsIcon(Icons.Outlined.Notifications)
                     },
                     trailingContent = {
                         Switch(
@@ -858,7 +839,7 @@ fun AppSettingsScreen(
                         .clickable { showDisableNotificationDialog = true },
                     colors =
                     ListItemDefaults.colors(
-                        containerColor = Color.Transparent,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     ),
                 )
                 ListItem(
@@ -869,11 +850,7 @@ fun AppSettingsScreen(
                         )
                     },
                     leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.Speed,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+                        AppSettingsIcon(Icons.Outlined.Speed)
                     },
                     trailingContent = {
                         Switch(
@@ -894,7 +871,7 @@ fun AppSettingsScreen(
                         .clip(RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp)),
                     colors =
                     ListItemDefaults.colors(
-                        containerColor = Color.Transparent,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     ),
                 )
             }
@@ -910,16 +887,17 @@ fun AppSettingsScreen(
         )
 
         Card(
+            shape = RoundedCornerShape(24.dp),
             modifier =
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
             colors =
             CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                containerColor = MaterialTheme.colorScheme.surface,
             ),
         ) {
-            Column {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 val isFDroid = UpdateSource.fromString(currentSource) == UpdateSource.FDROID
                 val updateItemCount =
                     run {
@@ -954,7 +932,7 @@ fun AppSettingsScreen(
                         }
                         if (Vendor.hasCustomUpdate && autoUpdateEnabled && !isFDroid) {
                             count += 2
-                            if (updatePreDownloadEnabled) count += 2
+                            if (updatePreDownloadEnabled) count += 1
                         }
                         count
                     }
@@ -987,18 +965,14 @@ fun AppSettingsScreen(
                             Text(sourceName, style = MaterialTheme.typography.bodyMedium)
                         },
                         leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.NewReleases,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
+                            AppSettingsIcon(Icons.Outlined.NewReleases)
                         },
                         modifier =
                         updateItemModifier()
                             .clickable { showSourceDialog = true },
                         colors =
                         ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                         ),
                     )
                 }
@@ -1023,11 +997,7 @@ fun AppSettingsScreen(
                             Text(trackName, style = MaterialTheme.typography.bodyMedium)
                         },
                         leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.NewReleases,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
+                            AppSettingsIcon(Icons.Outlined.NewReleases)
                         },
                         modifier =
                         updateItemModifier().let {
@@ -1035,7 +1005,7 @@ fun AppSettingsScreen(
                         },
                         colors =
                         ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                         ),
                     )
 
@@ -1057,18 +1027,14 @@ fun AppSettingsScreen(
                             )
                         },
                         leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.Key,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
+                            AppSettingsIcon(Icons.Outlined.Key)
                         },
                         modifier =
                         updateItemModifier()
                             .clickable { showGitHubTokenDialog = true },
                         colors =
                         ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                         ),
                     )
                 }
@@ -1111,18 +1077,14 @@ fun AppSettingsScreen(
                             )
                         },
                         leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.Speed,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
+                            AppSettingsIcon(Icons.Outlined.Speed)
                         },
                         modifier =
                         updateItemModifier()
                             .clickable { navController.navigate("settings/fdroid_mirror") },
                         colors =
                         ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                         ),
                     )
                 }
@@ -1135,11 +1097,7 @@ fun AppSettingsScreen(
                         )
                     },
                     leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.Autorenew,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+                        AppSettingsIcon(Icons.Outlined.Autorenew)
                     },
                     trailingContent = {
                         Switch(
@@ -1155,7 +1113,7 @@ fun AppSettingsScreen(
                     modifier = updateItemModifier(),
                     colors =
                     ListItemDefaults.colors(
-                        containerColor = Color.Transparent,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     ),
                 )
 
@@ -1175,11 +1133,7 @@ fun AppSettingsScreen(
                             )
                         },
                         leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.AdminPanelSettings,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
+                            AppSettingsIcon(Icons.Outlined.AdminPanelSettings)
                         },
                         trailingContent = {
                             if (isVerifyingMethod) {
@@ -1221,7 +1175,7 @@ fun AppSettingsScreen(
                         modifier = updateItemModifier(),
                         colors =
                         ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                         ),
                     )
 
@@ -1245,17 +1199,13 @@ fun AppSettingsScreen(
                                 )
                             },
                             leadingContent = {
-                                Icon(
-                                    imageVector = Icons.Outlined.Settings,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                )
+                                AppSettingsIcon(Icons.Outlined.Settings)
                             },
                             modifier =
                             updateItemModifier().clickable { showInstallMethodMenu = true },
                             colors =
                             ListItemDefaults.colors(
-                                containerColor = Color.Transparent,
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                             ),
                         )
 
@@ -1275,11 +1225,7 @@ fun AppSettingsScreen(
                                     )
                                 },
                                 leadingContent = {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Download,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                    )
+                                    AppSettingsIcon(Icons.Outlined.Download)
                                 },
                                 modifier =
                                 updateItemModifier()
@@ -1289,7 +1235,7 @@ fun AppSettingsScreen(
                                     },
                                 colors =
                                 ListItemDefaults.colors(
-                                    containerColor = Color.Transparent,
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                                 ),
                             )
                         }
@@ -1310,11 +1256,7 @@ fun AppSettingsScreen(
                                     )
                                 },
                                 leadingContent = {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Settings,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                    )
+                                    AppSettingsIcon(Icons.Outlined.Settings)
                                 },
                                 modifier =
                                 updateItemModifier()
@@ -1327,7 +1269,7 @@ fun AppSettingsScreen(
                                     },
                                 colors =
                                 ListItemDefaults.colors(
-                                    containerColor = Color.Transparent,
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                                 ),
                             )
                         }
@@ -1350,11 +1292,7 @@ fun AppSettingsScreen(
                             )
                         },
                         leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.SystemUpdateAlt,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
+                            AppSettingsIcon(Icons.Outlined.SystemUpdateAlt)
                         },
                         trailingContent = {
                             Switch(
@@ -1371,7 +1309,7 @@ fun AppSettingsScreen(
                         modifier = updateItemModifier(),
                         colors =
                         ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                         ),
                     )
                     if (autoUpdateEnabled && !isFDroid) {
@@ -1384,7 +1322,7 @@ fun AppSettingsScreen(
                                 ))
                             },
                             leadingContent = {
-                                Icon(Icons.Outlined.Notifications, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                AppSettingsIcon(Icons.Outlined.Notifications)
                             },
                             trailingContent = {
                                 Switch(
@@ -1412,13 +1350,13 @@ fun AppSettingsScreen(
                                 )
                             },
                             modifier = updateItemModifier(),
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
                         )
                         ListItem(
                             headlineContent = { Text(stringResource(R.string.pxlnet_update_pre_download)) },
                             supportingContent = { Text(stringResource(R.string.pxlnet_update_pre_download_summary)) },
                             leadingContent = {
-                                Icon(Icons.Outlined.Download, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                AppSettingsIcon(Icons.Outlined.Download)
                             },
                             trailingContent = {
                                 Switch(
@@ -1431,40 +1369,53 @@ fun AppSettingsScreen(
                                 )
                             },
                             modifier = updateItemModifier(),
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
                         )
                         if (updatePreDownloadEnabled) {
-                            Text(
-                                stringResource(R.string.pxlnet_update_download_network),
-                                modifier = Modifier.padding(start = 72.dp, top = 8.dp, bottom = 4.dp),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                            listOf(true, false).forEach { unmetered ->
-                                ListItem(
-                                    headlineContent = {
-                                        Text(stringResource(
-                                            if (unmetered) R.string.pxlnet_update_unmetered
-                                            else R.string.pxlnet_update_any_network,
-                                        ))
-                                    },
-                                    trailingContent = {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                                    .padding(start = 16.dp, end = 16.dp, bottom = 8.dp)
+                                    .selectableGroup(),
+                            ) {
+                                Text(
+                                    stringResource(R.string.pxlnet_update_download_network),
+                                    modifier = Modifier.padding(top = 12.dp, bottom = 2.dp),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                listOf(true, false).forEach { unmetered ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .selectable(
+                                                selected = updatePreDownloadUnmetered == unmetered,
+                                                role = Role.RadioButton,
+                                                onClick = {
+                                                    updatePreDownloadUnmetered = unmetered
+                                                    Settings.updatePreDownloadUnmetered = unmetered
+                                                    Vendor.scheduleUpdatePreDownload(context, updateInfo)
+                                                },
+                                            )
+                                            .heightIn(min = 48.dp)
+                                            .padding(vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            stringResource(
+                                                if (unmetered) R.string.pxlnet_update_unmetered
+                                                else R.string.pxlnet_update_any_network,
+                                            ),
+                                            modifier = Modifier.weight(1f),
+                                            style = MaterialTheme.typography.bodyLarge,
+                                        )
                                         RadioButton(
                                             selected = updatePreDownloadUnmetered == unmetered,
-                                            onClick = {
-                                                updatePreDownloadUnmetered = unmetered
-                                                Settings.updatePreDownloadUnmetered = unmetered
-                                                Vendor.scheduleUpdatePreDownload(context, updateInfo)
-                                            },
+                                            onClick = null,
                                         )
-                                    },
-                                    modifier = updateItemModifier().clickable {
-                                        updatePreDownloadUnmetered = unmetered
-                                        Settings.updatePreDownloadUnmetered = unmetered
-                                        Vendor.scheduleUpdatePreDownload(context, updateInfo)
-                                    },
-                                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                                )
+                                    }
+                                }
                             }
                         }
                     }
@@ -1483,16 +1434,17 @@ fun AppSettingsScreen(
         )
 
         Card(
+            shape = RoundedCornerShape(24.dp),
             modifier =
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
             colors =
             CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                containerColor = MaterialTheme.colorScheme.surface,
             ),
         ) {
-            Column {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 ListItem(
                     headlineContent = {
                         Text(
@@ -1501,11 +1453,7 @@ fun AppSettingsScreen(
                         )
                     },
                     leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.Refresh,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+                        AppSettingsIcon(Icons.Outlined.Refresh)
                     },
                     trailingContent = {
                         if (isChecking) {
@@ -1549,7 +1497,7 @@ fun AppSettingsScreen(
                         },
                     colors =
                     ListItemDefaults.colors(
-                        containerColor = Color.Transparent,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     ),
                 )
 
@@ -1590,6 +1538,22 @@ fun AppSettingsScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AppSettingsIcon(imageVector: ImageVector) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(14.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = imageVector,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+        )
     }
 }
 

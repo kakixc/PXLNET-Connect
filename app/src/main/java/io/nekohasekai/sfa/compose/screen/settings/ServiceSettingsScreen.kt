@@ -102,9 +102,10 @@ fun ServiceSettingsScreen(
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
+            shape = RoundedCornerShape(24.dp),
             colors =
             CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             ),
         ) {
             val descriptionText = stringResource(R.string.allow_bypass_description)

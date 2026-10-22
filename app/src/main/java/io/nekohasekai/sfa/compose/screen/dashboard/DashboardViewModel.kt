@@ -414,18 +414,22 @@ class DashboardViewModel :
     fun deleteProfile(profile: Profile) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // Update UI immediately for responsiveness
-                withContext(Dispatchers.Main) {
-                    updateState {
-                        copy(
-                            profiles = profiles.filter { p -> p.id != profile.id },
-                        )
-                    }
+                val isSelected = Settings.selectedProfile == profile.id
+                check(!isSelected || _serviceStatus.value == Status.Stopped) {
+                    "Disconnect VPN before deleting the active subscription"
                 }
-                // Then delete from database
-                ProfileManager.delete(profile)
+                val replacementId = if (isSelected) {
+                    ProfileManager.list().firstOrNull { it.id != profile.id }?.id ?: 0L
+                } else null
+                if (replacementId != null) Settings.selectedProfile = replacementId
+                try {
+                    ProfileManager.delete(profile)
+                } catch (e: Exception) {
+                    if (replacementId != null) Settings.selectedProfile = profile.id
+                    throw e
+                }
+                loadProfiles()
             } catch (e: Exception) {
-                // Reload profiles if deletion fails
                 loadProfiles()
                 sendError(e)
             }
@@ -756,9 +760,9 @@ class DashboardViewModel :
             Application.application.getString(R.string.pxlnet_unsafe_subscription_url)
         }
         val response = HTTPClient().use { it.get(url) }
-        val existing = ProfileManager.list().firstOrNull {
-            it.typed.type == TypedProfile.Type.Remote && it.name == "PXLNET"
-        }
+        val profiles = ProfileManager.list()
+        val existing = findAuthenticatedProfile(profiles, url)
+        val selectAccountProfile = shouldSelectAuthenticatedProfile(profiles, Settings.selectedProfile)
         if (existing != null && SubscriptionInfoStore.recordExplicitInactiveResponse(
                 Application.application, existing.id, response.subscriptionStatus,
             )
@@ -791,16 +795,16 @@ class DashboardViewModel :
         profile.typed.autoUpdateInterval = Settings.subscriptionUpdateIntervalMinutes
         profile.typed.lastUpdated = Date()
         if (existing == null) {
-            ProfileManager.create(profile, andSelect = true)
+            ProfileManager.create(profile, andSelect = selectAccountProfile)
         } else {
             ProfileManager.update(profile)
-            Settings.selectedProfile = profile.id
+            if (selectAccountProfile) Settings.selectedProfile = profile.id
         }
         SubscriptionInfoStore.save(Application.application, profile.id, response.subscriptionUserInfo)
         SubscriptionInfoStore.saveSmartStatus(Application.application, profile.id, response.subscriptionStatus)
         SubscriptionInfoStore.saveSkippedXhttp(Application.application, profile.id, conversion.skippedXhttpCount)
         UpdateProfileWork.reconfigureUpdater()
-        if (_serviceStatus.value == Status.Started) {
+        if (_serviceStatus.value == Status.Started && Settings.selectedProfile == profile.id) {
             Libbox.newStandaloneCommandClient().serviceReload()
         }
     }

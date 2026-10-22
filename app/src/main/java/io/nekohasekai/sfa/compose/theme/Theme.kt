@@ -2,6 +2,7 @@ package io.nekohasekai.sfa.compose.theme
 
 import android.app.Activity
 import android.os.Build
+import android.graphics.Typeface
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -9,14 +10,22 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.font.FontFamily
 import androidx.core.view.WindowCompat
+import io.nekohasekai.sfa.utils.PxlUiPreferences
+import java.io.File
 
 enum class AppThemeMode(val persistedValue: String) {
     SYSTEM("system"),
@@ -141,6 +150,38 @@ fun SFATheme(
     accent: AppAccent = AppAccent.WALLPAPER,
     content: @Composable () -> Unit,
 ) {
+    val context = LocalContext.current
+    val fontSelection by PxlUiPreferences.fontSelection.collectAsState()
+    val fontWeightLevel by PxlUiPreferences.fontWeightLevel.collectAsState()
+    val hapticsEnabled by PxlUiPreferences.hapticsEnabled.collectAsState()
+    val systemHaptics = LocalHapticFeedback.current
+    val appHaptics = remember(systemHaptics, hapticsEnabled) {
+        object : HapticFeedback {
+            override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) {
+                if (hapticsEnabled) systemHaptics.performHapticFeedback(hapticFeedbackType)
+            }
+        }
+    }
+    val variablePxlFont = fontSelection.mode == PxlUiPreferences.FontMode.PXLNET && Build.VERSION.SDK_INT >= 26
+    val fontFamily = remember(fontSelection, fontWeightLevel) {
+        when (fontSelection.mode) {
+            PxlUiPreferences.FontMode.PXLNET -> if (variablePxlFont) pxlDefaultFontFamily(fontWeightLevel) else PxlDefaultFontFamily
+            PxlUiPreferences.FontMode.SYSTEM -> FontFamily.Default
+            PxlUiPreferences.FontMode.CUSTOM -> {
+                val file = fontSelection.customFileName?.let {
+                    File(context.filesDir, "custom_fonts/$it")
+                }
+                runCatching { FontFamily(Typeface.createFromFile(requireNotNull(file))) }
+                    .getOrDefault(PxlDefaultFontFamily)
+            }
+        }
+    }
+    val appTypography = remember(fontFamily, fontWeightLevel) {
+        Typography.withFontFamily(
+            fontFamily,
+            if (fontSelection.mode == PxlUiPreferences.FontMode.PXLNET && !variablePxlFont) fontWeightLevel else 0,
+        )
+    }
     val darkTheme = when (themeMode) {
         AppThemeMode.SYSTEM -> isSystemInDarkTheme()
         AppThemeMode.LIGHT -> false
@@ -193,8 +234,8 @@ fun SFATheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography,
+        typography = appTypography,
         shapes = Shapes,
-        content = content,
+        content = { CompositionLocalProvider(LocalHapticFeedback provides appHaptics, content = content) },
     )
 }
