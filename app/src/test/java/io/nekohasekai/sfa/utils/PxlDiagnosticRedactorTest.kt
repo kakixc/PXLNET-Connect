@@ -6,6 +6,18 @@ import org.junit.Test
 
 class PxlDiagnosticRedactorTest {
     @Test
+    fun keepsKnownLogTimestampsButStillRedactsIpv6Addresses() {
+        val source = "2026-10-07 20:09:11 preconnect: dns\n10-07 20:17:23.456 E Connect: failed at 2001:0db8:0000:0000:0000:0000:0000:0001"
+
+        val redacted = PxlDiagnosticRedactor.redact(source)
+
+        assertTrue(redacted.contains("2026-10-07 20:09:11"))
+        assertTrue(redacted.contains("10-07 20:17:23.456"))
+        assertTrue(redacted.contains("[IPV6]"))
+        assertFalse(redacted.contains("2001:0db8"))
+    }
+
+    @Test
     fun removesCredentialsSubscriptionAndServerAddresses() {
         val source = """
             vless://11111111-1111-4111-8111-111111111111@vpn.example.com:443?security=reality

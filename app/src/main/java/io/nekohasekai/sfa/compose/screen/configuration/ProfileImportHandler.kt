@@ -8,6 +8,8 @@ import io.nekohasekai.libbox.ProfileContent
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.database.Profile
 import io.nekohasekai.sfa.database.ProfileManager
+import io.nekohasekai.sfa.database.Settings
+import io.nekohasekai.sfa.utils.PxlXhttpSidecar
 import io.nekohasekai.sfa.database.TypedProfile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -235,7 +237,7 @@ class ProfileImportHandler(private val context: Context) {
                 typedProfile.type = TypedProfile.Type.Remote
                 typedProfile.remoteURL = content.remotePath
                 typedProfile.autoUpdate = content.autoUpdate
-                typedProfile.autoUpdateInterval = content.autoUpdateInterval
+                typedProfile.autoUpdateInterval = Settings.subscriptionUpdateIntervalMinutes
                 typedProfile.lastUpdated = Date(content.lastUpdated)
             }
         }
@@ -244,7 +246,7 @@ class ProfileImportHandler(private val context: Context) {
         val fileID = ProfileManager.nextFileID()
         val configDirectory = File(context.filesDir, "configs").also { it.mkdirs() }
         val configFile = File(configDirectory, "$fileID.json")
-        configFile.writeText(content.config)
+        check(PxlXhttpSidecar.replaceConfig(configFile, content.config)) { "Cannot save profile config" }
         typedProfile.path = configFile.path
 
         // Create profile in database and select it
@@ -259,7 +261,7 @@ class ProfileImportHandler(private val context: Context) {
                 type = TypedProfile.Type.Remote
                 remoteURL = url
                 autoUpdate = true
-                autoUpdateInterval = 60
+                autoUpdateInterval = Settings.subscriptionUpdateIntervalMinutes
                 lastUpdated = Date()
             }
 
@@ -272,7 +274,7 @@ class ProfileImportHandler(private val context: Context) {
         val fileID = ProfileManager.nextFileID()
         val configDirectory = File(context.filesDir, "configs").also { it.mkdirs() }
         val configFile = File(configDirectory, "$fileID.json")
-        configFile.writeText("{}")
+        check(PxlXhttpSidecar.replaceConfig(configFile, "{}")) { "Cannot save profile config" }
         typedProfile.path = configFile.path
 
         // Create profile in database and select it
@@ -375,7 +377,7 @@ class ProfileImportHandler(private val context: Context) {
             val fileID = ProfileManager.nextFileID()
             val configDirectory = File(context.filesDir, "configs").also { it.mkdirs() }
             val configFile = File(configDirectory, "$fileID.json")
-            configFile.writeText(jsonContent)
+            check(PxlXhttpSidecar.replaceConfig(configFile, jsonContent)) { "Cannot save profile config" }
             typedProfile.path = configFile.path
 
             // Create profile in database and select it

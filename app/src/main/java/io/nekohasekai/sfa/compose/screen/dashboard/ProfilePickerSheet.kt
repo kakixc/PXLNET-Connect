@@ -1,12 +1,13 @@
 package io.nekohasekai.sfa.compose.screen.dashboard
 
 import android.widget.Toast
+import android.net.Uri
+import androidx.annotation.StringRes
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
@@ -35,6 +37,7 @@ import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,10 +54,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -84,6 +88,9 @@ fun ProfilePickerSheet(
     onProfileDelete: (Profile) -> Unit,
     onProfileMove: (Int, Int) -> Unit,
     onDismiss: () -> Unit,
+    onAddProfile: (() -> Unit)? = null,
+    showManagementActions: Boolean = true,
+    @StringRes titleRes: Int = R.string.title_configuration,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
@@ -104,7 +111,7 @@ fun ProfilePickerSheet(
                 .padding(bottom = 32.dp),
         ) {
             Text(
-                text = stringResource(R.string.title_configuration),
+                text = stringResource(titleRes),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(
@@ -127,7 +134,7 @@ fun ProfilePickerSheet(
                     .fillMaxWidth()
                     .heightIn(min = 100.dp, max = 400.dp)
                     .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 itemsIndexed(profiles, key = { _, profile -> profile.id }) { _, profile ->
                     ReorderableItem(
@@ -139,8 +146,11 @@ fun ProfilePickerSheet(
                             isSelected = profile.id == selectedProfileId,
                             isDragging = isDragging,
                             onSelect = {
-                                onProfileSelected(profile)
-                                onDismiss()
+                                coroutineScope.launch {
+                                    sheetState.hide()
+                                    onDismiss()
+                                    onProfileSelected(profile)
+                                }
                             },
                             onEdit = { onProfileEdit(profile) },
                             onShare = {
@@ -155,10 +165,33 @@ fun ProfilePickerSheet(
                                 qrCodeProfile = profile
                                 showQRCodeDialog = true
                             },
-                            onDelete = { onProfileDelete(profile) },
-                            modifier = Modifier.longPressDraggableHandle(),
+                            onDelete = {
+                                coroutineScope.launch {
+                                    sheetState.hide()
+                                    onDismiss()
+                                    onProfileDelete(profile)
+                                }
+                            },
+                            showManagementActions = showManagementActions,
+                            modifier = if (showManagementActions) Modifier.longPressDraggableHandle() else Modifier,
                         )
                     }
+                }
+            }
+            if (onAddProfile != null) {
+                FilledTonalButton(
+                    onClick = {
+                        coroutineScope.launch {
+                            sheetState.hide()
+                            onDismiss()
+                            onAddProfile()
+                        }
+                    },
+                    modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 16.dp),
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.pxlnet_add_subscription))
                 }
             }
         }
@@ -215,6 +248,7 @@ private fun ProfilePickerRow(
     onShare: () -> Unit,
     onShareURL: () -> Unit,
     onDelete: () -> Unit,
+    showManagementActions: Boolean,
     modifier: Modifier = Modifier,
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -262,31 +296,28 @@ private fun ProfilePickerRow(
         }
     }
 
+    val rowColor = when {
+        isDragging -> MaterialTheme.colorScheme.tertiaryContainer
+        isSelected -> MaterialTheme.colorScheme.secondaryContainer
+        else -> MaterialTheme.colorScheme.surfaceContainer
+    }
+    val foregroundColor = when {
+        isDragging -> MaterialTheme.colorScheme.onTertiaryContainer
+        isSelected -> MaterialTheme.colorScheme.onSecondaryContainer
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    val supportingColor = if (isDragging || isSelected) {
+        foregroundColor
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
     Surface(
         onClick = onSelect,
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        color = when {
-            isDragging -> MaterialTheme.colorScheme.tertiaryContainer
-            isSelected -> if (isSystemInDarkTheme()) {
-                lerp(
-                    MaterialTheme.colorScheme.surfaceContainerLow,
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
-                    0.5f,
-                )
-            } else {
-                MaterialTheme.colorScheme.surfaceDim
-            }
-            else -> if (isSystemInDarkTheme()) {
-                lerp(
-                    MaterialTheme.colorScheme.surfaceContainerLow,
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
-                    0.35f,
-                )
-            } else {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-            }
-        },
+        modifier = modifier.fillMaxWidth().semantics { selected = isSelected },
+        shape = RoundedCornerShape(20.dp),
+        color = rowColor,
+        contentColor = foregroundColor,
         tonalElevation = animatedElevation.dp,
     ) {
         Row(
@@ -303,7 +334,7 @@ private fun ProfilePickerRow(
                 imageVector = profileIcon,
                 contentDescription = null,
                 modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = supportingColor,
             )
 
             Spacer(modifier = Modifier.width(12.dp))
@@ -316,21 +347,24 @@ private fun ProfilePickerRow(
                     text = profile.name,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
+                    color = foregroundColor,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
 
                 Text(
                     text = when (profile.typed.type) {
                         TypedProfile.Type.Local -> stringResource(R.string.profile_type_local)
-                        TypedProfile.Type.Remote -> stringResource(
-                            R.string.profile_type_remote_updated,
-                            RelativeTimeFormatter.format(context, profile.typed.lastUpdated),
-                        )
+                        TypedProfile.Type.Remote -> {
+                            val host = Uri.parse(profile.typed.remoteURL).host
+                            host ?: stringResource(
+                                R.string.profile_type_remote_updated,
+                                RelativeTimeFormatter.format(context, profile.typed.lastUpdated),
+                            )
+                        }
                     },
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    color = supportingColor,
                 )
             }
 
@@ -342,25 +376,25 @@ private fun ProfilePickerRow(
                         imageVector = Icons.Default.Check,
                         contentDescription = null,
                         modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = foregroundColor,
                     )
                 } else {
                     Spacer(modifier = Modifier.size(24.dp))
                 }
 
-                Box {
+                if (showManagementActions) Box {
                     IconButton(
                         onClick = {
                             showMenu = true
                             expandedShareSubmenu = false
                         },
-                        modifier = Modifier.size(32.dp),
+                        modifier = Modifier.size(48.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Default.MoreVert,
                             contentDescription = stringResource(R.string.more_options),
                             modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = supportingColor,
                         )
                     }
 

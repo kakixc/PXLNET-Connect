@@ -9,6 +9,7 @@ import io.nekohasekai.sfa.compat.ProfileEditorColors
 import io.nekohasekai.sfa.database.Profile
 import io.nekohasekai.sfa.database.ProfileManager
 import io.nekohasekai.sfa.ktx.unwrap
+import io.nekohasekai.sfa.utils.PxlXhttpSidecar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -192,9 +193,11 @@ class EditProfileContentViewModel(private val profileId: Long, initialIsReadOnly
                         editor?.getText() ?: ""
                     }
 
-                // Save to file without validation
+                // Preserve the editor's no-validation behavior, but invalidate any XHTTP snapshot.
                 profile?.let { p ->
-                    File(p.typed.path).writeText(currentContent)
+                    check(PxlXhttpSidecar.replaceConfig(File(p.typed.path), currentContent)) {
+                        "Could not save profile configuration"
+                    }
                 }
 
                 _uiState.update {

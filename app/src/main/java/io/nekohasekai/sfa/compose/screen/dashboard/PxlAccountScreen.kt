@@ -1,7 +1,7 @@
 package io.nekohasekai.sfa.compose.screen.dashboard
 
 import android.widget.Toast
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -35,6 +35,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,7 +44,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -51,11 +51,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.component.PxlRootTopBar
+import io.nekohasekai.sfa.compose.component.LocalPxlTopBarInset
+import io.nekohasekai.sfa.compose.component.LocalPxlFloatingNavInset
 import io.nekohasekai.sfa.compose.navigation.NewProfileArgs
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.utils.PxlLinks
-
-private val PxlAccountGreen = Color(0xFF277A4A)
+import io.nekohasekai.sfa.utils.SubscriptionInfoStore
 
 @Composable
 fun PxlAccountScreen(
@@ -64,7 +65,8 @@ fun PxlAccountScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
-    val isLoggedIn = uiState.telegramAccountName != null || uiState.telegramUsername != null
+    val hasSession = uiState.hasTelegramSession
+    val hasVerifiedAccount = uiState.accountLastVerifiedAt != null
 
     LaunchedEffect(uiState.telegramLoginError) {
         uiState.telegramLoginError?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
@@ -77,42 +79,59 @@ fun PxlAccountScreen(
         )
     }
 
+    val topBarInset = LocalPxlTopBarInset.current
+    val floatingNavInset = LocalPxlFloatingNavInset.current
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = topBarInset + 12.dp, bottom = floatingNavInset + 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            PxlAccountCard {
+            PxlAccountCard(compact = true) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Icon(
-                        Icons.Default.AccountCircle,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(32.dp),
-                    )
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    ) {
+                        Icon(
+                            Icons.Default.AccountCircle,
+                            contentDescription = null,
+                            modifier = Modifier.padding(10.dp).size(28.dp),
+                        )
+                    }
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             uiState.telegramAccountName
                                 ?: uiState.telegramUsername?.let { "@$it" }
-                                ?: stringResource(R.string.pxlnet_guest_mode),
+                                ?: stringResource(if (hasSession) R.string.pxlnet_account_title else R.string.pxlnet_guest_mode),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.SemiBold,
                         )
-                        Text(
-                            stringResource(
-                                if (isLoggedIn) R.string.pxlnet_signed_in_telegram
-                                else R.string.pxlnet_guest_mode_description,
-                            ),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        val accountStatus = stringResource(when {
+                                !hasSession -> R.string.pxlnet_guest_mode_description
+                                !hasVerifiedAccount -> R.string.pxlnet_account_not_verified
+                                uiState.accountServiceAvailable == false -> R.string.pxlnet_account_saved_data_offline
+                                else -> R.string.pxlnet_signed_in_telegram
+                            })
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            shape = RoundedCornerShape(50),
+                        ) {
+                            Text(
+                                accountStatus,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
                     }
                 }
 
-                if (isLoggedIn) {
+                if (hasSession) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -126,24 +145,28 @@ fun PxlAccountScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 stringResource(R.string.pxlnet_tariff_access),
-                                style = MaterialTheme.typography.titleMedium,
+                                style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Medium,
                             )
                             Text(
-                                if (uiState.telegramSubscriptionActive) {
+                                if (!hasVerifiedAccount) {
+                                    stringResource(R.string.pxlnet_account_status_unknown)
+                                } else if (uiState.telegramSubscriptionActive) {
                                     formatAccountExpiry(uiState.telegramSubscriptionExpiresAt)?.let {
                                         stringResource(R.string.pxlnet_subscription_active_until, it)
                                     } ?: stringResource(R.string.pxlnet_subscription_active)
                                 } else {
                                     stringResource(R.string.pxlnet_subscription_inactive)
                                 },
-                                color = if (uiState.telegramSubscriptionActive) {
-                                    PxlAccountGreen
+                                color = if (!hasVerifiedAccount) {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                } else if (uiState.telegramSubscriptionActive) {
+                                    MaterialTheme.colorScheme.primary
                                 } else {
                                     MaterialTheme.colorScheme.error
                                 },
                             )
-                            if (uiState.selectedProfileId > 0) {
+                            if (uiState.selectedProfileId > 0 && hasVerifiedAccount) {
                                 Text(
                                     stringResource(R.string.pxlnet_subscription_synced),
                                     style = MaterialTheme.typography.bodySmall,
@@ -160,7 +183,7 @@ fun PxlAccountScreen(
                             onClick = viewModel::refreshTelegramAccount,
                             enabled = !uiState.telegramLoginPending,
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(18.dp),
                         ) {
                             if (uiState.telegramLoginPending) {
                                 CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -168,20 +191,20 @@ fun PxlAccountScreen(
                                 Text(stringResource(R.string.pxlnet_refresh))
                             }
                         }
-                        Button(
-                            onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp),
-                        ) {
-                            Text(
-                                stringResource(
-                                    if (uiState.telegramSubscriptionActive) R.string.pxlnet_renew
-                                    else R.string.pxlnet_buy,
-                                ),
-                            )
+                        if (hasVerifiedAccount) {
+                            Button(
+                                onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(18.dp),
+                            ) {
+                                Text(stringResource(if (uiState.telegramSubscriptionActive) R.string.pxlnet_renew else R.string.pxlnet_buy))
+                            }
                         }
                     }
-                    TextButton(onClick = viewModel::logoutTelegram) {
+                    TextButton(
+                        onClick = viewModel::logoutTelegram,
+                        modifier = Modifier.align(Alignment.End),
+                    ) {
                         Text(stringResource(R.string.pxlnet_sign_out))
                     }
                 } else {
@@ -189,7 +212,7 @@ fun PxlAccountScreen(
                         onClick = viewModel::startTelegramLogin,
                         enabled = !uiState.telegramLoginPending,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(18.dp),
                     ) {
                         if (uiState.telegramLoginPending) {
                             CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -199,16 +222,12 @@ fun PxlAccountScreen(
                             Text(stringResource(R.string.pxlnet_login_telegram))
                         }
                     }
-                    Text(
-                        stringResource(R.string.pxlnet_login_description),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Text(stringResource(R.string.pxlnet_login_description), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
 
-        if (!isLoggedIn) {
+        if (!hasSession) {
             item {
                 PxlAccountCard {
                     Row(
@@ -233,20 +252,29 @@ fun PxlAccountScreen(
                                 ),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            if (uiState.selectedProfileId > 0) {
+                                SubscriptionInfoStore.summary(context, uiState.selectedProfileId)?.let { summary ->
+                                    Text(
+                                        stringResource(R.string.pxlnet_link_summary, summary),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
                         }
                     }
                     if (uiState.selectedProfileId <= 0) {
                         Button(
                             onClick = { onOpenNewProfile(NewProfileArgs()) },
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(18.dp),
                         ) {
                             Text(stringResource(R.string.pxlnet_add_existing_subscription))
                         }
                         OutlinedButton(
                             onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) },
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(18.dp),
                         ) {
                             Text(stringResource(R.string.pxlnet_buy_in_bot))
                         }
@@ -269,7 +297,7 @@ fun PxlAccountScreen(
                 )
                 PxlPulsePanel(
                     serviceAvailable = uiState.accountServiceAvailable,
-                    isLoggedIn = isLoggedIn,
+                    isLoggedIn = hasSession,
                     subscriptionActive = uiState.telegramSubscriptionActive,
                     hasLocalSubscription = uiState.selectedProfileId > 0,
                     serverCount = uiState.availableServerTags.count { !it.equals("AUTO", true) },
@@ -295,11 +323,9 @@ fun PxlAccountScreen(
 
         if (uiState.accountServiceAvailable == false) {
             item {
-                Text(
-                    stringResource(R.string.pxlnet_service_unavailable_guest),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
+                PxlAccountCard(compact = true) {
+                    Text(stringResource(R.string.pxlnet_service_unavailable_guest), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
             }
         }
     }
@@ -387,7 +413,7 @@ private fun PxlPulsePanel(
             onClick = onRefresh,
             enabled = !checking,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
+            shape = RoundedCornerShape(18.dp),
         ) {
             if (checking) {
                 CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -411,8 +437,8 @@ private fun PxlPulsePanel(
 private fun PulseMetric(label: String, value: String, modifier: Modifier = Modifier) {
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(
@@ -423,25 +449,30 @@ private fun PulseMetric(label: String, value: String, modifier: Modifier = Modif
                 label,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
             )
-            Text(value, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+            Text(value, style = MaterialTheme.typography.labelLarge)
         }
     }
 }
 
 @Composable
-private fun PxlAccountCard(content: @Composable ColumnScope.() -> Unit) {
+private fun PxlAccountCard(
+    compact: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier
+                .animateContentSize()
+                .padding(if (compact) 16.dp else 18.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp),
             content = content,
         )
     }

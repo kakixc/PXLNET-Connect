@@ -17,6 +17,16 @@ enum class PxlRoutingPreset(val key: String) {
     }
 }
 
+data class PxlRoutingPresetState(
+    val preset: PxlRoutingPreset,
+    val smartRoutingEnabled: Boolean,
+    val perAppProxyEnabled: Boolean,
+    val perAppProxyManagedMode: Boolean,
+    val perAppProxyMode: Int,
+    val perAppProxyManagedModeType: Int,
+    val perAppProxyManagedList: Set<String>,
+)
+
 object PxlRoutingPresets {
     private val gamePackages = setOf(
         "com.activision.callofduty.shooter",
@@ -65,32 +75,64 @@ object PxlRoutingPresets {
         return candidates.intersect(installed)
     }
 
+    fun snapshot(context: Context) = PxlRoutingPresetState(
+        preset = PxlRoutingPreset.fromKey(Settings.pxlnetRoutingPreset),
+        smartRoutingEnabled = PxlRoutingPreferences.isSmartRouting(context),
+        perAppProxyEnabled = Settings.perAppProxyEnabled,
+        perAppProxyManagedMode = Settings.perAppProxyManagedMode,
+        perAppProxyMode = Settings.perAppProxyMode,
+        perAppProxyManagedModeType = Settings.perAppProxyManagedModeType,
+        perAppProxyManagedList = Settings.perAppProxyManagedList,
+    )
+
+    fun stateFor(
+        current: PxlRoutingPresetState,
+        preset: PxlRoutingPreset,
+        packages: Set<String> = emptySet(),
+    ): PxlRoutingPresetState = when (preset) {
+        PxlRoutingPreset.Full, PxlRoutingPreset.Smart -> current.copy(
+            preset = preset,
+            smartRoutingEnabled = preset == PxlRoutingPreset.Smart,
+            perAppProxyEnabled = false,
+            perAppProxyManagedMode = false,
+        )
+        PxlRoutingPreset.SelectedApps -> current.copy(
+            preset = preset,
+            smartRoutingEnabled = false,
+            perAppProxyEnabled = true,
+            perAppProxyManagedMode = false,
+            perAppProxyMode = Settings.PER_APP_PROXY_INCLUDE,
+        )
+        PxlRoutingPreset.Games, PxlRoutingPreset.Video -> current.copy(
+            preset = preset,
+            smartRoutingEnabled = false,
+            perAppProxyEnabled = packages.isNotEmpty(),
+            perAppProxyManagedMode = true,
+            perAppProxyManagedModeType = Settings.PER_APP_PROXY_INCLUDE,
+            perAppProxyManagedList = packages,
+        )
+        PxlRoutingPreset.Banks -> current.copy(
+            preset = preset,
+            smartRoutingEnabled = false,
+            perAppProxyEnabled = packages.isNotEmpty(),
+            perAppProxyManagedMode = true,
+            perAppProxyManagedModeType = Settings.PER_APP_PROXY_EXCLUDE,
+            perAppProxyManagedList = packages,
+        )
+    }
+
     fun apply(context: Context, preset: PxlRoutingPreset, packages: Set<String> = matchedPackages(context, preset)) {
-        Settings.pxlnetRoutingPreset = preset.key
-        when (preset) {
-            PxlRoutingPreset.Full, PxlRoutingPreset.Smart -> {
-                Settings.perAppProxyEnabled = false
-                Settings.perAppProxyManagedMode = false
-            }
-            PxlRoutingPreset.SelectedApps -> {
-                Settings.perAppProxyEnabled = true
-                Settings.perAppProxyManagedMode = false
-                Settings.perAppProxyMode = Settings.PER_APP_PROXY_INCLUDE
-            }
-            PxlRoutingPreset.Games, PxlRoutingPreset.Video -> {
-                Settings.perAppProxyEnabled = packages.isNotEmpty()
-                Settings.perAppProxyManagedMode = true
-                Settings.perAppProxyManagedModeType = Settings.PER_APP_PROXY_INCLUDE
-                Settings.perAppProxyManagedList = packages
-            }
-            PxlRoutingPreset.Banks -> {
-                Settings.perAppProxyEnabled = packages.isNotEmpty()
-                Settings.perAppProxyManagedMode = true
-                Settings.perAppProxyManagedModeType = Settings.PER_APP_PROXY_EXCLUDE
-                Settings.perAppProxyManagedList = packages
-            }
-        }
-        PxlRoutingPreferences.setSmartRouting(context, preset == PxlRoutingPreset.Smart)
+        restore(context, stateFor(snapshot(context), preset, packages))
+    }
+
+    fun restore(context: Context, state: PxlRoutingPresetState) {
+        Settings.pxlnetRoutingPreset = state.preset.key
+        Settings.perAppProxyEnabled = state.perAppProxyEnabled
+        Settings.perAppProxyManagedMode = state.perAppProxyManagedMode
+        Settings.perAppProxyMode = state.perAppProxyMode
+        Settings.perAppProxyManagedModeType = state.perAppProxyManagedModeType
+        Settings.perAppProxyManagedList = state.perAppProxyManagedList
+        PxlRoutingPreferences.setSmartRouting(context, state.smartRoutingEnabled)
     }
 
     fun copyPresetToManualSelection() {

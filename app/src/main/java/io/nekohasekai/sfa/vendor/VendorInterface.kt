@@ -26,6 +26,8 @@ interface VendorInterface {
 
     fun scheduleAutoUpdate() {}
 
+    fun scheduleUpdatePreDownload(context: Context, update: UpdateInfo?) {}
+
     suspend fun verifySilentInstallMethod(method: String): Boolean = false
 
     /** Returns false after opening Android's per-app install permission screen. */

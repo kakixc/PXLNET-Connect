@@ -1,0 +1,322 @@
+diff --git a/experimental/libbox/command_server.go b/experimental/libbox/command_server.go
+index 312431b..ea38506 100644
+--- a/experimental/libbox/command_server.go
++++ b/experimental/libbox/command_server.go
+@@ -168,6 +168,7 @@ func (s *CommandServer) Start() error {
+ 	}
+ 	s.grpcServer = grpc.NewServer(serverOptions...)
+ 	daemon.RegisterStartedServiceServer(s.grpcServer, s.StartedService)
++	s.grpcServer.RegisterService(&serverProbeServiceDesc, &serverProbeHandler{started: s.StartedService})
+ 	daemon.RegisterManagedServiceServer(s.grpcServer, s.managedService)
+ 	healthServer := health.NewServer()
+ 	healthServer.SetServingStatus(daemon.StartedService_ServiceDesc.ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
+diff --git a/protocol/hysteria2/outbound.go b/protocol/hysteria2/outbound.go
+index 9bb7949..61790b9 100644
+--- a/protocol/hysteria2/outbound.go
++++ b/protocol/hysteria2/outbound.go
+@@ -41,8 +41,12 @@ var (
+ 
+ type Outbound struct {
+ 	outbound.Adapter
+-	logger logger.ContextLogger
+-	client *hysteria2.Client
++	logger             logger.ContextLogger
++	client             *hysteria2.Client
++	probeClientOptions hysteria2.ClientOptions
++	tlsServerAddress   string
++	tlsOptions         option.OutboundTLSOptions
++	probeUnsupported   string
+ }
+ 
+ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.Hysteria2OutboundOptions) (adapter.Outbound, error) {
+@@ -122,7 +126,7 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
+ 		}
+ 	}
+ 	networkList := options.Network.Build()
+-	client, err := hysteria2.NewClient(hysteria2.ClientOptions{
++	clientOptions := hysteria2.ClientOptions{
+ 		Context:            ctx,
+ 		Dialer:             outboundDialer,
+ 		Logger:             logger,
+@@ -152,15 +156,28 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
+ 		BBRProfile:   options.BBRProfile,
+ 		ChromeParrot: !options.DisableChromeParrot,
+ 		RealmOptions: realmOptions,
+-	})
++	}
++	client, err := hysteria2.NewClient(clientOptions)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	return &Outbound{
+-		Adapter: outbound.NewAdapterWithDialerOptions(C.TypeHysteria2, tag, networkList, options.DialerOptions),
+-		logger:  logger,
+-		client:  client,
+-	}, nil
++	outbound := &Outbound{
++		Adapter:            outbound.NewAdapterWithDialerOptions(C.TypeHysteria2, tag, networkList, options.DialerOptions),
++		logger:             logger,
++		client:             client,
++		probeClientOptions: clientOptions,
++		tlsServerAddress:   tlsServerAddress,
++		tlsOptions:         tlsOptions,
++	}
++	switch {
++	case options.DialerOptions.Detour != "":
++		outbound.probeUnsupported = "detour"
++	case options.Realm != nil:
++		outbound.probeUnsupported = "realm"
++	case len(options.ServerPorts) > 0 || options.HopInterval != 0 || options.HopIntervalMax != 0:
++		outbound.probeUnsupported = "port hopping"
++	}
++	return outbound, nil
+ }
+ 
+ func outboundTLSOptions(options option.Hysteria2OutboundOptions) (string, option.OutboundTLSOptions, error) {
+@@ -210,3 +227,31 @@ func (h *Outbound) InterfaceUpdated() {
+ func (h *Outbound) Close() error {
+ 	return h.client.CloseWithError(os.ErrClosed)
+ }
++
++// ProbeServer creates an isolated Hysteria2 client and completes its QUIC and
++// authentication handshake without touching the live outbound client.
++func (h *Outbound) ProbeServer(ctx context.Context) error {
++	if h.probeUnsupported != "" {
++		return E.New("server probe is not supported with ", h.probeUnsupported)
++	}
++	tlsConfig, err := tls.NewClient(ctx, h.logger, h.tlsServerAddress, h.tlsOptions)
++	if err != nil {
++		return E.Cause(err, "create probe TLS config")
++	}
++	clientOptions := h.probeClientOptions
++	clientOptions.Context = ctx
++	clientOptions.TLSConfig = tlsConfig
++	client, err := hysteria2.NewClient(clientOptions)
++	if err != nil {
++		return E.Cause(err, "create probe client")
++	}
++	defer client.CloseWithError(os.ErrClosed)
++	// DialConn authenticates the fresh QUIC session before returning. Closing
++	// this unopened stream sends no destination request and works even when
++	// Hysteria2 UDP forwarding is disabled on the server.
++	conn, err := client.DialConn(ctx, M.Socksaddr{})
++	if err != nil {
++		return err
++	}
++	return conn.Close()
++}
+diff --git a/protocol/vless/outbound.go b/protocol/vless/outbound.go
+index 007c78f..3a55bcf 100644
+--- a/protocol/vless/outbound.go
++++ b/protocol/vless/outbound.go
+@@ -31,16 +31,17 @@ var _ adapter.OutboundWithMultiplex = (*Outbound)(nil)
+ 
+ type Outbound struct {
+ 	outbound.Adapter
+-	logger          logger.ContextLogger
+-	dialer          N.Dialer
+-	client          *vless.Client
+-	serverAddr      M.Socksaddr
+-	multiplexDialer *mux.Client
+-	tlsConfig       tls.Config
+-	tlsDialer       tls.Dialer
+-	transport       adapter.V2RayClientTransport
+-	packetAddr      bool
+-	xudp            bool
++	logger           logger.ContextLogger
++	dialer           N.Dialer
++	client           *vless.Client
++	serverAddr       M.Socksaddr
++	multiplexDialer  *mux.Client
++	tlsConfig        tls.Config
++	tlsDialer        tls.Dialer
++	transport        adapter.V2RayClientTransport
++	packetAddr       bool
++	xudp             bool
++	probeUnsupported string
+ }
+ 
+ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.VLESSOutboundOptions) (adapter.Outbound, error) {
+@@ -54,6 +55,16 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
+ 		dialer:     outboundDialer,
+ 		serverAddr: options.ServerOptions.Build(),
+ 	}
++	switch {
++	case options.Transport != nil:
++		outbound.probeUnsupported = "transport"
++	case options.DialerOptions.Detour != "":
++		outbound.probeUnsupported = "detour"
++	case common.PtrValueOrDefault(options.Multiplex).Enabled:
++		outbound.probeUnsupported = "multiplex"
++	case options.TLS == nil || !options.TLS.Enabled:
++		outbound.probeUnsupported = "non-TLS VLESS"
++	}
+ 	if options.TLS != nil {
+ 		outbound.tlsConfig, err = tls.NewClientWithOptions(tls.ClientOptions{
+ 			Context:       ctx,
+@@ -146,6 +157,20 @@ func (h *Outbound) Close() error {
+ 	return common.Close(common.PtrOrNil(h.multiplexDialer), h.transport)
+ }
+ 
++// ProbeServer establishes a new TCP/TLS/REALITY handshake with the server.
++// It deliberately does not send VLESS credentials, so a successful probe does
++// not authenticate the VLESS account.
++func (h *Outbound) ProbeServer(ctx context.Context) error {
++	if h.probeUnsupported != "" {
++		return E.New("server probe is not supported with ", h.probeUnsupported)
++	}
++	conn, err := h.tlsDialer.DialTLSContext(ctx, h.serverAddr)
++	if err != nil {
++		return err
++	}
++	return conn.Close()
++}
++
+ type vlessDialer Outbound
+ 
+ func (h *vlessDialer) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
+diff --git a/daemon/pxlnet_server_probe.go b/daemon/pxlnet_server_probe.go
+new file mode 100644
+index 0000000..162c192
+--- /dev/null
++++ b/daemon/pxlnet_server_probe.go
+@@ -0,0 +1,44 @@
++package daemon
++
++import (
++	"context"
++	"time"
++
++	"google.golang.org/grpc/codes"
++	"google.golang.org/grpc/status"
++)
++
++// ProbeServer measures one fresh protocol handshake without changing URL-test
++// history or the currently selected outbound. Only explicitly supported
++// outbounds expose this optional method.
++func (s *StartedService) ProbeServer(ctx context.Context, outboundTag string) (int32, error) {
++	if outboundTag == "" {
++		return 0, status.Error(codes.InvalidArgument, "empty outbound tag")
++	}
++	s.serviceAccess.RLock()
++	if s.serviceStatus.Status != ServiceStatus_STARTED || s.instance == nil {
++		s.serviceAccess.RUnlock()
++		return 0, status.Error(codes.FailedPrecondition, "service is not started")
++	}
++	outbound, loaded := s.instance.outboundManager.Outbound(outboundTag)
++	s.serviceAccess.RUnlock()
++	if !loaded {
++		return 0, status.Error(codes.NotFound, "outbound not found")
++	}
++	prober, supported := outbound.(interface{ ProbeServer(context.Context) error })
++	if !supported {
++		return 0, status.Error(codes.Unimplemented, "outbound does not support server probe")
++	}
++	start := time.Now()
++	if err := prober.ProbeServer(ctx); err != nil {
++		return 0, err
++	}
++	delay := time.Since(start).Milliseconds()
++	if delay < 1 {
++		delay = 1
++	}
++	if delay > 60_000 {
++		return 0, status.Error(codes.DeadlineExceeded, "server probe exceeded limit")
++	}
++	return int32(delay), nil
++}
+diff --git a/experimental/libbox/pxlnet_server_probe_rpc.go b/experimental/libbox/pxlnet_server_probe_rpc.go
+new file mode 100644
+index 0000000..71812be
+--- /dev/null
++++ b/experimental/libbox/pxlnet_server_probe_rpc.go
+@@ -0,0 +1,75 @@
++package libbox
++
++import (
++	"context"
++	"time"
++
++	"github.com/sagernet/sing-box/daemon"
++	"google.golang.org/grpc"
++	"google.golang.org/protobuf/types/known/wrapperspb"
++)
++
++const serverProbeMethod = "/pxlnet.ServerProbe/Probe"
++
++type serverProbeService interface {
++	probe(context.Context, *wrapperspb.StringValue) (*wrapperspb.Int32Value, error)
++}
++
++type serverProbeHandler struct {
++	started *daemon.StartedService
++}
++
++func (h *serverProbeHandler) probe(ctx context.Context, request *wrapperspb.StringValue) (*wrapperspb.Int32Value, error) {
++	delay, err := h.started.ProbeServer(ctx, request.Value)
++	if err != nil {
++		return nil, err
++	}
++	return wrapperspb.Int32(delay), nil
++}
++
++func serverProbeUnaryHandler(
++	server any,
++	ctx context.Context,
++	decode func(any) error,
++	interceptor grpc.UnaryServerInterceptor,
++) (any, error) {
++	request := new(wrapperspb.StringValue)
++	if err := decode(request); err != nil {
++		return nil, err
++	}
++	handler := func(ctx context.Context, request any) (any, error) {
++		return server.(serverProbeService).probe(ctx, request.(*wrapperspb.StringValue))
++	}
++	if interceptor == nil {
++		return handler(ctx, request)
++	}
++	return interceptor(ctx, request, &grpc.UnaryServerInfo{Server: server, FullMethod: serverProbeMethod}, handler)
++}
++
++var serverProbeServiceDesc = grpc.ServiceDesc{
++	ServiceName: "pxlnet.ServerProbe",
++	HandlerType: (*serverProbeService)(nil),
++	Methods:     []grpc.MethodDesc{{MethodName: "Probe", Handler: serverProbeUnaryHandler}},
++}
++
++// ProbeServer returns one sample in milliseconds. The socket uses the same
++// private, authenticated command channel as other libbox control calls.
++func (c *CommandClient) ProbeServer(outboundTag string) (int32, error) {
++	_, callCtx, err := c.getClientForCall()
++	if err != nil {
++		return 0, err
++	}
++	if c.standalone {
++		defer c.closeConnection()
++	}
++	c.clientMutex.RLock()
++	connection := c.grpcConn
++	c.clientMutex.RUnlock()
++	ctx, cancel := context.WithTimeout(callCtx, 6*time.Second)
++	defer cancel()
++	response := new(wrapperspb.Int32Value)
++	if err := connection.Invoke(ctx, serverProbeMethod, wrapperspb.String(outboundTag), response); err != nil {
++		return 0, err
++	}
++	return response.Value, nil
++}
+diff --git a/daemon/started_service.go b/daemon/started_service.go
+index 846625a..f343ecd 100644
+--- a/daemon/started_service.go
++++ b/daemon/started_service.go
+@@ -684,6 +684,9 @@ func (s *StartedService) SelectOutbound(ctx context.Context, request *SelectOutboundRequest) (*emptypb.Empty, error) {
+ 	if !selector.SelectOutbound(request.OutboundTag) {
+ 		return nil, status.Error(codes.NotFound, "outbound not found in selector: "+request.OutboundTag)
+ 	}
++	// SubscribeGroups also listens to this observer. A selector change does not
++	// update URL-test history, so notify it explicitly for UI confirmation.
++	s.urlTestSubscriber.Emit(struct{}{})
+ 	return &emptypb.Empty{}, nil
+ }
+ 

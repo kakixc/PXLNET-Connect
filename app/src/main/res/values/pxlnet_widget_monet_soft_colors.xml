@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="pxlnet_widget_soft_surface">#F8F2FA</color>
+    <color name="pxlnet_widget_soft_on_surface">#242129</color>
+    <color name="pxlnet_widget_soft_muted">#625D67</color>
+    <color name="pxlnet_widget_soft_outline">#E7D9ED</color>
+    <color name="pxlnet_widget_soft_power">#E5D4F0</color>
+    <color name="pxlnet_widget_soft_power_icon">#442C59</color>
+    <color name="pxlnet_widget_soft_brand">#685483</color>
+    <color name="pxlnet_widget_soft_dot_idle">#C9B9D4</color>
+</resources>

@@ -37,7 +37,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
+import io.nekohasekai.sfa.compose.component.PxlSwitch as Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -116,9 +116,10 @@ fun CoreSettingsScreen(navController: NavController) {
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
+            shape = RoundedCornerShape(24.dp),
             colors =
             CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             ),
         ) {
             Column {
@@ -237,9 +238,10 @@ fun CoreSettingsScreen(navController: NavController) {
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
+                shape = RoundedCornerShape(24.dp),
                 colors =
                 CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                 ),
             ) {
                 ListItem(
@@ -291,9 +293,10 @@ fun CoreSettingsScreen(navController: NavController) {
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
+            shape = RoundedCornerShape(24.dp),
             colors =
             CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             ),
         ) {
             // Browse

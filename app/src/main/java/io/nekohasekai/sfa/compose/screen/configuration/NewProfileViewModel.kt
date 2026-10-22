@@ -9,10 +9,12 @@ import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.bg.UpdateProfileWork
 import io.nekohasekai.sfa.database.Profile
 import io.nekohasekai.sfa.database.ProfileManager
+import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.database.TypedProfile
 import io.nekohasekai.sfa.utils.HTTPClient
 import io.nekohasekai.sfa.utils.PxlRoutingPreferences
 import io.nekohasekai.sfa.utils.PxlSubscriptionConverter
+import io.nekohasekai.sfa.utils.PxlXhttpSidecar
 import io.nekohasekai.sfa.utils.SubscriptionInfoStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,7 +34,6 @@ data class NewProfileUiState(
     // Remote profile fields
     val remoteUrl: String = "",
     val autoUpdate: Boolean = true,
-    val autoUpdateInterval: Int = 60,
     // File import
     val importUri: Uri? = null,
     val importFileName: String? = null,
@@ -120,11 +121,6 @@ class NewProfileViewModel(application: Application) : AndroidViewModel(applicati
 
     fun updateAutoUpdate(enabled: Boolean) {
         _uiState.update { it.copy(autoUpdate = enabled) }
-    }
-
-    fun updateAutoUpdateInterval(interval: String) {
-        val intValue = interval.toIntOrNull() ?: 60
-        _uiState.update { it.copy(autoUpdateInterval = intValue.coerceAtLeast(15)) }
     }
 
     fun setImportUri(uri: Uri, fileName: String?) {
@@ -273,7 +269,7 @@ class NewProfileViewModel(application: Application) : AndroidViewModel(applicati
 
         // Validate config
         Libbox.checkConfig(configContent)
-        configFile.writeText(configContent)
+        check(PxlXhttpSidecar.replaceConfig(configFile, configContent)) { "Cannot save profile config" }
 
         // Create profile in database and select it
         ProfileManager.create(profile, andSelect = true)
@@ -288,7 +284,7 @@ class NewProfileViewModel(application: Application) : AndroidViewModel(applicati
                 type = TypedProfile.Type.Remote
                 remoteURL = state.remoteUrl
                 autoUpdate = state.autoUpdate
-                autoUpdateInterval = state.autoUpdateInterval
+                autoUpdateInterval = Settings.subscriptionUpdateIntervalMinutes
                 lastUpdated = Date()
             }
 
@@ -308,15 +304,20 @@ class NewProfileViewModel(application: Application) : AndroidViewModel(applicati
             PxlSubscriptionConverter.convert(
                 response.content,
                 PxlRoutingPreferences.isSmartRouting(context),
+                response.subscriptionStatus,
+                response.subscriptionFormat,
+                response.omittedXhttpCount,
             )
         Libbox.checkConfig(conversion.config)
         val configContent = conversion.config
 
-        configFile.writeText(configContent)
+        check(PxlXhttpSidecar.replaceConfig(configFile, configContent, response)) { "Cannot save XHTTP profile snapshot" }
 
         // Create profile in database and select it
         ProfileManager.create(profile, andSelect = true)
         SubscriptionInfoStore.save(context, profile.id, response.subscriptionUserInfo)
+        SubscriptionInfoStore.saveSmartStatus(context, profile.id, response.subscriptionStatus)
+        SubscriptionInfoStore.saveSkippedXhttp(context, profile.id, conversion.skippedXhttpCount)
 
         // Reconfigure updater if auto-update is enabled
         if (state.autoUpdate) {

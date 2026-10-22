@@ -1,32 +1,44 @@
 package io.nekohasekai.sfa.compose.screen.settings
 
+import android.Manifest
 import android.app.LocaleConfig
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.text.format.Formatter
 import android.util.Log
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -45,6 +57,7 @@ import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.NewReleases
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Speed
@@ -65,7 +78,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Switch
+import io.nekohasekai.sfa.compose.component.PxlSwitch as Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -77,11 +90,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -89,6 +104,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -100,15 +116,23 @@ import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.base.UiEvent
 import io.nekohasekai.sfa.compose.base.rememberApplyServiceChangeNotifier
 import io.nekohasekai.sfa.compose.component.UpdateAvailableDialog
+import io.nekohasekai.sfa.compose.component.PxlCatEasterEggDialog
+import io.nekohasekai.sfa.compose.component.rememberPxlCatEasterEggState
+import io.nekohasekai.sfa.compose.theme.AppThemeMode
+import io.nekohasekai.sfa.compose.theme.AppAccent
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Settings
+import io.nekohasekai.sfa.utils.PxlLocalPreferences
+import io.nekohasekai.sfa.utils.PxlLatencySource
 import io.nekohasekai.sfa.ktx.clipboardText
 import io.nekohasekai.sfa.update.UpdateCheckException
+import io.nekohasekai.sfa.update.ReleaseNotesSummary
 import io.nekohasekai.sfa.update.UpdateSource
 import io.nekohasekai.sfa.update.UpdateState
 import io.nekohasekai.sfa.update.UpdateTrack
 import io.nekohasekai.sfa.vendor.Vendor
+import io.nekohasekai.sfa.vendor.UpdateNotification
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -139,9 +163,15 @@ fun AppSettingsScreen(
     }
 
     val context = LocalContext.current
+    val catEasterEgg = rememberPxlCatEasterEggState()
+    var latencySource by remember { mutableStateOf(PxlLocalPreferences.latencySource(context)) }
+    var showLatencySourceDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val hasUpdate by UpdateState.hasUpdate
     val updateInfo by UpdateState.updateInfo
+    val updatePreview = remember(updateInfo?.releaseNotes) {
+        ReleaseNotesSummary.fromMarkdown(updateInfo?.releaseNotes, limit = 1).firstOrNull()
+    }
     val isChecking by UpdateState.isChecking
     var showSourceDialog by remember { mutableStateOf(false) }
     var currentSource by remember { mutableStateOf(Settings.updateSource) }
@@ -156,6 +186,21 @@ fun AppSettingsScreen(
     var silentInstallMethod by remember { mutableStateOf(Settings.silentInstallMethod) }
     var isMethodAvailable by remember { mutableStateOf(true) }
     var autoUpdateEnabled by remember { mutableStateOf(Settings.autoUpdateEnabled) }
+    var updateNotificationEnabled by remember { mutableStateOf(Settings.updateNotificationEnabled) }
+    var updateNotificationsAvailable by remember { mutableStateOf(UpdateNotification.canNotify(context)) }
+    var pendingUpdateNotificationEnable by rememberSaveable { mutableStateOf(false) }
+    val updateNotificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        updateNotificationsAvailable = granted && UpdateNotification.canNotify(context)
+        if (updateNotificationsAvailable) {
+            updateNotificationEnabled = true
+            Settings.updateNotificationEnabled = true
+        }
+        pendingUpdateNotificationEnable = false
+    }
+    var updatePreDownloadEnabled by remember { mutableStateOf(Settings.updatePreDownloadEnabled) }
+    var updatePreDownloadUnmetered by remember { mutableStateOf(Settings.updatePreDownloadUnmetered) }
     var showInstallMethodMenu by remember { mutableStateOf(false) }
     var isVerifyingMethod by remember { mutableStateOf(false) }
     var silentInstallError by remember { mutableStateOf<String?>(null) }
@@ -197,11 +242,17 @@ fun AppSettingsScreen(
 
     // Re-check states when returning from background (e.g., after granting permission)
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        updateNotificationsAvailable = UpdateNotification.canNotify(context)
+        if (pendingUpdateNotificationEnable && updateNotificationsAvailable) {
+            updateNotificationEnabled = true
+            Settings.updateNotificationEnabled = true
+            pendingUpdateNotificationEnable = false
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Application.notification.createNotificationChannel(
                 NotificationChannel(
                     "service",
-                    "Service Notifications",
+                    context.getString(R.string.pxlnet_vpn_notification_channel),
                     NotificationManager.IMPORTANCE_LOW,
                 ),
             )
@@ -227,6 +278,20 @@ fun AppSettingsScreen(
                 }
             }
         }
+    }
+
+    PxlCatEasterEggDialog(catEasterEgg)
+
+    if (showLatencySourceDialog) {
+        LatencySourceDialog(
+            selected = latencySource,
+            onSelect = { selected ->
+                latencySource = selected
+                PxlLocalPreferences.setLatencySource(context, selected)
+                showLatencySourceDialog = false
+            },
+            onDismiss = { showLatencySourceDialog = false },
+        )
     }
 
     if (showSourceDialog) {
@@ -462,18 +527,45 @@ fun AppSettingsScreen(
             .verticalScroll(rememberScrollState())
             .padding(vertical = 8.dp),
     ) {
+        Card(
+            shape = RoundedCornerShape(24.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        ) {
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.pxlnet_latency_setting_title)) },
+                supportingContent = {
+                    Text(
+                        stringResource(
+                            if (latencySource == PxlLatencySource.VPN_SERVER) {
+                                R.string.pxlnet_latency_server_path
+                            } else {
+                                R.string.pxlnet_latency_website_path
+                            },
+                        ),
+                    )
+                },
+                leadingContent = {
+                    AppSettingsIcon(Icons.Outlined.Speed)
+                },
+                modifier = Modifier.clickable { showLatencySourceDialog = true },
+                colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            )
+        }
+
         // Info Card
         Card(
+            shape = RoundedCornerShape(24.dp),
             modifier =
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
             colors =
             CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                containerColor = MaterialTheme.colorScheme.surface,
             ),
         ) {
-            Column {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Box {
                     ListItem(
                         headlineContent = {
@@ -489,27 +581,25 @@ fun AppSettingsScreen(
                             )
                         },
                         leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.Info,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
+                            AppSettingsIcon(Icons.Outlined.Info)
                         },
                         trailingContent = {
                             if (hasUpdate) {
-                                Badge(containerColor = MaterialTheme.colorScheme.primary) { Text("New") }
+                                Badge(containerColor = MaterialTheme.colorScheme.primary) {
+                                    Text(stringResource(R.string.pxlnet_update_badge))
+                                }
                             }
                         },
                         modifier =
                         Modifier
                             .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
                             .combinedClickable(
-                                onClick = {},
+                                onClick = { catEasterEgg.tap(context) },
                                 onLongClick = { showVersionMenu = true },
                             ),
                         colors =
                         ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                         ),
                     )
                     Box(modifier = Modifier.align(Alignment.BottomEnd)) {
@@ -556,19 +646,51 @@ fun AppSettingsScreen(
                         Text(displayName, style = MaterialTheme.typography.bodyMedium)
                     },
                     leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.Language,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+                        AppSettingsIcon(Icons.Outlined.Language)
                     },
                     modifier =
                     Modifier
                         .clickable { showLanguageDialog = true },
                     colors =
                     ListItemDefaults.colors(
-                        containerColor = Color.Transparent,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     ),
+                )
+
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            stringResource(R.string.pxlnet_settings_appearance),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    },
+                    supportingContent = {
+                        Text(
+                            stringResource(R.string.pxlnet_app_appearance_summary),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    },
+                    leadingContent = {
+                        AppSettingsIcon(Icons.Outlined.Palette)
+                    },
+                    modifier = Modifier.clickable { navController.navigate("settings/app/appearance") },
+                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                )
+
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.pxlnet_restart_onboarding)) },
+                    supportingContent = { Text(stringResource(R.string.pxlnet_restart_onboarding_summary)) },
+                    leadingContent = {
+                        AppSettingsIcon(Icons.Outlined.Info)
+                    },
+                    modifier = Modifier.clickable {
+                        PxlLocalPreferences.requestOnboarding(context)
+                        navController.navigate("dashboard") {
+                            popUpTo("dashboard") { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    },
+                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
                 )
 
                 ListItem(
@@ -584,11 +706,7 @@ fun AppSettingsScreen(
                         }
                     },
                     leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.DeleteSweep,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+                        AppSettingsIcon(Icons.Outlined.DeleteSweep)
                     },
                     modifier =
                     Modifier
@@ -601,7 +719,7 @@ fun AppSettingsScreen(
                         ),
                     colors =
                     ListItemDefaults.colors(
-                        containerColor = Color.Transparent,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     ),
                 )
 
@@ -614,11 +732,7 @@ fun AppSettingsScreen(
                             )
                         },
                         leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.DeleteForever,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
+                            AppSettingsIcon(Icons.Outlined.DeleteForever)
                         },
                         modifier =
                         Modifier
@@ -634,7 +748,7 @@ fun AppSettingsScreen(
                             },
                         colors =
                         ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                         ),
                     )
                 }
@@ -651,13 +765,14 @@ fun AppSettingsScreen(
         )
 
         Card(
+            shape = RoundedCornerShape(24.dp),
             modifier =
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
             colors =
             CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                containerColor = MaterialTheme.colorScheme.surface,
             ),
         ) {
             ListItem(
@@ -668,11 +783,7 @@ fun AppSettingsScreen(
                     )
                 },
                 leadingContent = {
-                    Icon(
-                        imageVector = Icons.Default.Terminal,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
+                    AppSettingsIcon(Icons.Default.Terminal)
                 },
                 modifier =
                 Modifier
@@ -680,7 +791,7 @@ fun AppSettingsScreen(
                     .clickable { navController.navigate("settings/tailscale/terminal_config") },
                 colors =
                 ListItemDefaults.colors(
-                    containerColor = Color.Transparent,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                 ),
             )
         }
@@ -695,16 +806,17 @@ fun AppSettingsScreen(
         )
 
         Card(
+            shape = RoundedCornerShape(24.dp),
             modifier =
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
             colors =
             CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                containerColor = MaterialTheme.colorScheme.surface,
             ),
         ) {
-            Column {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 ListItem(
                     headlineContent = {
                         Text(
@@ -713,11 +825,7 @@ fun AppSettingsScreen(
                         )
                     },
                     leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.Notifications,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+                        AppSettingsIcon(Icons.Outlined.Notifications)
                     },
                     trailingContent = {
                         Switch(
@@ -731,7 +839,7 @@ fun AppSettingsScreen(
                         .clickable { showDisableNotificationDialog = true },
                     colors =
                     ListItemDefaults.colors(
-                        containerColor = Color.Transparent,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     ),
                 )
                 ListItem(
@@ -742,11 +850,7 @@ fun AppSettingsScreen(
                         )
                     },
                     leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.Speed,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+                        AppSettingsIcon(Icons.Outlined.Speed)
                     },
                     trailingContent = {
                         Switch(
@@ -767,7 +871,7 @@ fun AppSettingsScreen(
                         .clip(RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp)),
                     colors =
                     ListItemDefaults.colors(
-                        containerColor = Color.Transparent,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     ),
                 )
             }
@@ -783,16 +887,17 @@ fun AppSettingsScreen(
         )
 
         Card(
+            shape = RoundedCornerShape(24.dp),
             modifier =
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
             colors =
             CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                containerColor = MaterialTheme.colorScheme.surface,
             ),
         ) {
-            Column {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 val isFDroid = UpdateSource.fromString(currentSource) == UpdateSource.FDROID
                 val updateItemCount =
                     run {
@@ -825,6 +930,10 @@ fun AppSettingsScreen(
                         if (Vendor.hasCustomUpdate) {
                             count += 1
                         }
+                        if (Vendor.hasCustomUpdate && autoUpdateEnabled && !isFDroid) {
+                            count += 2
+                            if (updatePreDownloadEnabled) count += 1
+                        }
                         count
                     }
 
@@ -856,18 +965,14 @@ fun AppSettingsScreen(
                             Text(sourceName, style = MaterialTheme.typography.bodyMedium)
                         },
                         leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.NewReleases,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
+                            AppSettingsIcon(Icons.Outlined.NewReleases)
                         },
                         modifier =
                         updateItemModifier()
                             .clickable { showSourceDialog = true },
                         colors =
                         ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                         ),
                     )
                 }
@@ -892,11 +997,7 @@ fun AppSettingsScreen(
                             Text(trackName, style = MaterialTheme.typography.bodyMedium)
                         },
                         leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.NewReleases,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
+                            AppSettingsIcon(Icons.Outlined.NewReleases)
                         },
                         modifier =
                         updateItemModifier().let {
@@ -904,9 +1005,10 @@ fun AppSettingsScreen(
                         },
                         colors =
                         ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                         ),
                     )
+
                 }
 
                 if (Vendor.hasCustomUpdate && !isFDroid) {
@@ -925,18 +1027,14 @@ fun AppSettingsScreen(
                             )
                         },
                         leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.Key,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
+                            AppSettingsIcon(Icons.Outlined.Key)
                         },
                         modifier =
                         updateItemModifier()
                             .clickable { showGitHubTokenDialog = true },
                         colors =
                         ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                         ),
                     )
                 }
@@ -979,18 +1077,14 @@ fun AppSettingsScreen(
                             )
                         },
                         leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.Speed,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
+                            AppSettingsIcon(Icons.Outlined.Speed)
                         },
                         modifier =
                         updateItemModifier()
                             .clickable { navController.navigate("settings/fdroid_mirror") },
                         colors =
                         ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                         ),
                     )
                 }
@@ -1003,11 +1097,7 @@ fun AppSettingsScreen(
                         )
                     },
                     leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.Autorenew,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+                        AppSettingsIcon(Icons.Outlined.Autorenew)
                     },
                     trailingContent = {
                         Switch(
@@ -1023,7 +1113,7 @@ fun AppSettingsScreen(
                     modifier = updateItemModifier(),
                     colors =
                     ListItemDefaults.colors(
-                        containerColor = Color.Transparent,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     ),
                 )
 
@@ -1043,11 +1133,7 @@ fun AppSettingsScreen(
                             )
                         },
                         leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.AdminPanelSettings,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
+                            AppSettingsIcon(Icons.Outlined.AdminPanelSettings)
                         },
                         trailingContent = {
                             if (isVerifyingMethod) {
@@ -1089,7 +1175,7 @@ fun AppSettingsScreen(
                         modifier = updateItemModifier(),
                         colors =
                         ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                         ),
                     )
 
@@ -1113,17 +1199,13 @@ fun AppSettingsScreen(
                                 )
                             },
                             leadingContent = {
-                                Icon(
-                                    imageVector = Icons.Outlined.Settings,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                )
+                                AppSettingsIcon(Icons.Outlined.Settings)
                             },
                             modifier =
                             updateItemModifier().clickable { showInstallMethodMenu = true },
                             colors =
                             ListItemDefaults.colors(
-                                containerColor = Color.Transparent,
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                             ),
                         )
 
@@ -1143,11 +1225,7 @@ fun AppSettingsScreen(
                                     )
                                 },
                                 leadingContent = {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Download,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                    )
+                                    AppSettingsIcon(Icons.Outlined.Download)
                                 },
                                 modifier =
                                 updateItemModifier()
@@ -1157,7 +1235,7 @@ fun AppSettingsScreen(
                                     },
                                 colors =
                                 ListItemDefaults.colors(
-                                    containerColor = Color.Transparent,
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                                 ),
                             )
                         }
@@ -1178,11 +1256,7 @@ fun AppSettingsScreen(
                                     )
                                 },
                                 leadingContent = {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Settings,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                    )
+                                    AppSettingsIcon(Icons.Outlined.Settings)
                                 },
                                 modifier =
                                 updateItemModifier()
@@ -1195,7 +1269,7 @@ fun AppSettingsScreen(
                                     },
                                 colors =
                                 ListItemDefaults.colors(
-                                    containerColor = Color.Transparent,
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                                 ),
                             )
                         }
@@ -1218,11 +1292,7 @@ fun AppSettingsScreen(
                             )
                         },
                         leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.SystemUpdateAlt,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
+                            AppSettingsIcon(Icons.Outlined.SystemUpdateAlt)
                         },
                         trailingContent = {
                             Switch(
@@ -1239,9 +1309,116 @@ fun AppSettingsScreen(
                         modifier = updateItemModifier(),
                         colors =
                         ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                         ),
                     )
+                    if (autoUpdateEnabled && !isFDroid) {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.pxlnet_update_notifications)) },
+                            supportingContent = {
+                                Text(stringResource(
+                                    if (updateNotificationsAvailable) R.string.pxlnet_update_notifications_summary
+                                    else R.string.pxlnet_update_notifications_blocked,
+                                ))
+                            },
+                            leadingContent = {
+                                AppSettingsIcon(Icons.Outlined.Notifications)
+                            },
+                            trailingContent = {
+                                Switch(
+                                    checked = updateNotificationEnabled && updateNotificationsAvailable,
+                                    onCheckedChange = { enabled ->
+                                        if (!enabled) {
+                                            pendingUpdateNotificationEnable = false
+                                            updateNotificationEnabled = false
+                                            Settings.updateNotificationEnabled = false
+                                        } else if (UpdateNotification.canNotify(context)) {
+                                            updateNotificationsAvailable = true
+                                            updateNotificationEnabled = true
+                                            Settings.updateNotificationEnabled = true
+                                        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                                        ) {
+                                            updateNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                        } else {
+                                            pendingUpdateNotificationEnable = true
+                                            context.startActivity(Intent(AndroidSettings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                                putExtra(AndroidSettings.EXTRA_APP_PACKAGE, context.packageName)
+                                            })
+                                        }
+                                    },
+                                )
+                            },
+                            modifier = updateItemModifier(),
+                            colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                        )
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.pxlnet_update_pre_download)) },
+                            supportingContent = { Text(stringResource(R.string.pxlnet_update_pre_download_summary)) },
+                            leadingContent = {
+                                AppSettingsIcon(Icons.Outlined.Download)
+                            },
+                            trailingContent = {
+                                Switch(
+                                    checked = updatePreDownloadEnabled,
+                                    onCheckedChange = { enabled ->
+                                        updatePreDownloadEnabled = enabled
+                                        Settings.updatePreDownloadEnabled = enabled
+                                        Vendor.scheduleUpdatePreDownload(context, updateInfo)
+                                    },
+                                )
+                            },
+                            modifier = updateItemModifier(),
+                            colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                        )
+                        if (updatePreDownloadEnabled) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                                    .padding(start = 16.dp, end = 16.dp, bottom = 8.dp)
+                                    .selectableGroup(),
+                            ) {
+                                Text(
+                                    stringResource(R.string.pxlnet_update_download_network),
+                                    modifier = Modifier.padding(top = 12.dp, bottom = 2.dp),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                listOf(true, false).forEach { unmetered ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .selectable(
+                                                selected = updatePreDownloadUnmetered == unmetered,
+                                                role = Role.RadioButton,
+                                                onClick = {
+                                                    updatePreDownloadUnmetered = unmetered
+                                                    Settings.updatePreDownloadUnmetered = unmetered
+                                                    Vendor.scheduleUpdatePreDownload(context, updateInfo)
+                                                },
+                                            )
+                                            .heightIn(min = 48.dp)
+                                            .padding(vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            stringResource(
+                                                if (unmetered) R.string.pxlnet_update_unmetered
+                                                else R.string.pxlnet_update_any_network,
+                                            ),
+                                            modifier = Modifier.weight(1f),
+                                            style = MaterialTheme.typography.bodyLarge,
+                                        )
+                                        RadioButton(
+                                            selected = updatePreDownloadUnmetered == unmetered,
+                                            onClick = null,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1257,16 +1434,17 @@ fun AppSettingsScreen(
         )
 
         Card(
+            shape = RoundedCornerShape(24.dp),
             modifier =
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
             colors =
             CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                containerColor = MaterialTheme.colorScheme.surface,
             ),
         ) {
-            Column {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 ListItem(
                     headlineContent = {
                         Text(
@@ -1275,11 +1453,7 @@ fun AppSettingsScreen(
                         )
                     },
                     leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.Refresh,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+                        AppSettingsIcon(Icons.Outlined.Refresh)
                     },
                     trailingContent = {
                         if (isChecking) {
@@ -1305,17 +1479,16 @@ fun AppSettingsScreen(
                                     try {
                                         val result = Vendor.checkUpdateAsync()
                                         UpdateState.setUpdate(result)
+                                        Vendor.scheduleUpdatePreDownload(context, result)
                                         if (result == null) {
                                             showErrorDialog = context.getString(R.string.no_updates_available)
                                         } else {
                                             showUpdateAvailableDialog = true
                                         }
                                     } catch (_: UpdateCheckException.TrackNotSupported) {
-                                        UpdateState.setUpdate(null)
                                         showErrorDialog = context.getString(R.string.update_track_not_supported)
                                     } catch (e: Exception) {
                                         Log.e("AppSettingsScreen", "checkUpdateAsync failed", e)
-                                        UpdateState.setUpdate(null)
                                         showErrorDialog = e.message
                                     }
                                 }
@@ -1324,7 +1497,7 @@ fun AppSettingsScreen(
                         },
                     colors =
                     ListItemDefaults.colors(
-                        containerColor = Color.Transparent,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     ),
                 )
 
@@ -1332,13 +1505,15 @@ fun AppSettingsScreen(
                     ListItem(
                         headlineContent = {
                             Text(
-                                stringResource(R.string.update),
+                                stringResource(R.string.pxlnet_update_settings_banner, updateInfo!!.versionName),
                                 style = MaterialTheme.typography.bodyLarge,
                             )
                         },
                         supportingContent = {
                             Text(
-                                updateInfo!!.versionName,
+                                updatePreview?.let {
+                                    stringResource(R.string.pxlnet_update_preview, it)
+                                } ?: stringResource(R.string.pxlnet_update_no_notes),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                         },
@@ -1346,7 +1521,7 @@ fun AppSettingsScreen(
                             Icon(
                                 imageVector = Icons.Outlined.Download,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
                             )
                         },
                         modifier =
@@ -1357,13 +1532,77 @@ fun AppSettingsScreen(
                             },
                         colors =
                         ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
                         ),
                     )
                 }
             }
         }
     }
+}
+
+@Composable
+private fun AppSettingsIcon(imageVector: ImageVector) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(14.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = imageVector,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+        )
+    }
+}
+
+@Composable
+private fun LatencySourceDialog(
+    selected: PxlLatencySource,
+    onSelect: (PxlLatencySource) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.pxlnet_latency_setting_title)) },
+        text = {
+            Column {
+                PxlLatencySource.entries.forEach { source ->
+                    val isServer = source == PxlLatencySource.VPN_SERVER
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable { onSelect(source) }.padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = selected == source, onClick = { onSelect(source) })
+                        Column(modifier = Modifier.padding(start = 8.dp)) {
+                            Text(
+                                stringResource(
+                                    if (isServer) R.string.pxlnet_latency_server_title else R.string.pxlnet_latency_website_title,
+                                ),
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                            Text(
+                                stringResource(
+                                    if (isServer) R.string.pxlnet_latency_server_path else R.string.pxlnet_latency_website_path,
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                stringResource(
+                                    if (isServer) R.string.pxlnet_latency_server_description else R.string.pxlnet_latency_website_description,
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) } },
+    )
 }
 
 @Composable
@@ -1408,6 +1647,153 @@ private fun UpdateSourceDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(android.R.string.cancel))
+            }
+        },
+    )
+}
+
+@Composable
+internal fun AppThemeMode.label(): String = when (this) {
+    AppThemeMode.SYSTEM -> stringResource(R.string.theme_system)
+    AppThemeMode.LIGHT -> stringResource(R.string.theme_light)
+    AppThemeMode.DARK -> stringResource(R.string.theme_dark)
+}
+
+@Composable
+internal fun AppAccent.label(): String = when (this) {
+    AppAccent.WALLPAPER -> stringResource(R.string.accent_wallpaper)
+    AppAccent.GREEN -> stringResource(R.string.accent_green)
+    AppAccent.SKY -> stringResource(R.string.accent_sky)
+    AppAccent.VIOLET -> stringResource(R.string.accent_violet)
+    AppAccent.CORAL -> stringResource(R.string.accent_coral)
+    AppAccent.AMBER -> stringResource(R.string.accent_amber)
+    AppAccent.ROSE -> stringResource(R.string.accent_rose)
+    AppAccent.COSMOS -> stringResource(R.string.accent_cosmos)
+}
+
+@Composable
+internal fun ThemeDialog(
+    currentThemeMode: AppThemeMode,
+    currentAccent: AppAccent,
+    dynamicColorSupported: Boolean,
+    onThemeSelected: (AppThemeMode) -> Unit,
+    onAccentSelected: (AppAccent) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    var lastFixedAccent by remember {
+        mutableStateOf(currentAccent.takeUnless { it == AppAccent.WALLPAPER } ?: AppAccent.GREEN)
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.appearance)) },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(stringResource(R.string.accent_color), style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .clickable {
+                            onAccentSelected(
+                                if (currentAccent == AppAccent.WALLPAPER) lastFixedAccent
+                                else AppAccent.WALLPAPER,
+                            )
+                        }
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(stringResource(R.string.accent_wallpaper), style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            stringResource(
+                                if (dynamicColorSupported) R.string.accent_wallpaper_description
+                                else R.string.accent_wallpaper_fallback,
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = currentAccent == AppAccent.WALLPAPER,
+                        onCheckedChange = { enabled ->
+                            onAccentSelected(if (enabled) AppAccent.WALLPAPER else lastFixedAccent)
+                        },
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                ) {
+                    AppAccent.entries.filter {
+                        it != AppAccent.WALLPAPER &&
+                            (it != AppAccent.COSMOS || PxlLocalPreferences.isCosmosUnlocked(context))
+                    }.forEach { option ->
+                        val selected = currentAccent == option
+                        Column(
+                            modifier = Modifier
+                                .width(88.dp)
+                                .clip(RoundedCornerShape(20.dp))
+                                .border(
+                                    width = if (selected) 2.dp else 1.dp,
+                                    color = if (selected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.outlineVariant,
+                                    shape = RoundedCornerShape(20.dp),
+                                )
+                                .clickable {
+                                    lastFixedAccent = option
+                                    onAccentSelected(option)
+                                }
+                                .padding(vertical = 12.dp, horizontal = 6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Row(
+                                modifier = Modifier.size(52.dp).clip(CircleShape),
+                            ) {
+                                Box(Modifier.weight(1f).fillMaxHeight().background(option.swatch))
+                                Box(
+                                    Modifier.weight(1f).fillMaxHeight()
+                                        .background(option.swatch.copy(alpha = 0.55f)),
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(option.label(), style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+                Text(stringResource(R.string.theme_mode_label), style = MaterialTheme.typography.titleMedium)
+                AppThemeMode.entries.forEach { mode ->
+                    Row(
+                        modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onThemeSelected(mode) }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = currentThemeMode == mode,
+                            onClick = { onThemeSelected(mode) },
+                        )
+                        Text(
+                            text = mode.label(),
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(android.R.string.ok))
             }
         },
     )

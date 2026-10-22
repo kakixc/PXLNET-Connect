@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="pxlnet_widget_monet_surface">#E9DFF0</color>
+    <color name="pxlnet_widget_monet_on_surface">#261A2D</color>
+    <color name="pxlnet_widget_monet_muted">#604F68</color>
+    <color name="pxlnet_widget_monet_outline">#B6A5BF</color>
+    <color name="pxlnet_widget_monet_power_idle">#67507F</color>
+    <color name="pxlnet_widget_monet_power_active">#67507F</color>
+</resources>

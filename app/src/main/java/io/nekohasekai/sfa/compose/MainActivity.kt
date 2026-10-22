@@ -2,6 +2,8 @@ package io.nekohasekai.sfa.compose
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.ContentResolver
 import android.content.Intent
 import android.net.Uri
@@ -10,26 +12,47 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.PlayArrow
@@ -67,22 +90,31 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
+import androidx.compose.ui.semantics.Role
 import androidx.core.os.ConfigurationCompat
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
@@ -96,6 +128,7 @@ import io.nekohasekai.sfa.bg.CrashReportManager
 import io.nekohasekai.sfa.bg.OOMReportManager
 import io.nekohasekai.sfa.bg.ServiceConnection
 import io.nekohasekai.sfa.bg.ServiceNotification
+import io.nekohasekai.sfa.bg.StartServiceCoordinator
 import io.nekohasekai.sfa.compat.WindowSizeClassCompat
 import io.nekohasekai.sfa.compat.isWidthAtLeastBreakpointCompat
 import io.nekohasekai.sfa.compose.base.GlobalEventBus
@@ -103,6 +136,11 @@ import io.nekohasekai.sfa.compose.base.SelectableMessageDialog
 import io.nekohasekai.sfa.compose.base.UiEvent
 import io.nekohasekai.sfa.compose.component.RemoteStatusBar
 import io.nekohasekai.sfa.compose.component.ServiceStatusBar
+import io.nekohasekai.sfa.compose.component.LocalPxlTopBarInset
+import io.nekohasekai.sfa.compose.component.LocalPxlTopBarOverlay
+import io.nekohasekai.sfa.compose.component.LocalPxlTopBarServiceStatus
+import io.nekohasekai.sfa.compose.component.LocalPxlTopBarStatusText
+import io.nekohasekai.sfa.compose.component.LocalPxlFloatingNavInset
 import io.nekohasekai.sfa.compose.component.UpdateAvailableDialog
 import io.nekohasekai.sfa.compose.component.UptimeText
 import io.nekohasekai.sfa.compose.model.Connection
@@ -124,6 +162,8 @@ import io.nekohasekai.sfa.compose.screen.tools.OpenVPNStatusViewModel
 import io.nekohasekai.sfa.compose.screen.tools.TailscaleSSHSharedViewModel
 import io.nekohasekai.sfa.compose.screen.tools.TailscaleStatusViewModel
 import io.nekohasekai.sfa.compose.screen.usbip.USBIPStatusViewModel
+import io.nekohasekai.sfa.compose.theme.AppAccent
+import io.nekohasekai.sfa.compose.theme.AppThemeMode
 import io.nekohasekai.sfa.compose.theme.SFATheme
 import io.nekohasekai.sfa.compose.topbar.LocalTopBarController
 import io.nekohasekai.sfa.compose.topbar.TopBarController
@@ -136,19 +176,31 @@ import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.ktx.hasPermission
 import io.nekohasekai.sfa.ktx.launchCustomTab
 import io.nekohasekai.sfa.update.UpdateState
+import io.nekohasekai.sfa.update.UpdateInfo
 import io.nekohasekai.sfa.utils.PxlDeveloperMode
 import io.nekohasekai.sfa.utils.PxlLocalPreferences
+import io.nekohasekai.sfa.utils.PxlUiPreferences
 import io.nekohasekai.sfa.utils.RemoteControlManager
+import io.nekohasekai.sfa.utils.SubscriptionInfoStore
 import io.nekohasekai.sfa.vendor.Vendor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.HazeState
 
 class MainActivity :
     AppCompatActivity(),
     ServiceConnection.Callback {
+    companion object {
+        const val EXTRA_OPEN_UPDATE_SETTINGS = "net.pxlnet.connect.OPEN_UPDATE_SETTINGS"
+        const val EXTRA_OPEN_UPDATE_DETAILS = "net.pxlnet.connect.OPEN_UPDATE_DETAILS"
+        const val EXTRA_OPEN_UPDATE_PREVIEW = "net.pxlnet.connect.OPEN_UPDATE_PREVIEW"
+    }
+
     private val connection = ServiceConnection(this, this)
     private lateinit var dashboardViewModel: DashboardViewModel
     private var currentServiceStatus by mutableStateOf(Status.Stopped)
@@ -204,9 +256,13 @@ class MainActivity :
             }
         }
     private val pendingNavigationRoute = mutableStateOf<String?>(null)
+    private var pendingOpenUpdateDetails by mutableStateOf(false)
+    private var showUpdatePreview by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingOpenUpdateDetails = savedInstanceState?.getBoolean("pending_open_update_details") ?: false
+        showUpdatePreview = savedInstanceState?.getBoolean("show_update_preview") ?: false
         ConfigurationCompat.getLocales(resources.configuration)[0]?.let { locale ->
             runCatching {
                 Libbox.setLocale(locale.toLanguageTag())
@@ -215,11 +271,12 @@ class MainActivity :
             }
         }
         enableEdgeToEdge()
+        PxlUiPreferences.initialize(this)
 
         connection.reconnect()
         RemoteControlManager.restore()
 
-        UpdateState.loadFromCache()
+        UpdateState.loadFromCache(this)
         if (PxlLocalPreferences.initializeUpdateDefaults(this)) {
             Settings.checkUpdateEnabled = true
             Settings.autoUpdateEnabled = true
@@ -230,8 +287,9 @@ class MainActivity :
                 try {
                     val updateInfo = Vendor.checkUpdateAsync()
                     UpdateState.setUpdate(updateInfo)
+                    Vendor.scheduleUpdatePreDownload(this@MainActivity, updateInfo)
                 } catch (_: Exception) {
-                    UpdateState.setUpdate(null)
+                    // Keep a cached, still-newer release visible while offline.
                 }
             }
         }
@@ -239,7 +297,12 @@ class MainActivity :
         handleIntent(intent)
 
         setContent {
-            SFATheme(dynamicColor = true) {
+            val themeMode by Settings.themeModeState
+            val accent by Settings.accentState
+            SFATheme(
+                themeMode = AppThemeMode.fromPersisted(themeMode),
+                accent = AppAccent.fromPersisted(accent),
+            ) {
                 SFAApp()
             }
         }
@@ -247,11 +310,38 @@ class MainActivity :
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         handleIntent(intent)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("pending_open_update_details", pendingOpenUpdateDetails)
+        outState.putBoolean("show_update_preview", showUpdatePreview)
+        super.onSaveInstanceState(outState)
     }
 
     private fun handleIntent(intent: Intent?) {
         if (intent == null) {
+            return
+        }
+        if (intent.getBooleanExtra(EXTRA_OPEN_UPDATE_DETAILS, false)) {
+            intent.removeExtra(EXTRA_OPEN_UPDATE_DETAILS)
+            pendingOpenUpdateDetails = true
+            return
+        }
+        if (intent.getBooleanExtra(EXTRA_OPEN_UPDATE_PREVIEW, false)) {
+            intent.removeExtra(EXTRA_OPEN_UPDATE_PREVIEW)
+            showUpdatePreview = true
+            return
+        }
+        if (intent.getBooleanExtra(EXTRA_OPEN_UPDATE_SETTINGS, false)) {
+            intent.removeExtra(EXTRA_OPEN_UPDATE_SETTINGS)
+            pendingNavigationRoute.value = "settings/app"
+            return
+        }
+        if (intent.getBooleanExtra(StartServiceCoordinator.EXTRA_START_AFTER_PREREQUISITES, false)) {
+            intent.removeExtra(StartServiceCoordinator.EXTRA_START_AFTER_PREREQUISITES)
+            startService()
             return
         }
         val uri = intent.data ?: return
@@ -264,8 +354,8 @@ class MainActivity :
                 val profile = Libbox.parseRemoteProfileImportLink(uri.toString())
                 pendingImportProfile = Triple(profile.name, profile.host, profile.url)
                 showImportProfileDialog = true
-            } catch (e: Exception) {
-                pendingIntentErrorMessage = e.message ?: "Failed to parse profile link"
+            } catch (_: Exception) {
+                pendingIntentErrorMessage = getString(R.string.pxlnet_import_parse_failed)
             }
             return
         }
@@ -298,6 +388,9 @@ class MainActivity :
 
     @SuppressLint("NewApi")
     fun startService() {
+        if (SubscriptionInfoStore.connectionAccess(this, Settings.selectedProfile) != SubscriptionInfoStore.ConnectionAccess.ALLOWED) {
+            return
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !ServiceNotification.checkPermission()) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             return
@@ -315,11 +408,27 @@ class MainActivity :
                     return@launch
                 }
             }
-            val intent = Intent(Application.application, Settings.serviceClass())
-            withContext(Dispatchers.Main) {
-                ContextCompat.startForegroundService(this@MainActivity, intent)
+            when (StartServiceCoordinator.preflight(
+                this@MainActivity,
+                StartServiceCoordinator.currentStatus() ?: connection.status,
+            )) {
+                StartServiceCoordinator.Decision.START -> Unit
+                StartServiceCoordinator.Decision.BLOCKED_BY_INACTIVE_SUBSCRIPTION -> return@launch
+                StartServiceCoordinator.Decision.OPEN_APP_FOR_NOTIFICATION_PERMISSION -> {
+                    withContext(Dispatchers.Main) { onServiceAlert(Alert.RequestNotificationPermission, null) }
+                    return@launch
+                }
+                StartServiceCoordinator.Decision.OPEN_APP_FOR_VPN_PERMISSION -> {
+                    prepare()
+                    return@launch
+                }
+                StartServiceCoordinator.Decision.ALREADY_IN_PROGRESS -> return@launch
             }
-            Settings.startedByUser = true
+            withContext(Dispatchers.Main) {
+                if (StartServiceCoordinator.start(StartServiceCoordinator.Source.HOME)) {
+                    Settings.startedByUser = true
+                }
+            }
         }
     }
 
@@ -343,14 +452,51 @@ class MainActivity :
     fun SFAApp() {
         val navController = rememberNavController()
         val navBackStackEntry by navController.currentBackStackEntryAsState()
+        val visibleEntries by navController.visibleEntries.collectAsState()
+        val outgoingRoute = visibleEntries.firstOrNull {
+            it.lifecycle.currentState == Lifecycle.State.CREATED
+        }?.destination?.route
         val currentDestination = navBackStackEntry?.destination
         val currentRoute = currentDestination?.route
         val scope = rememberCoroutineScope()
         val importHandler = remember { ProfileImportHandler(this@MainActivity) }
+        val crashReports by CrashReportManager.reports.collectAsState()
+        var pendingCrashSupportText by remember { mutableStateOf<String?>(null) }
+        val saveCrashReportLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("text/plain"),
+        ) { uri ->
+            val text = pendingCrashSupportText
+            if (uri != null && text != null) {
+                scope.launch {
+                    val saved = withContext(Dispatchers.IO) {
+                        runCatching {
+                            contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+                                ?: error("Unable to open crash report destination")
+                        }.isSuccess
+                    }
+                    if (saved) pendingCrashSupportText = null
+                }
+            }
+        }
+
+        LaunchedEffect(crashReports) {
+            val report = CrashReportManager.newestUncopiedReport(this@MainActivity) ?: return@LaunchedEffect
+            val text = withContext(Dispatchers.IO) { CrashReportManager.supportText(report) }
+            pendingCrashSupportText = text
+            runCatching {
+                (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
+                    .setPrimaryClip(ClipData.newPlainText("PXLNET Connect crash log", text))
+            }.onSuccess { CrashReportManager.markSupportReportCopied(this@MainActivity, report) }
+        }
 
         val windowSizeClass = currentWindowAdaptiveInfo().windowSizeClass
         val useNavigationRail =
             windowSizeClass.isWidthAtLeastBreakpointCompat(WindowSizeClassCompat.WIDTH_DP_MEDIUM_LOWER_BOUND)
+        val floatingNavigation by PxlUiPreferences.floatingNavigation.collectAsState()
+        val navigationBlur by PxlUiPreferences.navigationBlur.collectAsState()
+        val floatingNavigationLabels by PxlUiPreferences.floatingNavigationLabels.collectAsState()
+        val hazeState = remember { HazeState() }
+        var floatingNavHeightPx by remember { mutableIntStateOf(0) }
 
         // Snackbar state
         val snackbarHostState = remember { SnackbarHostState() }
@@ -455,7 +601,8 @@ class MainActivity :
         }
         val topBarState = remember { mutableStateOf(emptyList<TopBarEntry>()) }
         val topBarController = remember { TopBarController(topBarState) }
-        val topBarOverride = topBarState.value.lastOrNull()?.content
+        val topBarOverride = topBarState.value.lastOrNull { it.owner === navBackStackEntry }?.content
+            ?: topBarState.value.lastOrNull()?.content
         val openNewProfile: (NewProfileArgs) -> Unit = { args ->
             newProfileArgs = args
             navController.navigate(ProfileRoutes.NewProfile) {
@@ -478,6 +625,28 @@ class MainActivity :
                 title = stringResource(R.string.error_title),
                 message = errorMessage,
                 onDismiss = { showErrorDialog = false },
+            )
+        }
+
+        if (pendingCrashSupportText != null) {
+            AlertDialog(
+                onDismissRequest = { pendingCrashSupportText = null },
+                title = { Text(stringResource(R.string.pxlnet_crash_support_title)) },
+                text = { Text(stringResource(R.string.pxlnet_crash_support_message)) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        saveCrashReportLauncher.launch("pxlnet_crash_${System.currentTimeMillis()}.txt")
+                    }) { Text(stringResource(R.string.pxlnet_crash_support_save)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        pendingCrashSupportText?.let { text ->
+                            (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
+                                .setPrimaryClip(ClipData.newPlainText("PXLNET Connect crash log", text))
+                        }
+                        pendingCrashSupportText = null
+                    }) { Text(stringResource(R.string.pxlnet_crash_support_copy)) }
+                },
             )
         }
 
@@ -634,18 +803,58 @@ class MainActivity :
         val shouldShowUpdateDialog = updateInfo != null &&
             updateInfo!!.versionCode > Settings.lastShownUpdateVersion
         var showUpdateDialog by remember { mutableStateOf(true) }
+        LaunchedEffect(updateInfo?.versionCode) {
+            if ((updateInfo?.versionCode ?: 0) > Settings.lastShownUpdateVersion) {
+                showUpdateDialog = true
+            }
+        }
+        LaunchedEffect(pendingOpenUpdateDetails) {
+            if (pendingOpenUpdateDetails) showUpdateDialog = true
+        }
+        LaunchedEffect(showUpdatePreview) {
+            if (showUpdatePreview) showUpdateDialog = false
+        }
 
         // Download dialog state
         var showDownloadDialog by remember { mutableStateOf(false) }
         var downloadJob by remember { mutableStateOf<Job?>(null) }
         var downloadError by remember { mutableStateOf<String?>(null) }
 
-        if (showUpdateDialog && shouldShowUpdateDialog) {
+        if (showUpdatePreview) {
+            UpdateAvailableDialog(
+                updateInfo = UpdateInfo(
+                    versionCode = 0,
+                    versionName = BuildConfig.VERSION_NAME,
+                    downloadUrl = "",
+                    releaseUrl = "",
+                    releaseNotes = stringResource(R.string.pxlnet_update_test_notes),
+                    isPrerelease = true,
+                ),
+                onDismiss = { showUpdatePreview = false },
+                onUpdate = {},
+                previewOnly = true,
+            )
+        }
+
+        if (!showUpdatePreview && showUpdateDialog && updateInfo != null &&
+            (shouldShowUpdateDialog || pendingOpenUpdateDetails)
+        ) {
             UpdateAvailableDialog(
                 updateInfo = updateInfo!!,
                 onDismiss = {
                     Settings.lastShownUpdateVersion = updateInfo!!.versionCode
                     showUpdateDialog = false
+                    pendingOpenUpdateDetails = false
+                    scope.launch {
+                        val result = snackbarHostState.showSnackbar(
+                            message = getString(R.string.pxlnet_update_later_hint),
+                            actionLabel = getString(R.string.pxlnet_update_settings_action),
+                            duration = androidx.compose.material3.SnackbarDuration.Short,
+                        )
+                        if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                            navController.navigate("settings/app") { launchSingleTop = true }
+                        }
+                    }
                 },
                 onUpdate = {
                     if (!Vendor.ensureUpdateInstallPermission(this@MainActivity)) {
@@ -653,6 +862,7 @@ class MainActivity :
                     }
                     Settings.lastShownUpdateVersion = updateInfo!!.versionCode
                     showUpdateDialog = false
+                    pendingOpenUpdateDetails = false
                     showDownloadDialog = true
                     downloadError = null
                     downloadJob = scope.launch {
@@ -766,12 +976,14 @@ class MainActivity :
         }
 
         val isSettingsSubScreen = currentRoute?.startsWith("settings/") == true
+        val isAppRoutingSubScreen = currentRoute == "pxlnet/app_routing"
         val isToolsSubScreen = currentRoute?.startsWith("tools/") == true
         val isConnectionsDetail = currentRoute?.startsWith("connections/detail") == true
         val isProfileRoute = currentRoute?.startsWith("profile/") == true
         val currentRootRoute =
             when {
                 isSettingsSubScreen -> Screen.Settings.route
+                isAppRoutingSubScreen -> Screen.Dashboard.route
                 isToolsSubScreen -> Screen.Tools.route
                 currentRoute?.startsWith(Screen.Connections.route) == true -> Screen.Connections.route
                 currentRoute?.startsWith(Screen.Log.route) == true -> Screen.Log.route
@@ -783,7 +995,20 @@ class MainActivity :
         val isLogRoute = currentRootRoute == Screen.Log.route
         val isDashboardRoute = currentRootRoute == Screen.Dashboard.route
 
-        val isSubScreen = isSettingsSubScreen || isToolsSubScreen || isConnectionsDetail || isProfileRoute
+        // Keep the outgoing screen's chrome geometry until its transition finishes.
+        // Otherwise Home changes its top/bottom insets before the App routing slide starts,
+        // which makes the still-visible Home list jump under the user's finger.
+        val chromeRoute = outgoingRoute ?: currentRoute
+        val isSubScreen = chromeRoute?.startsWith("settings/") == true ||
+            chromeRoute == "pxlnet/app_routing" ||
+            chromeRoute?.startsWith("tools/") == true ||
+            chromeRoute?.startsWith("connections/detail") == true ||
+            chromeRoute?.startsWith("profile/") == true
+        val currentIsSubScreen = currentRoute?.startsWith("settings/") == true ||
+            currentRoute == "pxlnet/app_routing" ||
+            currentRoute?.startsWith("tools/") == true ||
+            currentRoute?.startsWith("connections/detail") == true ||
+            currentRoute?.startsWith("profile/") == true
         // Get LogViewModel instance if we're on the Log screen
         val logViewModel: LogViewModel? =
             if (isLogRoute) {
@@ -960,7 +1185,58 @@ class MainActivity :
             topBarOverride?.invoke()
         }
 
+        val destinationChrome: @Composable (NavBackStackEntry, @Composable () -> Unit) -> Unit = { entry, page ->
+            if (useNavigationRail) {
+                page()
+            } else {
+                val rootGlass = floatingNavigation && navigationBlur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    entry.destination.route in setOf(Screen.Dashboard.route, Screen.Account.route, Screen.Settings.route)
+                var topBarHeightPx by remember(entry) { mutableIntStateOf(0) }
+                val topInset = if (rootGlass) {
+                    if (topBarHeightPx > 0) with(LocalDensity.current) { topBarHeightPx.toDp() } else 88.dp
+                } else 0.dp
+                val destinationTopBar = topBarState.value.lastOrNull { it.owner === entry }?.content
+                val glassSurface = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)
+                val canBlur = floatingNavigation && navigationBlur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    visibleBottomNavigationScreens.any { it.route == entry.destination.route }
+                CompositionLocalProvider(
+                    LocalPxlTopBarOverlay provides rootGlass,
+                    LocalPxlTopBarInset provides topInset,
+                ) {
+                    if (rootGlass) {
+                        Box(Modifier.fillMaxSize()) {
+                            Box(Modifier.fillMaxSize().hazeSource(hazeState)) { page() }
+                            destinationTopBar?.let { bar ->
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopCenter)
+                                        .fillMaxWidth()
+                                        .onSizeChanged { topBarHeightPx = it.height }
+                                        .hazeEffect(hazeState) {
+                                            backgroundColor = glassSurface
+                                            blurRadius = 22.dp
+                                        },
+                                ) {
+                                    bar()
+                                }
+                            }
+                        }
+                    } else {
+                        Column(Modifier.fillMaxSize()) {
+                            destinationTopBar?.invoke()
+                            Box(
+                                Modifier.weight(1f).fillMaxWidth().then(
+                                    if (canBlur) Modifier.hazeSource(hazeState) else Modifier,
+                                ),
+                            ) { page() }
+                        }
+                    }
+                }
+            }
+        }
+
         val scaffoldContent: @Composable (PaddingValues) -> Unit = { paddingValues ->
+            val floatingPanelInset = LocalPxlFloatingNavInset.current
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -975,6 +1251,8 @@ class MainActivity :
 
                 SFANavHost(
                     navController = navController,
+                    destinationChrome = destinationChrome,
+                    rootTabRoutes = (if (useNavigationRail) railScreens else visibleBottomNavigationScreens).map { it.route },
                     serviceStatus = currentServiceStatus,
                     showStartFab = showStartFab,
                     showStatusBar = showStatusBar,
@@ -995,7 +1273,7 @@ class MainActivity :
                 if (!useNavigationRail) {
                     if (isRemote) {
                         RemoteStatusBar(
-                            visible = !isSubScreen,
+                            visible = !isSubScreen && (!floatingNavigation || useNavigationRail || isDashboardRoute),
                             serverName = remoteServer?.displayName ?: "",
                             isConnected = remoteConnected,
                             startTime = remoteStartedAt,
@@ -1005,11 +1283,11 @@ class MainActivity :
                             connectionsCount = dashboardUiState.connectionsCount,
                             onConnectionsClick = { showConnectionsSheet = true },
                             onDisconnectClick = { RemoteControlManager.exitRemoteControl() },
-                            modifier = Modifier.align(Alignment.BottomCenter),
+                            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = floatingPanelInset),
                         )
                     } else {
                         ServiceStatusBar(
-                            visible = showStatusBar && !isSubScreen && !isDashboardRoute,
+                            visible = showStatusBar && !isSubScreen && !isDashboardRoute && (!floatingNavigation || useNavigationRail),
                             serviceStatus = currentServiceStatus,
                             startTime = dashboardUiState.serviceStartTime,
                             groupsCount = dashboardUiState.groupsCount,
@@ -1018,7 +1296,7 @@ class MainActivity :
                             connectionsCount = dashboardUiState.connectionsCount,
                             onConnectionsClick = { showConnectionsSheet = true },
                             onStopClick = { dashboardViewModel.toggleService() },
-                            modifier = Modifier.align(Alignment.BottomCenter),
+                            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = floatingPanelInset),
                         )
                     }
                 }
@@ -1149,7 +1427,8 @@ class MainActivity :
                         exit = scaleOut(),
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
-                            .padding(16.dp),
+                            .padding(16.dp)
+                            .padding(bottom = floatingPanelInset),
                     ) {
                         FloatingActionButton(
                             onClick = { startService() },
@@ -1178,7 +1457,29 @@ class MainActivity :
             }
         }
 
-        CompositionLocalProvider(LocalTopBarController provides topBarController) {
+        val glassChrome = !useNavigationRail && floatingNavigation && navigationBlur &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !isSubScreen &&
+            currentRootRoute in setOf(Screen.Dashboard.route, Screen.Account.route, Screen.Settings.route)
+        val floatingRoot = !useNavigationRail && floatingNavigation && !isSubScreen &&
+            currentRootRoute in setOf(Screen.Dashboard.route, Screen.Account.route, Screen.Settings.route)
+        val floatingPanelVisible = !useNavigationRail && floatingNavigation && !isSubScreen
+        val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        val floatingNavInset = if (floatingPanelVisible) {
+            (if (floatingNavHeightPx > 0) with(LocalDensity.current) { floatingNavHeightPx.toDp() } else 76.dp) +
+                navigationBarInset + 24.dp
+        } else 0.dp
+
+        CompositionLocalProvider(
+            LocalTopBarController provides topBarController,
+            LocalPxlTopBarOverlay provides glassChrome,
+            LocalPxlTopBarInset provides 0.dp,
+            LocalPxlFloatingNavInset provides floatingNavInset,
+            LocalPxlTopBarServiceStatus provides if (floatingPanelVisible && !isDashboardRoute) currentServiceStatus else Status.Stopped,
+            LocalPxlTopBarStatusText provides if (floatingPanelVisible && !isDashboardRoute && isRemote) {
+                if (remoteConnected) remoteServer?.displayName ?: stringResource(R.string.remote_connected)
+                else stringResource(R.string.remote_connecting)
+            } else null,
+        ) {
             if (useNavigationRail) {
                 Row(modifier = Modifier.fillMaxSize()) {
                     Surface(tonalElevation = 1.dp) {
@@ -1229,11 +1530,16 @@ class MainActivity :
                 }
             } else {
                 Scaffold(
-                    modifier = Modifier.fillMaxSize(),
+                    // A stable owner for the system top inset keeps every destination's
+                    // app bar aligned during both forward and predictive-back transitions.
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background)
+                        .windowInsetsPadding(WindowInsets.statusBars),
                     snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-                    topBar = topBarContent,
+                    topBar = {},
                     bottomBar = {
-                        if (!isSubScreen) {
+                        if (!isSubScreen && !floatingNavigation) {
                             val hasUpdate by UpdateState.hasUpdate
                             NavigationBar(
                                 containerColor = MaterialTheme.colorScheme.surface,
@@ -1286,7 +1592,120 @@ class MainActivity :
                         }
                     },
                 ) { paddingValues ->
-                    scaffoldContent(paddingValues)
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            val contentPadding = if (!isSubScreen && floatingNavigation) {
+                                val layoutDirection = LocalLayoutDirection.current
+                                val navHeight = with(LocalDensity.current) { floatingNavHeightPx.toDp() }
+                                PaddingValues(
+                                    start = paddingValues.calculateStartPadding(layoutDirection),
+                                    top = if (glassChrome) 0.dp else paddingValues.calculateTopPadding(),
+                                    end = paddingValues.calculateEndPadding(layoutDirection),
+                                    bottom = if (floatingRoot) 0.dp else navHeight + navigationBarInset + 24.dp,
+                                )
+                            } else {
+                                paddingValues
+                            }
+                            scaffoldContent(contentPadding)
+                        }
+                        AnimatedVisibility(
+                            visible = !currentIsSubScreen && floatingNavigation,
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                            enter = slideInVertically(
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = Spring.StiffnessMedium,
+                                ),
+                                initialOffsetY = { it },
+                            ) + fadeIn(animationSpec = tween(120)),
+                            exit = slideOutVertically(
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = Spring.StiffnessMedium,
+                                ),
+                                targetOffsetY = { it },
+                            ) + fadeOut(animationSpec = tween(120)),
+                            label = "floating-navigation",
+                        ) {
+                            val canBlurNavigation = navigationBlur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                            val capsuleShape = RoundedCornerShape(36.dp)
+                            val capsuleSurface = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)
+                            Row(
+                                modifier = Modifier
+                                    .padding(start = 16.dp, end = 16.dp, bottom = navigationBarInset + 12.dp)
+                                    .fillMaxWidth()
+                                    .onSizeChanged { floatingNavHeightPx = it.height }
+                                    .clip(capsuleShape)
+                                    .then(
+                                        if (canBlurNavigation) Modifier.hazeEffect(hazeState) {
+                                            backgroundColor = capsuleSurface
+                                            blurRadius = 22.dp
+                                        } else Modifier.background(MaterialTheme.colorScheme.surface),
+                                    )
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, capsuleShape)
+                                    .then(
+                                        if (visibleBottomNavigationScreens.size > 4) {
+                                            Modifier.horizontalScroll(rememberScrollState())
+                                        } else Modifier,
+                                    )
+                                    .padding(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                val hasUpdate by UpdateState.hasUpdate
+                                visibleBottomNavigationScreens.forEach { screen ->
+                                    val selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true
+                                    val title = stringResource(screen.titleRes)
+                                    val itemModifier = if (visibleBottomNavigationScreens.size <= 4) {
+                                        Modifier.weight(1f)
+                                    } else Modifier.width(84.dp)
+                                    Column(
+                                        modifier = itemModifier
+                                            .clip(RoundedCornerShape(30.dp))
+                                            .background(
+                                                if (selected) MaterialTheme.colorScheme.primaryContainer
+                                                else Color.Transparent,
+                                            )
+                                            .selectable(selected = selected, role = Role.Tab) {
+                                                navController.navigate(screen.route) {
+                                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                                    launchSingleTop = true
+                                                    restoreState = true
+                                                }
+                                            }
+                                            .padding(horizontal = 4.dp, vertical = if (floatingNavigationLabels) 8.dp else 10.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(3.dp),
+                                    ) {
+                                        val iconTint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                                            else MaterialTheme.colorScheme.onSurfaceVariant
+                                        Box(modifier = Modifier.height(28.dp), contentAlignment = Alignment.Center) {
+                                            if (screen == Screen.Settings && hasUpdate) {
+                                                BadgedBox(badge = { Badge(containerColor = MaterialTheme.colorScheme.primary) }) {
+                                                    Icon(screen.icon, contentDescription = title, tint = iconTint)
+                                                }
+                                            } else if (screen == Screen.Tools && toolsUnreadCount > 0) {
+                                                BadgedBox(badge = { Badge(containerColor = MaterialTheme.colorScheme.error) { Text("$toolsUnreadCount") } }) {
+                                                    Icon(screen.icon, contentDescription = title, tint = iconTint)
+                                                }
+                                            } else {
+                                                Icon(screen.icon, contentDescription = title, tint = iconTint)
+                                            }
+                                        }
+                                        if (floatingNavigationLabels && visibleBottomNavigationScreens.size <= 4) {
+                                            Text(
+                                                text = title,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                                color = iconTint,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

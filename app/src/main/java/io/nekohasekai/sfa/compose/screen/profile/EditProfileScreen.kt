@@ -45,7 +45,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
+import io.nekohasekai.sfa.compose.component.PxlSwitch as Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -219,9 +219,10 @@ fun EditProfileScreen(
                 // Basic Information Card
                 Card(
                     modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
                     colors =
                     CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     ),
                 ) {
                     Column(
@@ -259,10 +260,10 @@ fun EditProfileScreen(
                             modifier =
                             Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(16.dp))
                                 .clickable { viewModel.showIconDialog() },
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shape = RoundedCornerShape(16.dp),
                         ) {
                             Row(
                                 modifier =
@@ -310,9 +311,10 @@ fun EditProfileScreen(
                 if (uiState.profileType == TypedProfile.Type.Remote) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
                         colors =
                         CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                         ),
                     ) {
                         Column(
@@ -414,24 +416,6 @@ fun EditProfileScreen(
                                 )
                             }
 
-                            AnimatedVisibility(visible = uiState.autoUpdate) {
-                                OutlinedTextField(
-                                    value = uiState.autoUpdateInterval.toString(),
-                                    onValueChange = viewModel::updateAutoUpdateInterval,
-                                    label = { Text(stringResource(R.string.profile_auto_update_interval)) },
-                                    supportingText = {
-                                        uiState.autoUpdateIntervalError?.let { error ->
-                                            Text(
-                                                text = error,
-                                                color = MaterialTheme.colorScheme.error,
-                                            )
-                                        } ?: Text(stringResource(R.string.profile_auto_update_interval_minimum_hint))
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true,
-                                    isError = uiState.autoUpdateIntervalError != null,
-                                )
-                            }
                         }
                     }
                 }
@@ -439,9 +423,10 @@ fun EditProfileScreen(
                 // Content Card (for both Local and Remote profiles) - placed at the end
                 Card(
                     modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
                     colors =
                     CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f),
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     ),
                 ) {
                     Column(
@@ -470,14 +455,14 @@ fun EditProfileScreen(
                             modifier =
                             Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(16.dp))
                                 .clickable {
                                     onNavigateToEditContent(
                                         uiState.profileType == TypedProfile.Type.Remote,
                                     )
                                 },
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shape = RoundedCornerShape(16.dp),
                         ) {
                             Row(
                                 modifier =
@@ -537,7 +522,7 @@ fun EditProfileScreen(
                     Button(
                         onClick = { viewModel.saveChanges() },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = !uiState.isSaving && uiState.autoUpdateIntervalError == null,
+                        enabled = !uiState.isSaving,
                     ) {
                         if (uiState.isSaving) {
                             CircularProgressIndicator(

@@ -22,8 +22,11 @@ import io.nekohasekai.sfa.utils.CommandTarget
 import io.nekohasekai.sfa.utils.HTTPClient
 import io.nekohasekai.sfa.utils.PxlAuthClient
 import io.nekohasekai.sfa.utils.PxlRoutingPreferences
+import io.nekohasekai.sfa.utils.PxlServerProbeCache
 import io.nekohasekai.sfa.utils.PxlSecureTokenStore
 import io.nekohasekai.sfa.utils.PxlSubscriptionConverter
+import io.nekohasekai.sfa.utils.PxlXhttpSidecar
+import io.nekohasekai.sfa.utils.PxlXhttpConfig
 import io.nekohasekai.sfa.utils.RemoteControlManager
 import io.nekohasekai.sfa.utils.SubscriptionInfoStore
 import kotlinx.coroutines.Dispatchers
@@ -61,6 +64,8 @@ data class DashboardUiState(
     val profiles: List<Profile> = emptyList(),
     val selectedProfileId: Long = -1L,
     val selectedProfileName: String? = null,
+    val singleChoiceTargets: Map<String, String> = emptyMap(),
+    val skippedXhttpCount: Int = 0,
     val isLoading: Boolean = false,
     val hasGroups: Boolean = false,
     val groupsCount: Int = 0,
@@ -131,15 +136,21 @@ data class DashboardUiState(
     val telegramUsername: String? = null,
     val telegramSubscriptionActive: Boolean = false,
     val telegramSubscriptionExpiresAt: String? = null,
+    val hasTelegramSession: Boolean = false,
+    val accountLastVerifiedAt: Long? = null,
     val telegramLoginPending: Boolean = false,
     val telegramLoginError: String? = null,
     val accountServiceAvailable: Boolean? = null,
     val availableServerTags: List<String> = emptyList(),
+    val xhttpServers: Map<String, XhttpServer> = emptyMap(),
     val preferredServerTag: String = "AUTO",
+    val switchingServerTag: String? = null,
+    val serverSwitchFailed: Boolean = false,
     val ecosystemCheckPending: Boolean = false,
     val ecosystemLastCheckedAt: Long? = null,
 ) {
     data class DeprecatedNote(val message: String, val migrationLink: String?)
+    data class XhttpServer(val label: String, val type: String)
 }
 
 // DashboardViewModel now only uses UiEvent for all events
@@ -148,6 +159,7 @@ data class DashboardUiState(
 class DashboardViewModel :
     BaseViewModel<DashboardUiState, UiEvent>(),
     CommandClient.Handler {
+    val serverProbeCache = PxlServerProbeCache()
     private val _serviceStatus = MutableStateFlow(Status.Stopped)
     val serviceStatus: StateFlow<Status> = _serviceStatus.asStateFlow()
 
@@ -237,8 +249,9 @@ class DashboardViewModel :
                 val profiles = ProfileManager.list()
                 val selectedId = Settings.selectedProfile
                 val selectedProfile = profiles.find { it.id == selectedId }
-                val serverSelection = selectedProfile?.let(::prepareStoredProfile)
-                    ?: PxlSubscriptionConverter.ServerSelection(emptyList(), "AUTO")
+                val storedServers = selectedProfile?.let(::prepareStoredProfile)
+                    ?: StoredServers(PxlSubscriptionConverter.ServerSelection(emptyList(), "AUTO"), emptyMap())
+                val serverSelection = storedServers.selection
 
                 withContext(Dispatchers.Main) {
                     updateState {
@@ -246,8 +259,12 @@ class DashboardViewModel :
                             profiles = profiles,
                             selectedProfileId = selectedId,
                             selectedProfileName = selectedProfile?.name,
+                            skippedXhttpCount = (SubscriptionInfoStore.skippedXhttp(Application.application, selectedId) -
+                                storedServers.xhttpServers.size).coerceAtLeast(0),
                             availableServerTags = serverSelection.tags,
+                            xhttpServers = storedServers.xhttpServers,
                             preferredServerTag = serverSelection.selectedTag,
+                            singleChoiceTargets = serverSelection.singleChoiceTargets,
                         )
                     }
                 }
@@ -257,18 +274,32 @@ class DashboardViewModel :
         }
     }
 
-    private fun prepareStoredProfile(profile: Profile): PxlSubscriptionConverter.ServerSelection {
+    private data class StoredServers(
+        val selection: PxlSubscriptionConverter.ServerSelection,
+        val xhttpServers: Map<String, DashboardUiState.XhttpServer>,
+    )
+
+    private fun prepareStoredProfile(profile: Profile): StoredServers {
         val file = File(profile.typed.path)
-        if (!file.exists()) return PxlSubscriptionConverter.ServerSelection(emptyList(), "AUTO")
+        val empty = StoredServers(PxlSubscriptionConverter.ServerSelection(emptyList(), "AUTO"), emptyMap())
+        if (!file.exists()) return empty
         return runCatching {
             val original = file.readText()
             val migrated = PxlSubscriptionConverter.sanitizeConfig(original)
             if (migrated != original) {
                 Libbox.checkConfig(migrated)
-                file.writeText(migrated)
+                val xhttpSnapshot = PxlXhttpSidecar.read(file)
+                check(PxlXhttpSidecar.replaceConfig(file, migrated)) { "Cannot save profile config" }
+                xhttpSnapshot?.let { check(PxlXhttpSidecar.write(file, it.links, it.smartRevisions, it.preferredTag)) }
             }
-            PxlSubscriptionConverter.serverSelection(migrated)
-        }.getOrDefault(PxlSubscriptionConverter.ServerSelection(emptyList(), "AUTO"))
+            val base = PxlSubscriptionConverter.serverSelection(migrated)
+            val snapshot = PxlXhttpSidecar.read(file)
+            val xhttpServers = snapshot?.links.orEmpty().map { PxlXhttpConfig.presentation(it) }
+                .associate { it.tag to DashboardUiState.XhttpServer(it.label, it.type) }
+            val tags = (base.tags + xhttpServers.keys).distinct()
+            val selected = snapshot?.preferredTag?.takeIf(tags::contains) ?: base.selectedTag
+            StoredServers(PxlSubscriptionConverter.ServerSelection(tags, selected, base.singleChoiceTargets), xhttpServers)
+        }.getOrDefault(empty)
     }
 
     private fun checkDeprecatedNotes() {
@@ -383,18 +414,22 @@ class DashboardViewModel :
     fun deleteProfile(profile: Profile) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // Update UI immediately for responsiveness
-                withContext(Dispatchers.Main) {
-                    updateState {
-                        copy(
-                            profiles = profiles.filter { p -> p.id != profile.id },
-                        )
-                    }
+                val isSelected = Settings.selectedProfile == profile.id
+                check(!isSelected || _serviceStatus.value == Status.Stopped) {
+                    "Disconnect VPN before deleting the active subscription"
                 }
-                // Then delete from database
-                ProfileManager.delete(profile)
+                val replacementId = if (isSelected) {
+                    ProfileManager.list().firstOrNull { it.id != profile.id }?.id ?: 0L
+                } else null
+                if (replacementId != null) Settings.selectedProfile = replacementId
+                try {
+                    ProfileManager.delete(profile)
+                } catch (e: Exception) {
+                    if (replacementId != null) Settings.selectedProfile = profile.id
+                    throw e
+                }
+                loadProfiles()
             } catch (e: Exception) {
-                // Reload profiles if deletion fails
                 loadProfiles()
                 sendError(e)
             }
@@ -409,30 +444,65 @@ class DashboardViewModel :
         // Handled directly in ProfilesCard
     }
 
-    fun setSmartRouting(enabled: Boolean) {
-        if (currentState.smartRoutingEnabled == enabled) return
+    fun setSmartRouting(enabled: Boolean, onCompleted: (Boolean) -> Unit = {}) {
+        if (currentState.smartRoutingEnabled == enabled) {
+            onCompleted(true)
+            return
+        }
+        val previousEnabled = currentState.smartRoutingEnabled
         PxlRoutingPreferences.setSmartRouting(Application.application, enabled)
         updateState { copy(smartRoutingEnabled = enabled) }
-        currentState.profiles
+        val selectedRemoteProfile = currentState.profiles
             .firstOrNull { it.id == currentState.selectedProfileId && it.typed.type == TypedProfile.Type.Remote }
-            ?.let(::updateProfile)
+        if (selectedRemoteProfile == null) {
+            onCompleted(true)
+            return
+        }
+        updateProfile(selectedRemoteProfile, smartRoutingEnabled = enabled) { updated ->
+            if (!updated) {
+                PxlRoutingPreferences.setSmartRouting(Application.application, previousEnabled)
+                updateState { copy(smartRoutingEnabled = previousEnabled) }
+            }
+            onCompleted(updated)
+        }
     }
 
     fun selectPreferredServer(tag: String) {
         if (tag !in currentState.availableServerTags) return
+        if (_serviceStatus.value == Status.Started) {
+            updateState { copy(switchingServerTag = tag, serverSwitchFailed = false) }
+        } else {
+            updateState { copy(serverSwitchFailed = false) }
+        }
         viewModelScope.launch(Dispatchers.IO) {
-            val profile = ProfileManager.get(currentState.selectedProfileId) ?: return@launch
-            val file = File(profile.typed.path)
-            if (!file.exists()) return@launch
             try {
-                val updated = PxlSubscriptionConverter.selectServer(file.readText(), tag)
-                Libbox.checkConfig(updated)
-                file.writeText(updated)
+                val profile = ProfileManager.get(currentState.selectedProfileId)
+                    ?: error(Application.application.getString(R.string.pxlnet_selected_profile_unavailable))
+                val file = File(profile.typed.path)
+                check(file.exists()) { Application.application.getString(R.string.pxlnet_selected_profile_file_unavailable) }
+                val xhttpSnapshot = PxlXhttpSidecar.read(file)
+                if (tag in currentState.xhttpServers) {
+                    check(xhttpSnapshot?.links?.any { PxlXhttpConfig.presentation(it).tag == tag } == true) {
+                        "XHTTP server is no longer available"
+                    }
+                    check(PxlXhttpSidecar.select(file, tag)) { "Cannot save XHTTP server selection" }
+                } else {
+                    val updated = PxlSubscriptionConverter.selectServer(file.readText(), tag)
+                    Libbox.checkConfig(updated)
+                    check(PxlXhttpSidecar.replaceConfig(file, updated)) { "Cannot save profile config" }
+                    xhttpSnapshot?.let { check(PxlXhttpSidecar.write(file, it.links, it.smartRevisions)) }
+                }
                 updateState { copy(preferredServerTag = tag) }
                 if (_serviceStatus.value == Status.Started) {
                     CommandTarget.standaloneClient().selectOutbound("PXLNET", tag)
+                    delay(10_000)
+                    if (currentState.switchingServerTag == tag) {
+                        updateState { copy(switchingServerTag = null, serverSwitchFailed = true) }
+                        sendError(IllegalStateException(Application.application.getString(R.string.pxlnet_server_switch_unconfirmed)))
+                    }
                 }
             } catch (e: Exception) {
+                updateState { copy(switchingServerTag = null, serverSwitchFailed = true) }
                 sendError(e)
             }
         }
@@ -470,6 +540,9 @@ class DashboardViewModel :
                         telegramUsername = account.username,
                         telegramSubscriptionActive = account.subscriptionActive,
                         telegramSubscriptionExpiresAt = account.subscriptionExpiresAt,
+                        hasTelegramSession = true,
+                        accountLastVerifiedAt = System.currentTimeMillis(),
+                        accountServiceAvailable = true,
                         telegramLoginPending = false,
                         telegramLoginError = null,
                     )
@@ -499,6 +572,8 @@ class DashboardViewModel :
                     telegramUsername = null,
                     telegramSubscriptionActive = false,
                     telegramSubscriptionExpiresAt = null,
+                    hasTelegramSession = false,
+                    accountLastVerifiedAt = null,
                     telegramLoginPending = false,
                     telegramLoginError = null,
                 )
@@ -509,6 +584,7 @@ class DashboardViewModel :
     private fun restoreTelegramAccount() {
         viewModelScope.launch(Dispatchers.IO) {
             val token = PxlSecureTokenStore.read(Application.application) ?: return@launch
+            updateState { copy(hasTelegramSession = true) }
             val client = PxlAuthClient()
             runCatching {
                 val account = client.account(token)
@@ -525,6 +601,9 @@ class DashboardViewModel :
                             telegramUsername = account.username,
                             telegramSubscriptionActive = account.subscriptionActive,
                             telegramSubscriptionExpiresAt = account.subscriptionExpiresAt,
+                            hasTelegramSession = true,
+                            accountLastVerifiedAt = System.currentTimeMillis(),
+                            accountServiceAvailable = true,
                         )
                     }
                     loadProfiles()
@@ -532,6 +611,16 @@ class DashboardViewModel :
                 .onFailure { error ->
                     if (error.message.orEmpty().contains("HTTP 401")) {
                         PxlSecureTokenStore.clear(Application.application)
+                        updateState {
+                            copy(
+                                hasTelegramSession = false,
+                                accountLastVerifiedAt = null,
+                                telegramAccountName = null,
+                                telegramUsername = null,
+                                telegramSubscriptionActive = false,
+                                telegramSubscriptionExpiresAt = null,
+                            )
+                        }
                     } else {
                         updateState { copy(accountServiceAvailable = false) }
                     }
@@ -564,6 +653,9 @@ class DashboardViewModel :
                         telegramUsername = account.username,
                         telegramSubscriptionActive = account.subscriptionActive,
                         telegramSubscriptionExpiresAt = account.subscriptionExpiresAt,
+                        hasTelegramSession = true,
+                        accountLastVerifiedAt = System.currentTimeMillis(),
+                        accountServiceAvailable = true,
                         telegramLoginPending = false,
                     )
                 }
@@ -579,6 +671,9 @@ class DashboardViewModel :
                         telegramUsername = if (invalidToken) null else telegramUsername,
                         telegramSubscriptionActive = if (invalidToken) false else telegramSubscriptionActive,
                         telegramSubscriptionExpiresAt = if (invalidToken) null else telegramSubscriptionExpiresAt,
+                        hasTelegramSession = if (invalidToken) false else hasTelegramSession,
+                        accountLastVerifiedAt = if (invalidToken) null else accountLastVerifiedAt,
+                        accountServiceAvailable = if (invalidToken) accountServiceAvailable else false,
                         telegramLoginPending = false,
                         telegramLoginError = accountErrorMessage(e, R.string.pxlnet_account_refresh_failed),
                     )
@@ -643,6 +738,12 @@ class DashboardViewModel :
                         refreshedAccount != null -> refreshedAccount.subscriptionExpiresAt
                         else -> telegramSubscriptionExpiresAt
                     },
+                    hasTelegramSession = token != null && !invalidToken,
+                    accountLastVerifiedAt = when {
+                        invalidToken -> null
+                        refreshedAccount != null -> System.currentTimeMillis()
+                        else -> accountLastVerifiedAt
+                    },
                     telegramLoginError = accountError?.let {
                         accountErrorMessage(it, R.string.pxlnet_account_refresh_failed)
                     },
@@ -659,16 +760,27 @@ class DashboardViewModel :
             Application.application.getString(R.string.pxlnet_unsafe_subscription_url)
         }
         val response = HTTPClient().use { it.get(url) }
-        val content =
+        val profiles = ProfileManager.list()
+        val existing = findAuthenticatedProfile(profiles, url)
+        val selectAccountProfile = shouldSelectAuthenticatedProfile(profiles, Settings.selectedProfile)
+        if (existing != null && SubscriptionInfoStore.recordExplicitInactiveResponse(
+                Application.application, existing.id, response.subscriptionStatus,
+            )
+        ) {
+            check(PxlXhttpSidecar.remove(File(existing.typed.path))) { "Cannot remove inactive XHTTP profile snapshot" }
+        }
+        val conversion =
             PxlSubscriptionConverter.convert(
                 response.content,
                 PxlRoutingPreferences.isSmartRouting(Application.application),
-            ).config
+                response.subscriptionStatus,
+                response.subscriptionFormat,
+                response.omittedXhttpCount,
+            )
+        val previous = existing?.typed?.path?.let { File(it).takeIf(File::exists)?.readText() }
+        val content = previous?.let { PxlSubscriptionConverter.preserveSelectedServer(conversion.config, it) }
+            ?: conversion.config
         Libbox.checkConfig(content)
-
-        val existing = ProfileManager.list().firstOrNull {
-            it.typed.type == TypedProfile.Type.Remote && it.name == "PXLNET"
-        }
         val profile = existing ?: Profile(name = "PXLNET", typed = TypedProfile()).apply {
             userOrder = ProfileManager.nextOrder()
             typed.type = TypedProfile.Type.Remote
@@ -676,20 +788,23 @@ class DashboardViewModel :
             typed.path = File(Application.application.filesDir, "configs/$fileID.json").path
         }
         File(profile.typed.path).parentFile?.mkdirs()
-        File(profile.typed.path).writeText(content)
+        val configFile = File(profile.typed.path)
+        check(PxlXhttpSidecar.replaceConfig(configFile, content, response)) { "Cannot save XHTTP profile snapshot" }
         profile.typed.remoteURL = url
         profile.typed.autoUpdate = true
-        profile.typed.autoUpdateInterval = 60
+        profile.typed.autoUpdateInterval = Settings.subscriptionUpdateIntervalMinutes
         profile.typed.lastUpdated = Date()
         if (existing == null) {
-            ProfileManager.create(profile, andSelect = true)
+            ProfileManager.create(profile, andSelect = selectAccountProfile)
         } else {
             ProfileManager.update(profile)
-            Settings.selectedProfile = profile.id
+            if (selectAccountProfile) Settings.selectedProfile = profile.id
         }
         SubscriptionInfoStore.save(Application.application, profile.id, response.subscriptionUserInfo)
+        SubscriptionInfoStore.saveSmartStatus(Application.application, profile.id, response.subscriptionStatus)
+        SubscriptionInfoStore.saveSkippedXhttp(Application.application, profile.id, conversion.skippedXhttpCount)
         UpdateProfileWork.reconfigureUpdater()
-        if (_serviceStatus.value == Status.Started) {
+        if (_serviceStatus.value == Status.Started && Settings.selectedProfile == profile.id) {
             Libbox.newStandaloneCommandClient().serviceReload()
         }
     }
@@ -704,7 +819,11 @@ class DashboardViewModel :
         }
     }
 
-    fun updateProfile(profile: Profile) {
+    fun updateProfile(
+        profile: Profile,
+        smartRoutingEnabled: Boolean? = null,
+        onCompleted: (Boolean) -> Unit = {},
+    ) {
         if (profile.typed.type != TypedProfile.Type.Remote) return
 
         viewModelScope.launch(Dispatchers.IO) {
@@ -715,25 +834,42 @@ class DashboardViewModel :
 
             try {
                 // Fetch remote config
+                val file = File(profile.typed.path)
+                val previousXhttp = PxlXhttpSidecar.read(file)
                 val response = HTTPClient().use { it.get(profile.typed.remoteURL) }
-                val content =
+                if (SubscriptionInfoStore.recordExplicitInactiveResponse(
+                        Application.application, profile.id, response.subscriptionStatus,
+                    )
+                ) {
+                    check(PxlXhttpSidecar.remove(File(profile.typed.path))) { "Cannot remove inactive XHTTP profile snapshot" }
+                }
+                val conversion =
                     PxlSubscriptionConverter.convert(
                         response.content,
-                        PxlRoutingPreferences.isSmartRouting(Application.application),
-                    ).config
+                        smartRoutingEnabled ?: PxlRoutingPreferences.isSmartRouting(Application.application),
+                        response.subscriptionStatus,
+                        response.subscriptionFormat,
+                        response.omittedXhttpCount,
+                    )
+                val previous = file.takeIf(File::exists)?.readText()
+                val content = previous?.let { PxlSubscriptionConverter.preserveSelectedServer(conversion.config, it) }
+                    ?: conversion.config
                 Libbox.checkConfig(content)
-
                 // Check if content changed
-                val file = File(profile.typed.path)
                 var contentChanged = false
-                if (!file.exists() || file.readText() != content) {
-                    file.writeText(content)
+                check(PxlXhttpSidecar.replaceConfig(file, content, response)) { "Cannot save XHTTP profile snapshot" }
+                val xhttpChanged = (previousXhttp != null || response.xhttpLinks.isNotEmpty()) &&
+                    (previousXhttp?.links != response.xhttpLinks ||
+                        previousXhttp.smartRevisions != response.smartRevisions)
+                if (previous != content || xhttpChanged) {
                     contentChanged = true
                 }
 
                 // Update last updated time
                 profile.typed.lastUpdated = Date()
                 SubscriptionInfoStore.save(Application.application, profile.id, response.subscriptionUserInfo)
+                SubscriptionInfoStore.saveSmartStatus(Application.application, profile.id, response.subscriptionStatus)
+                SubscriptionInfoStore.saveSkippedXhttp(Application.application, profile.id, conversion.skippedXhttpCount)
                 ProfileManager.update(profile)
 
                 // Reload profiles
@@ -742,6 +878,7 @@ class DashboardViewModel :
                 // Show success state
                 withContext(Dispatchers.Main) {
                     updateState { copy(updatingProfileId = null, updatedProfileId = profile.id) }
+                    onCompleted(true)
                 }
 
                 // Clear success state after delay
@@ -761,6 +898,7 @@ class DashboardViewModel :
                 // Clear updating state on error
                 withContext(Dispatchers.Main) {
                     updateState { copy(updatingProfileId = null) }
+                    onCompleted(false)
                 }
             }
         }
@@ -813,6 +951,7 @@ class DashboardViewModel :
             updateState {
                 copy(
                     serviceStatus = status,
+                    switchingServerTag = if (status == Status.Started) switchingServerTag else null,
                     isStatusVisible =
                     if (RemoteControlManager.remoteServer.value != null) {
                         isStatusVisible
@@ -1019,8 +1158,14 @@ class DashboardViewModel :
     override fun updateGroups(newGroups: MutableList<OutboundGroup>) {
         viewModelScope.launch(Dispatchers.Main) {
             val hasGroups = newGroups.isNotEmpty()
+            val selected = newGroups.firstOrNull { it.tag == "PXLNET" }?.selected
             updateState {
-                copy(hasGroups = hasGroups, groupsCount = newGroups.size)
+                copy(
+                    hasGroups = hasGroups,
+                    groupsCount = newGroups.size,
+                    switchingServerTag = if (switchingServerTag == selected) null else switchingServerTag,
+                    serverSwitchFailed = if (selected == preferredServerTag) false else serverSwitchFailed,
+                )
             }
         }
     }

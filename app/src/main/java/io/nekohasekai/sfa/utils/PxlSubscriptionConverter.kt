@@ -1,5 +1,7 @@
 package io.nekohasekai.sfa.utils
 
+import io.nekohasekai.sfa.Application
+import io.nekohasekai.sfa.R
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -17,20 +19,45 @@ import java.util.Base64
 
 /** Converts common share-link subscriptions into a sing-box configuration. */
 object PxlSubscriptionConverter {
+    internal const val XHTTP_PENDING_TAG = "PXLNET-XHTTP-PENDING"
+    private fun message(resourceId: Int, fallback: String): String =
+        runCatching { Application.application.getString(resourceId) }.getOrDefault(fallback)
+
     data class Result(
         val config: String,
         val serverCount: Int,
+        val skippedXhttpCount: Int = 0,
     )
 
     data class ServerSelection(
         val tags: List<String>,
         val selectedTag: String,
+        val singleChoiceTargets: Map<String, String> = emptyMap(),
     )
 
     private val json = Json { prettyPrint = true }
 
-    fun convert(content: String, smartRouting: Boolean = true): Result {
+    fun convert(
+        content: String,
+        smartRouting: Boolean = true,
+        subscriptionStatus: String? = null,
+        subscriptionFormat: String? = null,
+        omittedXhttpCount: Int = 0,
+    ): Result {
+        val status = subscriptionStatus?.trim()?.lowercase()
+        require(status == null || status == "active") {
+            when (status) {
+                "expired" -> message(R.string.pxlnet_smart_subscription_expired, "The PXLNET subscription has expired")
+                "paused" -> message(R.string.pxlnet_smart_subscription_paused, "The PXLNET subscription is paused")
+                "blocked" -> message(R.string.pxlnet_smart_subscription_blocked, "The PXLNET subscription is blocked")
+                "revoked" -> message(R.string.pxlnet_smart_subscription_revoked, "The PXLNET subscription has been revoked")
+                else -> message(R.string.pxlnet_smart_subscription_unknown, "The PXLNET subscription status is unavailable")
+            }
+        }
         val trimmed = content.trim().removePrefix("\uFEFF")
+        if (subscriptionFormat.equals("singbox", ignoreCase = true)) {
+            return convertSmartSingbox(trimmed, smartRouting).copy(skippedXhttpCount = omittedXhttpCount)
+        }
         if (trimmed.startsWith("{")) {
             return Result(sanitizeConfig(trimmed), 0)
         }
@@ -43,12 +70,16 @@ object PxlSubscriptionConverter {
                 .toList()
 
         require(links.isNotEmpty()) {
-            "Подписка не содержит поддерживаемых серверов VLESS или Hysteria2"
+            message(R.string.pxlnet_import_no_supported_servers, "Subscription has no supported VLESS or Hysteria2 servers")
         }
 
+        val (xhttpLinks, compatibleLinks) = links.partition { link ->
+            link.startsWith("vless://", true) &&
+                queryParameters(URI(link.replace(" ", "%20")).rawQuery)["type"].equals("xhttp", ignoreCase = true)
+        }
         val usedTags = mutableSetOf<String>()
         val nodes =
-            links.map { link ->
+            compatibleLinks.map { link ->
                 when {
                     link.startsWith("vless://", true) -> parseVless(link, usedTags)
                     else -> parseHysteria2(link, usedTags)
@@ -104,22 +135,27 @@ object PxlSubscriptionConverter {
                             buildJsonObject {
                                 put("type", "selector")
                                 put("tag", "PXLNET")
-                                put("outbounds", stringArray(listOf("AUTO") + tags))
-                                put("default", "AUTO")
+                                val choices = if (tags.isEmpty()) listOf(XHTTP_PENDING_TAG) else listOf("AUTO") + tags
+                                put("outbounds", stringArray(choices))
+                                put("default", choices.first())
                                 put("interrupt_exist_connections", true)
                             },
                         )
-                        add(
-                            buildJsonObject {
-                                put("type", "urltest")
-                                put("tag", "AUTO")
-                                put("outbounds", stringArray(tags))
-                                put("url", "https://www.gstatic.com/generate_204")
-                                put("interval", "3m")
-                                put("tolerance", 50)
-                                put("interrupt_exist_connections", true)
-                            },
-                        )
+                        if (tags.isNotEmpty()) {
+                            add(
+                                buildJsonObject {
+                                    put("type", "urltest")
+                                    put("tag", "AUTO")
+                                    put("outbounds", stringArray(tags))
+                                    put("url", "https://www.gstatic.com/generate_204")
+                                    put("interval", "3m")
+                                    put("tolerance", 50)
+                                    put("interrupt_exist_connections", true)
+                                },
+                            )
+                        } else {
+                            add(buildJsonObject { put("type", "block"); put("tag", XHTTP_PENDING_TAG) })
+                        }
                         nodes.forEach(::add)
                         add(
                             buildJsonObject {
@@ -173,6 +209,90 @@ object PxlSubscriptionConverter {
                 )
             }
 
+        return Result(json.encodeToString(JsonObject.serializer(), config),
+            if (nodes.isEmpty()) xhttpLinks.size else nodes.size, xhttpLinks.size)
+    }
+
+    internal fun xhttpLinks(content: String): List<String> = runCatching {
+        decodeSubscription(content.trim().removePrefix("\uFEFF")).lineSequence().map(String::trim).filter { link ->
+            link.startsWith("vless://", ignoreCase = true) && runCatching {
+                queryParameters(URI(link.replace(" ", "%20")).rawQuery)["type"].equals("xhttp", true)
+            }.getOrDefault(false)
+        }.distinctBy { link ->
+            runCatching { PxlXhttpConfig.outbound(link).getValue("tag").jsonPrimitive.content }
+                .getOrElse { link.substringBefore('#') }
+        }.toList()
+    }.getOrDefault(emptyList())
+
+    internal fun countXhttpLinks(content: String): Int = xhttpLinks(content).size
+
+    private fun convertSmartSingbox(content: String, smartRouting: Boolean): Result {
+        val source = json.parseToJsonElement(content).jsonObject
+        val sourceOutbounds = source["outbounds"]?.jsonArray.orEmpty()
+        val finalTag = source["route"]?.jsonObject?.get("final")?.jsonPrimitive?.content
+        val nodes = sourceOutbounds.map { it.jsonObject }.filter {
+            it["type"]?.jsonPrimitive?.content in setOf("vless", "hysteria2") &&
+                it["tag"]?.jsonPrimitive?.content != "PXLNET informational"
+        }
+        require(finalTag == "AUTO" && nodes.isNotEmpty()) {
+            message(R.string.pxlnet_import_no_supported_servers, "Subscription has no supported VLESS or Hysteria2 servers")
+        }
+        val nodeTags = nodes.map { it.getValue("tag").jsonPrimitive.content }
+        val groupTags = listOf("AUTO", "Fast", "Stable", "Anti-Block").filter { tag ->
+            sourceOutbounds.any { element ->
+                val outbound = element.jsonObject
+                outbound["tag"]?.jsonPrimitive?.content == tag &&
+                    outbound["outbounds"]?.jsonArray?.any { it.jsonPrimitive.content in nodeTags } == true
+            }
+        }
+        require("AUTO" in groupTags && sourceOutbounds.none {
+            it.jsonObject["tag"]?.jsonPrimitive?.content == "PXLNET"
+        }) {
+            message(R.string.pxlnet_import_no_supported_servers, "Subscription has no supported VLESS or Hysteria2 servers")
+        }
+        val outbounds = buildJsonArray {
+            add(buildJsonObject {
+                put("type", "selector")
+                put("tag", "PXLNET")
+                put("outbounds", stringArray(groupTags + nodeTags))
+                put("default", "AUTO")
+                put("interrupt_exist_connections", true)
+            })
+            sourceOutbounds.forEach(::add)
+            add(buildJsonObject { put("type", "direct"); put("tag", "DIRECT") })
+        }
+        val config = buildJsonObject {
+            put("log", buildJsonObject { put("level", "info"); put("timestamp", true) })
+            put("dns", buildJsonObject {
+                put("servers", buildJsonArray { add(buildJsonObject { put("type", "local"); put("tag", "local") }) })
+                put("final", "local")
+            })
+            put("inbounds", buildJsonArray { add(buildJsonObject {
+                put("type", "tun")
+                put("tag", "tun-in")
+                put("address", stringArray(listOf("172.19.0.1/30")))
+                put("auto_route", true)
+                put("strict_route", true)
+                put("stack", "mixed")
+            }) })
+            put("outbounds", outbounds)
+            put("route", buildJsonObject {
+                put("auto_detect_interface", true)
+                put("rules", buildJsonArray {
+                    add(buildJsonObject { put("action", "sniff") })
+                    add(buildJsonObject { put("protocol", "dns"); put("action", "hijack-dns") })
+                    add(buildJsonObject { put("ip_is_private", true); put("outbound", "DIRECT") })
+                    if (smartRouting) {
+                        add(buildJsonObject { put("domain_suffix", stringArray(listOf("2ip.ru"))); put("outbound", "PXLNET") })
+                        add(buildJsonObject {
+                            put("domain_suffix", stringArray(listOf("ru", "su", "xn--p1ai")))
+                            put("outbound", "DIRECT")
+                        })
+                    }
+                })
+                put("final", "PXLNET")
+            })
+        }
         return Result(json.encodeToString(JsonObject.serializer(), config), nodes.size)
     }
 
@@ -245,12 +365,21 @@ object PxlSubscriptionConverter {
             ?: return ServerSelection(emptyList(), "AUTO")
         val tags = selector["outbounds"]?.jsonArray
             ?.map { it.jsonPrimitive.content }
+            ?.filterNot { it == XHTTP_PENDING_TAG }
             .orEmpty()
         val selected = selector["default"]?.jsonPrimitive?.content
             ?.takeIf(tags::contains)
             ?: tags.firstOrNull()
-            ?: "AUTO"
-        return ServerSelection(tags, selected)
+            ?: if (selector["default"]?.jsonPrimitive?.content == XHTTP_PENDING_TAG) "" else "AUTO"
+        val singleChoiceTargets = root["outbounds"]?.jsonArray.orEmpty()
+            .map { it.jsonObject }
+            .filter { it["type"]?.jsonPrimitive?.content == "selector" }
+            .mapNotNull { outbound ->
+                val groupTag = outbound["tag"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                val members = outbound["outbounds"]?.jsonArray?.map { it.jsonPrimitive.content }.orEmpty()
+                members.singleOrNull()?.let { groupTag to it }
+            }.toMap()
+        return ServerSelection(tags, selected, singleChoiceTargets)
     }
 
     fun selectServer(content: String, tag: String): String {
@@ -267,6 +396,7 @@ object PxlSubscriptionConverter {
                 changed = true
                 buildJsonObject {
                     outbound.forEach { (key, value) -> put(key, if (key == "default") JsonPrimitive(tag) else value) }
+                    if ("default" !in outbound) put("default", tag)
                 }
             },
         )
@@ -277,13 +407,55 @@ object PxlSubscriptionConverter {
         return json.encodeToString(JsonObject.serializer(), updatedRoot)
     }
 
+    fun preserveSelectedServer(newContent: String, previousContent: String): String {
+        val previous = serverSelection(previousContent)
+        val selected = previous.selectedTag
+        val previousRoot = runCatching { json.parseToJsonElement(previousContent).jsonObject }.getOrNull()
+        val smartGroups = previousRoot?.get("outbounds")?.jsonArray.orEmpty().any {
+            it.jsonObject["tag"]?.jsonPrimitive?.content == "Stable"
+        }
+        if (smartGroups) {
+            val newRoot = runCatching { json.parseToJsonElement(newContent).jsonObject }.getOrNull()
+            require(newRoot?.get("outbounds")?.jsonArray.orEmpty().any {
+                it.jsonObject["tag"]?.jsonPrimitive?.content == "Stable"
+            }) {
+                message(R.string.pxlnet_smart_format_unavailable, "Smart subscription format unavailable; saved profile was not changed")
+            }
+        }
+        if (selected !in previous.tags) return newContent
+        if (!smartGroups || selected in setOf("AUTO", "Fast", "Stable", "Anti-Block")) {
+            return if (selected in serverSelection(newContent).tags) selectServer(newContent, selected) else newContent
+        }
+        // Smart tags are positional (01-hysteria2, ...), so equal tags do not
+        // prove equal endpoints after the server reorders its policy set.
+        fun node(content: String, tag: String): JsonObject? = runCatching {
+            json.parseToJsonElement(content).jsonObject["outbounds"]?.jsonArray.orEmpty()
+                .map { it.jsonObject }
+                .firstOrNull { it["tag"]?.jsonPrimitive?.content == tag }
+        }.getOrNull()
+        val oldNode = node(previousContent, selected) ?: return newContent
+        if (oldNode["type"]?.jsonPrimitive?.content !in setOf("vless", "hysteria2")) return newContent
+        val oldIdentity = JsonObject(oldNode.filterKeys { it != "tag" })
+        val matches = runCatching {
+            json.parseToJsonElement(newContent).jsonObject["outbounds"]?.jsonArray.orEmpty()
+                .map { it.jsonObject }
+                .filter { JsonObject(it.filterKeys { key -> key != "tag" }) == oldIdentity }
+                .mapNotNull { it["tag"]?.jsonPrimitive?.content }
+        }.getOrNull().orEmpty()
+        return matches.singleOrNull()?.takeIf { it in serverSelection(newContent).tags }
+            ?.let { selectServer(newContent, it) } ?: newContent
+    }
+
     private fun parseVless(link: String, usedTags: MutableSet<String>): JsonObject {
         val uri = URI(link.replace(" ", "%20"))
         val host = requireHost(uri)
         val port = requirePort(uri)
         val uuid = decode(uri.rawUserInfo.orEmpty())
-        require(uuid.isNotBlank()) { "В VLESS-ссылке отсутствует UUID" }
+        require(uuid.isNotBlank()) { message(R.string.pxlnet_import_missing_uuid, "VLESS link has no UUID") }
         val query = queryParameters(uri.rawQuery)
+        require(!query["type"].equals("xhttp", ignoreCase = true)) {
+            message(R.string.pxlnet_import_xhttp_server, "XHTTP requires a compatible VPN core")
+        }
         val tag = uniqueTag(serverTag(uri.rawFragment, host, "VLESS"), usedTags)
 
         return buildJsonObject {
@@ -360,7 +532,9 @@ object PxlSubscriptionConverter {
         }
         if (reality) {
             val publicKey = query["pbk"] ?: query["public_key"]
-            require(!publicKey.isNullOrBlank()) { "В VLESS Reality-ссылке отсутствует public key" }
+            require(!publicKey.isNullOrBlank()) {
+                message(R.string.pxlnet_import_missing_reality_key, "VLESS Reality link has no public key")
+            }
             put(
                 "reality",
                 buildJsonObject {
@@ -442,10 +616,12 @@ object PxlSubscriptionConverter {
         return candidate
     }
 
-    private fun requireHost(uri: URI): String = requireNotNull(uri.host) { "В ссылке сервера отсутствует адрес" }.removePrefix("[").removeSuffix("]")
+    private fun requireHost(uri: URI): String = requireNotNull(uri.host) {
+        message(R.string.pxlnet_import_missing_host, "Server link has no address")
+    }.removePrefix("[").removeSuffix("]")
 
     private fun requirePort(uri: URI): Int {
-        require(uri.port in 1..65535) { "В ссылке сервера отсутствует корректный порт" }
+        require(uri.port in 1..65535) { message(R.string.pxlnet_import_invalid_port, "Server link has no valid port") }
         return uri.port
     }
 

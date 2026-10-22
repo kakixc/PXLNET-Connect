@@ -2,15 +2,20 @@ package io.nekohasekai.sfa.compose.screen.dashboard
 
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -29,18 +34,20 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.nekohasekai.sfa.R
@@ -52,10 +59,8 @@ import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.utils.PxlRoutingPreset
 import io.nekohasekai.sfa.utils.PxlRoutingPresets
+import io.nekohasekai.sfa.utils.PxlRoutingDiagnostics
 import io.nekohasekai.sfa.utils.PxlRoutingPreferences
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @Composable
 fun PxlAppRoutingScreen(
@@ -65,7 +70,6 @@ fun PxlAppRoutingScreen(
     onManageApps: () -> Unit,
 ) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
     val notifyApplyChange = rememberApplyServiceChangeNotifier(serviceStatus)
     val savedPreset = remember {
         PxlRoutingPreset.fromKey(Settings.pxlnetRoutingPreset).let { preset ->
@@ -81,6 +85,7 @@ fun PxlAppRoutingScreen(
         }
     }
     var mode by remember { mutableStateOf(savedPreset) }
+    var modeChangeInProgress by remember { mutableStateOf(false) }
     val presetPackages = remember {
         mapOf(
             PxlRoutingPreset.Games to PxlRoutingPresets.matchedPackages(context, PxlRoutingPreset.Games),
@@ -89,24 +94,35 @@ fun PxlAppRoutingScreen(
         )
     }
 
-    fun applyMode(next: PxlRoutingPreset) {
-        if (mode == next) return
+    fun applyMode(next: PxlRoutingPreset, onApplied: () -> Unit = {}) {
+        if (mode == next || modeChangeInProgress) return
         val packages = presetPackages[next].orEmpty()
         if (next in setOf(PxlRoutingPreset.Games, PxlRoutingPreset.Video, PxlRoutingPreset.Banks) && packages.isEmpty()) {
-            PxlRoutingPresets.apply(context, PxlRoutingPreset.SelectedApps)
-            viewModel.setSmartRouting(false)
-            mode = PxlRoutingPreset.SelectedApps
-            Toast.makeText(context, R.string.pxlnet_preset_no_matches, Toast.LENGTH_LONG).show()
-            onManageApps()
+            if (mode == PxlRoutingPreset.SelectedApps) {
+                Toast.makeText(context, R.string.pxlnet_preset_no_matches, Toast.LENGTH_LONG).show()
+                onManageApps()
+                return
+            }
+            applyMode(PxlRoutingPreset.SelectedApps) {
+                Toast.makeText(context, R.string.pxlnet_preset_no_matches, Toast.LENGTH_LONG).show()
+                onManageApps()
+            }
             return
         }
-        mode = next
+        val previous = PxlRoutingPresets.snapshot(context)
         PxlRoutingPresets.apply(context, next, packages)
-        viewModel.setSmartRouting(next == PxlRoutingPreset.Smart)
-        coroutineScope.launch(Dispatchers.IO) {
-            withContext(Dispatchers.Main) {
+        modeChangeInProgress = true
+        viewModel.setSmartRouting(next == PxlRoutingPreset.Smart) { updated ->
+            modeChangeInProgress = false
+            if (updated) {
+                PxlRoutingDiagnostics.record(context, next, PxlRoutingDiagnostics.Outcome.Applied)
+                mode = next
                 notifyApplyChange(UiEvent.ApplyServiceChange.Mode.Reload)
                 Toast.makeText(context, R.string.pxlnet_mode_applied, Toast.LENGTH_SHORT).show()
+                onApplied()
+            } else {
+                PxlRoutingPresets.restore(context, previous)
+                PxlRoutingDiagnostics.record(context, next, PxlRoutingDiagnostics.Outcome.Reverted)
             }
         }
     }
@@ -127,7 +143,7 @@ fun PxlAppRoutingScreen(
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).selectableGroup(),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -151,6 +167,7 @@ fun PxlAppRoutingScreen(
                 title = stringResource(R.string.pxlnet_route_all_title),
                 description = stringResource(R.string.pxlnet_route_all_description),
                 selected = mode == PxlRoutingPreset.Full,
+                enabled = !modeChangeInProgress,
                 onClick = { applyMode(PxlRoutingPreset.Full) },
             )
         }
@@ -160,6 +177,7 @@ fun PxlAppRoutingScreen(
                 title = stringResource(R.string.pxlnet_route_smart_title),
                 description = stringResource(R.string.pxlnet_route_smart_description),
                 selected = mode == PxlRoutingPreset.Smart,
+                enabled = !modeChangeInProgress,
                 onClick = { applyMode(PxlRoutingPreset.Smart) },
             )
         }
@@ -172,6 +190,7 @@ fun PxlAppRoutingScreen(
                     presetPackages[PxlRoutingPreset.Games].orEmpty().size,
                 ),
                 selected = mode == PxlRoutingPreset.Games,
+                enabled = !modeChangeInProgress,
                 onClick = { applyMode(PxlRoutingPreset.Games) },
             )
         }
@@ -184,6 +203,7 @@ fun PxlAppRoutingScreen(
                     presetPackages[PxlRoutingPreset.Video].orEmpty().size,
                 ),
                 selected = mode == PxlRoutingPreset.Video,
+                enabled = !modeChangeInProgress,
                 onClick = { applyMode(PxlRoutingPreset.Video) },
             )
         }
@@ -196,6 +216,7 @@ fun PxlAppRoutingScreen(
                     presetPackages[PxlRoutingPreset.Banks].orEmpty().size,
                 ),
                 selected = mode == PxlRoutingPreset.Banks,
+                enabled = !modeChangeInProgress,
                 onClick = { applyMode(PxlRoutingPreset.Banks) },
             )
         }
@@ -205,6 +226,7 @@ fun PxlAppRoutingScreen(
                 title = stringResource(R.string.pxlnet_route_selected_title),
                 description = stringResource(R.string.pxlnet_route_selected_description),
                 selected = mode == PxlRoutingPreset.SelectedApps,
+                enabled = !modeChangeInProgress,
                 onClick = { applyMode(PxlRoutingPreset.SelectedApps) },
             )
         }
@@ -218,9 +240,8 @@ fun PxlAppRoutingScreen(
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
                     elevation = CardDefaults.cardElevation(0.dp),
                 ) {
                     Column(
@@ -250,7 +271,7 @@ fun PxlAppRoutingScreen(
                                 onManageApps()
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(16.dp),
                         ) {
                             Text(stringResource(R.string.pxlnet_choose_apps))
                         }
@@ -275,22 +296,25 @@ private fun RoutingModeCard(
     title: String,
     description: String,
     selected: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit,
 ) {
+    val shape = RoundedCornerShape(24.dp)
     Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick),
+        shape = shape,
         colors = CardDefaults.cardColors(
             containerColor = if (selected) {
                 MaterialTheme.colorScheme.secondaryContainer
             } else {
-                MaterialTheme.colorScheme.surface
+                MaterialTheme.colorScheme.surfaceContainerLow
             },
+            contentColor = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
         ),
-        border = BorderStroke(
-            1.dp,
-            if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-        ),
+        border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
         elevation = CardDefaults.cardElevation(0.dp),
     ) {
         Row(
@@ -298,16 +322,24 @@ private fun RoutingModeCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Surface(
+                shape = CircleShape,
+                color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer,
+            ) {
+                Box(modifier = Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+                    Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp))
+                }
+            }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
                 Text(
                     description,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            RadioButton(selected = selected, onClick = onClick)
+            RadioButton(selected = selected, onClick = null, enabled = enabled)
         }
     }
 }
