@@ -131,7 +131,6 @@ import io.nekohasekai.sfa.utils.PxlLatencySource
 import io.nekohasekai.sfa.utils.PxlServerLatencyProbe
 import io.nekohasekai.sfa.utils.PxlXhttpServerProbe
 import io.nekohasekai.sfa.utils.PxlServerProbeCache
-import io.nekohasekai.sfa.utils.PxlGuard
 import io.nekohasekai.sfa.utils.PxlMascotSettings
 import io.nekohasekai.sfa.utils.PxlQuickTile
 import io.nekohasekai.sfa.utils.PxlLinks
@@ -202,7 +201,6 @@ fun DashboardScreen(
     var showGuestBanner by remember { mutableStateOf(true) }
     var guardEnabled by remember { mutableStateOf(PxlLocalPreferences.isGuardEnabled(context)) }
     var quickTileAdded by remember { mutableStateOf(PxlLocalPreferences.isQuickTileAdded(context)) }
-    var lastGuardSource by remember { mutableStateOf<String?>(null) }
     var pixTapCount by remember { mutableIntStateOf(0) }
     var latencySource by remember { mutableStateOf(PxlLocalPreferences.latencySource(context)) }
     var probeRevision by remember { mutableIntStateOf(0) }
@@ -393,34 +391,6 @@ fun DashboardScreen(
         (selectedProbe as? ServerProbeDisplay.Measured)?.milliseconds
     } else {
         selectedItem?.delay
-    }
-
-    LaunchedEffect(reachability, guardEnabled, selector?.tag, selectedServer, serverChoices) {
-        if (reachability == ConnectionReachability.Reachable) {
-            lastGuardSource = null
-        }
-        if (
-            reachability == ConnectionReachability.Unreachable &&
-            guardEnabled &&
-            selector != null &&
-            lastGuardSource != selectedServer
-        ) {
-            lastGuardSource = selectedServer
-            val fallbackTag = PxlGuard.selectFallback(
-                selectedServer,
-                serverChoices.map { it.tag to it.delay },
-            )
-            val fallback = serverChoices.firstOrNull { it.tag == fallbackTag }
-            if (fallback != null) {
-                resolvedGroupsViewModel.selectGroupItem(selector.tag, fallback.tag, closeConnections = true)
-                viewModel.selectPreferredServer(fallback.tag)
-                Toast.makeText(
-                    context,
-                    context.getString(R.string.pxlnet_guard_switched, serverTitle(context, fallback.tag, fallback.type)),
-                    Toast.LENGTH_LONG,
-                ).show()
-            }
-        }
     }
 
     val importFromClipboard = {

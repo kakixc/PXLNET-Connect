@@ -22,6 +22,11 @@ object ProfileManager {
         callbacks.remove(callback)
     }
 
+    /** A profile's config file changed without a Room row update. */
+    fun notifyConfigChanged() {
+        for (callback in callbacks.toList()) callback()
+    }
+
     @OptIn(DelicateCoroutinesApi::class)
     private val instance by lazy {
         Application.application.getDatabasePath(Path.PROFILES_DATABASE_PATH).parentFile?.mkdirs()

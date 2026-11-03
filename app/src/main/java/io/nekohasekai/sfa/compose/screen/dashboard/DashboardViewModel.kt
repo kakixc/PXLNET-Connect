@@ -25,6 +25,7 @@ import io.nekohasekai.sfa.utils.PxlRoutingPreferences
 import io.nekohasekai.sfa.utils.PxlServerProbeCache
 import io.nekohasekai.sfa.utils.PxlSecureTokenStore
 import io.nekohasekai.sfa.utils.PxlSubscriptionConverter
+import io.nekohasekai.sfa.utils.PxlPreferredServerStore
 import io.nekohasekai.sfa.utils.PxlXhttpSidecar
 import io.nekohasekai.sfa.utils.PxlXhttpConfig
 import io.nekohasekai.sfa.utils.RemoteControlManager
@@ -476,22 +477,11 @@ class DashboardViewModel :
         }
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val profile = ProfileManager.get(currentState.selectedProfileId)
-                    ?: error(Application.application.getString(R.string.pxlnet_selected_profile_unavailable))
-                val file = File(profile.typed.path)
-                check(file.exists()) { Application.application.getString(R.string.pxlnet_selected_profile_file_unavailable) }
-                val xhttpSnapshot = PxlXhttpSidecar.read(file)
-                if (tag in currentState.xhttpServers) {
-                    check(xhttpSnapshot?.links?.any { PxlXhttpConfig.presentation(it).tag == tag } == true) {
-                        "XHTTP server is no longer available"
-                    }
-                    check(PxlXhttpSidecar.select(file, tag)) { "Cannot save XHTTP server selection" }
-                } else {
-                    val updated = PxlSubscriptionConverter.selectServer(file.readText(), tag)
-                    Libbox.checkConfig(updated)
-                    check(PxlXhttpSidecar.replaceConfig(file, updated)) { "Cannot save profile config" }
-                    xhttpSnapshot?.let { check(PxlXhttpSidecar.write(file, it.links, it.smartRevisions)) }
-                }
+                PxlPreferredServerStore.save(
+                    currentState.selectedProfileId,
+                    tag,
+                    requireXhttpTag = tag in currentState.xhttpServers,
+                )
                 updateState { copy(preferredServerTag = tag) }
                 if (_serviceStatus.value == Status.Started) {
                     CommandTarget.standaloneClient().selectOutbound("PXLNET", tag)

@@ -40,6 +40,7 @@ import io.nekohasekai.sfa.vendor.Vendor
 import io.nekohasekai.sfa.widget.PxlConnectWidgetProvider
 import io.nekohasekai.sfa.utils.SubscriptionInfoStore
 import io.nekohasekai.sfa.utils.PxlXhttpActivation
+import io.nekohasekai.sfa.utils.PxlBackgroundGuard
 import io.nekohasekai.sfa.utils.PxlXhttpSidecar
 import io.nekohasekai.sfa.utils.PxlSubscriptionConverter
 import io.nekohasekai.sfa.xray.PxlXraySession
@@ -163,6 +164,9 @@ class BoxService(
     private var lastProfileName = ""
     private val accessMonitorScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var accessMonitorJob: Job? = null
+    private val backgroundGuard = PxlBackgroundGuard(Application.application, accessMonitorScope) {
+        service is VPNService && status.value == Status.Started
+    }
 
     private fun monitorSelectedProfileAccess(profileId: Long) {
         accessMonitorJob?.cancel()
@@ -246,6 +250,7 @@ class BoxService(
                     notification.show(lastProfileName, R.string.status_started)
                     monitorSelectedProfileAccess(selectedProfileId)
                     status.value = Status.Started
+                    if (service is VPNService) backgroundGuard.start(selectedProfileId)
                 }
             }
             if (!published) {
@@ -261,6 +266,7 @@ class BoxService(
     override fun serviceStop() {
         xrayStartGate.close()
         xraySession?.invalidate()
+        backgroundGuard.stop()
         runBlocking {
             lifecycleMutex.withLock {
                 accessMonitorJob?.cancel()
@@ -289,6 +295,7 @@ class BoxService(
         // command-client reload must still be accepted. A queued reload after
         // full shutdown, however, must never reopen the VPN.
         if (status.value == Status.Stopped || status.value == Status.Stopping) return
+        backgroundGuard.stop()
         val selectedProfileId = Settings.selectedProfile
         if (SubscriptionInfoStore.connectionAccess(Application.application, selectedProfileId) != SubscriptionInfoStore.ConnectionAccess.ALLOWED) {
             if (status.value == Status.Started) stopService() else stopAndAlert(Alert.StartService)
@@ -355,6 +362,7 @@ class BoxService(
                 notification.show(lastProfileName, R.string.status_started)
                 monitorSelectedProfileAccess(selectedProfileId)
                 status.value = Status.Started
+                if (service is VPNService) backgroundGuard.start(selectedProfileId)
             }
         }
         if (!published) stopAndAlert(Alert.StartService)
@@ -386,6 +394,7 @@ class BoxService(
     private fun stopService() {
         xrayStartGate.close()
         xraySession?.invalidate()
+        backgroundGuard.stop()
         if (status.value != Status.Started) return
         accessMonitorJob?.cancel()
         status.value = Status.Stopping
@@ -428,6 +437,7 @@ class BoxService(
     private suspend fun stopAndAlert(type: Alert, message: String? = null) {
         xrayStartGate.close()
         xraySession?.invalidate()
+        backgroundGuard.stop()
         accessMonitorJob?.cancel()
         StartServiceCoordinator.onStartFailed("$type${message?.let { ": $it" } ?: ""}")
         Settings.startedByUser = false
@@ -504,6 +514,7 @@ class BoxService(
     internal fun onDestroy() {
         xrayStartGate.close()
         xraySession?.invalidate()
+        backgroundGuard.stop()
         xraySession?.close()
         accessMonitorJob?.cancel()
         accessMonitorScope.cancel()
