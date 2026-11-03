@@ -1608,6 +1608,16 @@ class MainActivity :
                             }
                             scaffoldContent(contentPadding)
                         }
+                        // The system gesture bar is transparent. Keep its app-drawn
+                        // backdrop stable while destinations with different surfaces
+                        // slide past it; otherwise it flashes between two tones.
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .height(navigationBarInset)
+                                .background(MaterialTheme.colorScheme.background),
+                        )
                         AnimatedVisibility(
                             visible = !currentIsSubScreen && floatingNavigation,
                             modifier = Modifier.align(Alignment.BottomCenter),
@@ -1619,10 +1629,9 @@ class MainActivity :
                                 initialOffsetY = { it },
                             ) + fadeIn(animationSpec = tween(120)),
                             exit = slideOutVertically(
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioNoBouncy,
-                                    stiffness = Spring.StiffnessMedium,
-                                ),
+                                // Complete before the 300 ms destination slide, so the
+                                // capsule cannot cover the incoming sub-screen on slower OEMs.
+                                animationSpec = tween(180),
                                 targetOffsetY = { it },
                             ) + fadeOut(animationSpec = tween(120)),
                             label = "floating-navigation",

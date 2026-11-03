@@ -8,7 +8,8 @@ import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -83,19 +84,19 @@ import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.utils.PxlUiPreferences
 
 private val slideInFromRight: AnimatedContentTransitionScope<*>.() -> androidx.compose.animation.EnterTransition = {
-    slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, animationSpec = tween(300))
+    slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, animationSpec = spring(dampingRatio = 0.92f, stiffness = Spring.StiffnessMediumLow))
 }
 
 private val slideOutToRight: AnimatedContentTransitionScope<*>.() -> androidx.compose.animation.ExitTransition = {
-    slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, animationSpec = tween(300))
+    slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, animationSpec = spring(dampingRatio = 0.92f, stiffness = Spring.StiffnessMediumLow))
 }
 
 private val slideInFromLeft: AnimatedContentTransitionScope<*>.() -> androidx.compose.animation.EnterTransition = {
-    slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Right, animationSpec = tween(300))
+    slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Right, animationSpec = spring(dampingRatio = 0.92f, stiffness = Spring.StiffnessMediumLow))
 }
 
 private val slideOutToLeft: AnimatedContentTransitionScope<*>.() -> androidx.compose.animation.ExitTransition = {
-    slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Left, animationSpec = tween(300))
+    slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Left, animationSpec = spring(dampingRatio = 0.92f, stiffness = Spring.StiffnessMediumLow))
 }
 
 @Composable
@@ -163,7 +164,7 @@ fun SFANavHost(
             slideIntoContainer(
                 if (to > from) AnimatedContentTransitionScope.SlideDirection.Left
                 else AnimatedContentTransitionScope.SlideDirection.Right,
-                animationSpec = tween(220),
+                animationSpec = spring(dampingRatio = 0.92f, stiffness = Spring.StiffnessMedium),
             )
         } else EnterTransition.None
     }
@@ -174,7 +175,7 @@ fun SFANavHost(
             slideOutOfContainer(
                 if (to > from) AnimatedContentTransitionScope.SlideDirection.Left
                 else AnimatedContentTransitionScope.SlideDirection.Right,
-                animationSpec = tween(220),
+                animationSpec = spring(dampingRatio = 0.92f, stiffness = Spring.StiffnessMedium),
             )
         } else ExitTransition.None
     }
