@@ -13,6 +13,7 @@ import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.database.TypedProfile
 import io.nekohasekai.sfa.utils.HTTPClient
 import io.nekohasekai.sfa.utils.PxlRoutingPreferences
+import io.nekohasekai.sfa.utils.PxlDiagnosticRedactor
 import io.nekohasekai.sfa.utils.PxlSubscriptionConverter
 import io.nekohasekai.sfa.utils.PxlXhttpSidecar
 import io.nekohasekai.sfa.utils.SubscriptionInfoStore
@@ -173,7 +174,7 @@ class NewProfileViewModel(application: Application) : AndroidViewModel(applicati
                 }
             }
             ProfileType.Remote -> {
-                if (state.remoteUrl.isBlank()) {
+                if (state.remoteUrl.trim().isBlank()) {
                     _uiState.update { it.copy(remoteUrlError = context.getString(R.string.profile_input_required)) }
                     hasError = true
                 }
@@ -214,7 +215,7 @@ class NewProfileViewModel(application: Application) : AndroidViewModel(applicati
                 _uiState.update {
                     it.copy(
                         isSaving = false,
-                        errorMessage = e.message ?: "Unknown error",
+                        errorMessage = PxlDiagnosticRedactor.redact(e.message ?: "Unknown error"),
                     )
                 }
             }
@@ -279,10 +280,11 @@ class NewProfileViewModel(application: Application) : AndroidViewModel(applicati
 
     private suspend fun createRemoteProfile(state: NewProfileUiState): Profile {
         val context = getApplication<Application>()
+        val remoteUrl = state.remoteUrl.trim()
         val typedProfile =
             TypedProfile().apply {
                 type = TypedProfile.Type.Remote
-                remoteURL = state.remoteUrl
+                remoteURL = remoteUrl
                 autoUpdate = state.autoUpdate
                 autoUpdateInterval = Settings.subscriptionUpdateIntervalMinutes
                 lastUpdated = Date()
@@ -299,7 +301,7 @@ class NewProfileViewModel(application: Application) : AndroidViewModel(applicati
         typedProfile.path = configFile.path
 
         // Fetch initial config - this MUST succeed for remote profiles
-        val response = HTTPClient().use { it.get(state.remoteUrl) }
+        val response = HTTPClient().use { it.get(remoteUrl) }
         val conversion =
             PxlSubscriptionConverter.convert(
                 response.content,

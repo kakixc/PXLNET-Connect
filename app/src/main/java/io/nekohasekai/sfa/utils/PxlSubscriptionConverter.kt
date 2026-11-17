@@ -597,13 +597,7 @@ object PxlSubscriptionConverter {
 
     private fun serverTag(rawFragment: String?, host: String, protocol: String): String {
         val source = decode(rawFragment.orEmpty()).ifBlank { host }
-        val lower = source.lowercase()
-        val flag =
-            when {
-                "germany" in lower || "герман" in lower || Regex("(^|[^a-z])de([^a-z]|$)").containsMatchIn(lower) -> "🇩🇪"
-                "finland" in lower || "финлянд" in lower || Regex("(^|[^a-z])fi([^a-z]|$)").containsMatchIn(lower) -> "🇫🇮"
-                else -> "🌐"
-            }
+        val flag = pxlCountryFlag(source) ?: "🌐"
         val withoutFlag = source.replace(Regex("^[\\p{So}\\s]+"), "").trim()
         val withProtocol = if (withoutFlag.contains(protocol, true)) withoutFlag else "$withoutFlag · $protocol"
         return "$flag $withProtocol"

@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -16,6 +18,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -30,6 +35,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -99,16 +105,16 @@ fun UpdateAvailableDialog(
                         if (previewOnly) R.string.pxlnet_update_preview_title
                         else R.string.pxlnet_update_available_title,
                     ),
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = stringResource(R.string.pxlnet_update_version, updateInfo.versionName),
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                 )
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.pxlnet_update_version, updateInfo.versionName),
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.height(24.dp))
                 Surface(
                     shape = MaterialTheme.shapes.extraLarge,
                     color = MaterialTheme.colorScheme.secondaryContainer,
@@ -116,10 +122,17 @@ fun UpdateAvailableDialog(
                     modifier = Modifier.fillMaxWidth().animateContentSize(),
                 ) {
                     Column(Modifier.padding(20.dp)) {
-                        Text(
-                            text = stringResource(R.string.pxlnet_update_whats_new),
-                            style = MaterialTheme.typography.titleMedium,
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.primaryContainer) {
+                                Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                                }
+                            }
+                            Text(
+                                text = stringResource(R.string.pxlnet_update_whats_new),
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                        }
                         Spacer(Modifier.height(10.dp))
                         if (preview.isEmpty()) {
                             Text(
@@ -145,13 +158,19 @@ fun UpdateAvailableDialog(
                         )
                     }
                     AnimatedVisibility(visible = showFullNotes) {
-                        MarkdownText(
-                            markdown = processedNotes,
-                            modifier = Modifier.padding(bottom = 12.dp),
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            ),
-                        )
+                        Surface(
+                            shape = MaterialTheme.shapes.extraLarge,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                        ) {
+                            MarkdownText(
+                                markdown = processedNotes,
+                                modifier = Modifier.padding(18.dp),
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                            )
+                        }
                     }
                 }
             }

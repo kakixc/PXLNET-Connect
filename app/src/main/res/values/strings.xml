@@ -15,7 +15,8 @@
     <string name="pxlnet_tile_switching">Switching…</string>
     <string name="pxlnet_tile_subscription_inactive">Subscription inactive</string>
     <string name="pxlnet_account_title">PXLNET account</string>
-    <string name="pxlnet_account_subtitle">Subscription and ecosystem</string>
+    <string name="pxlnet_account_subtitle">Account and VPN subscription</string>
+    <string name="pxlnet_current_vpn_subscription">Current VPN subscription</string>
     <string name="pxlnet_guest_mode">Guest mode</string>
     <string name="pxlnet_guest_mode_description">Use a subscription link without signing in</string>
     <string name="pxlnet_signed_in_telegram">Signed in with Telegram</string>
@@ -189,10 +190,13 @@
     <string name="pxlnet_upload">Upload</string>
     <string name="pxlnet_guest_banner_title">Sign in for the full PXLNET experience. It is quick!</string>
     <string name="pxlnet_guest_banner_description">VPN keeps working with a regular subscription link without an account.</string>
+    <string name="pxlnet_guest_banner_setting">Sign-in reminder</string>
+    <string name="pxlnet_guest_banner_setting_summary">Appears up to three times on Home. Turning it on again restarts the count.</string>
     <string name="pxlnet_learn_login">Learn how to sign in</string>
     <string name="pxlnet_subscription_missing">Subscription not added</string>
     <string name="pxlnet_add_link_hint">Add a link or CFG</string>
     <string name="pxlnet_refresh_subscription">Refresh subscription</string>
+    <string name="pxlnet_measure_ping">Measure ping</string>
     <string name="pxlnet_protected_delay">Protected · %1$d ms</string>
     <string name="pxlnet_checking_internet">Checking internet…</string>
     <string name="pxlnet_vpn_no_access">VPN is running, but internet is unavailable</string>

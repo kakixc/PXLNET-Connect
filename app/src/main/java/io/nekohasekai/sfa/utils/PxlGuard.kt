@@ -3,6 +3,13 @@ package io.nekohasekai.sfa.utils
 object PxlGuard {
     data class Candidate(val tag: String, val delay: Int, val testedAtSeconds: Long)
 
+    /** A missing or old URLTest result cannot prove that the active server failed. */
+    fun classifyProbeResult(delay: Int, testedAtSeconds: Long, startedAtSeconds: Long): Boolean? = when {
+        testedAtSeconds < startedAtSeconds -> null
+        delay > 0 -> true
+        else -> false
+    }
+
     /** Resolve nested AUTO/selector tags; an unknown group must fail closed. */
     fun resolveActiveTag(
         selectedTag: String,

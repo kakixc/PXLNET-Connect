@@ -165,6 +165,7 @@ fun AppSettingsScreen(
     val context = LocalContext.current
     val catEasterEgg = rememberPxlCatEasterEggState()
     var latencySource by remember { mutableStateOf(PxlLocalPreferences.latencySource(context)) }
+    var guestBannerEnabled by remember { mutableStateOf(PxlLocalPreferences.isGuestBannerEnabled(context)) }
     var showLatencySourceDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val hasUpdate by UpdateState.hasUpdate
@@ -689,6 +690,22 @@ fun AppSettingsScreen(
                             popUpTo("dashboard") { inclusive = true }
                             launchSingleTop = true
                         }
+                    },
+                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                )
+
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.pxlnet_guest_banner_setting)) },
+                    supportingContent = { Text(stringResource(R.string.pxlnet_guest_banner_setting_summary)) },
+                    leadingContent = { AppSettingsIcon(Icons.Outlined.Info) },
+                    trailingContent = {
+                        Switch(
+                            checked = guestBannerEnabled,
+                            onCheckedChange = {
+                                guestBannerEnabled = it
+                                PxlLocalPreferences.setGuestBannerEnabled(context, it)
+                            },
+                        )
                     },
                     colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
                 )

@@ -38,6 +38,14 @@ class PxlGuardTest {
     }
 
     @Test
+    fun staleOrMissingProbeCannotTriggerFailover() {
+        assertNull(PxlGuard.classifyProbeResult(0, 0, 500))
+        assertNull(PxlGuard.classifyProbeResult(0, 499, 500))
+        assertEquals(false, PxlGuard.classifyProbeResult(0, 500, 500))
+        assertEquals(true, PxlGuard.classifyProbeResult(82, 500, 500))
+    }
+
+    @Test
     fun resolvesNestedAutoToTheActuallySelectedNode() {
         assertEquals(
             "Finland Hysteria2",

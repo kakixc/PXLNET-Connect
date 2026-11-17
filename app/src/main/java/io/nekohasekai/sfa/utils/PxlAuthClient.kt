@@ -7,9 +7,12 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.net.HttpURLConnection
 import java.net.URL
+import java.io.IOException
 
 class PxlAuthClient(
     private val baseUrl: String = BuildConfig.PXL_API_BASE_URL.trimEnd('/'),
+    private val fallbackUrl: String = BuildConfig.PXL_API_FALLBACK_URL.trimEnd('/'),
+    private val userAgent: String = HTTPClient.userAgent,
 ) {
     data class LoginSession(
         val id: String,
@@ -87,12 +90,27 @@ class PxlAuthClient(
         path: String,
         bearerToken: String? = null,
         acceptedStatuses: Set<Int> = setOf(200, 201),
-    ) = (URL(baseUrl + path).openConnection() as HttpURLConnection).run {
+    ) = try {
+        requestAt(baseUrl, method, path, bearerToken, acceptedStatuses)
+    } catch (e: IOException) {
+        if (baseUrl == fallbackUrl) throw e
+        requestAt(fallbackUrl, method, path, bearerToken, acceptedStatuses)
+    }
+
+    private class ApiUnavailableException(status: Int) : IOException("PXLNET API: HTTP $status")
+
+    private fun requestAt(
+        endpoint: String,
+        method: String,
+        path: String,
+        bearerToken: String?,
+        acceptedStatuses: Set<Int>,
+    ) = (URL(endpoint + path).openConnection() as HttpURLConnection).run {
         requestMethod = method
         connectTimeout = 10_000
         readTimeout = 10_000
         setRequestProperty("Accept", "application/json")
-        setRequestProperty("User-Agent", HTTPClient.userAgent)
+        setRequestProperty("User-Agent", userAgent)
         bearerToken?.let { setRequestProperty("Authorization", "Bearer $it") }
         if (method == "POST") {
             doOutput = true
@@ -105,6 +123,7 @@ class PxlAuthClient(
                 ?.use { it.readText() }
                 .orEmpty()
             if (status !in acceptedStatuses) {
+                if (status in 500..599) throw ApiUnavailableException(status)
                 throw IllegalStateException("PXLNET API: HTTP $status")
             }
             if (body.isBlank()) json.parseToJsonElement("{}") else json.parseToJsonElement(body)

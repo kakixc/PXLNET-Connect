@@ -25,12 +25,14 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.calculateEndPadding
@@ -44,6 +46,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -1535,7 +1538,7 @@ class MainActivity :
                     modifier = Modifier
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.background)
-                        .windowInsetsPadding(WindowInsets.statusBars),
+                        .then(if (glassChrome) Modifier else Modifier.windowInsetsPadding(WindowInsets.statusBars)),
                     snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
                     topBar = {},
                     bottomBar = {
@@ -1639,7 +1642,7 @@ class MainActivity :
                             val canBlurNavigation = navigationBlur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
                             val capsuleShape = RoundedCornerShape(36.dp)
                             val capsuleSurface = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)
-                            Row(
+                            BoxWithConstraints(
                                 modifier = Modifier
                                     .padding(start = 16.dp, end = 16.dp, bottom = navigationBarInset + 12.dp)
                                     .fillMaxWidth()
@@ -1658,8 +1661,35 @@ class MainActivity :
                                         } else Modifier,
                                     )
                                     .padding(6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
                             ) {
+                                val tabCount = visibleBottomNavigationScreens.size
+                                val selectedTabIndex = visibleBottomNavigationScreens.indexOfFirst { screen ->
+                                    currentDestination?.hierarchy?.any { it.route == screen.route } == true
+                                }
+                                val tabWidth = if (tabCount in 1..4) maxWidth / tabCount else 0.dp
+                                val indicatorOffset by animateDpAsState(
+                                    targetValue = tabWidth * selectedTabIndex.coerceAtLeast(0),
+                                    animationSpec = spring(
+                                        dampingRatio = 0.92f,
+                                        stiffness = Spring.StiffnessMedium,
+                                    ),
+                                    label = "floating-tab-indicator",
+                                )
+                                var tabContentHeightPx by remember { mutableIntStateOf(0) }
+                                if (selectedTabIndex >= 0 && tabCount <= 4 && tabContentHeightPx > 0) {
+                                    Box(
+                                        Modifier
+                                            .offset(x = indicatorOffset)
+                                            .width(tabWidth)
+                                            .height(with(LocalDensity.current) { tabContentHeightPx.toDp() })
+                                            .clip(RoundedCornerShape(30.dp))
+                                            .background(MaterialTheme.colorScheme.primaryContainer),
+                                    )
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().onSizeChanged { tabContentHeightPx = it.height },
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
                                 val hasUpdate by UpdateState.hasUpdate
                                 visibleBottomNavigationScreens.forEach { screen ->
                                     val selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true
@@ -1671,7 +1701,7 @@ class MainActivity :
                                         modifier = itemModifier
                                             .clip(RoundedCornerShape(30.dp))
                                             .background(
-                                                if (selected) MaterialTheme.colorScheme.primaryContainer
+                                                if (tabCount > 4 && selected) MaterialTheme.colorScheme.primaryContainer
                                                 else Color.Transparent,
                                             )
                                             .selectable(selected = selected, role = Role.Tab) {
@@ -1711,6 +1741,7 @@ class MainActivity :
                                             )
                                         }
                                     }
+                                }
                                 }
                             }
                         }

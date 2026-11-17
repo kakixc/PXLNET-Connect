@@ -116,6 +116,7 @@ import io.nekohasekai.sfa.Application
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.bg.DefaultNetworkMonitor
 import io.nekohasekai.sfa.compose.component.PxlRootTopBar
+import io.nekohasekai.sfa.compose.component.PxlShapeLoadingIndicator
 import io.nekohasekai.sfa.compose.component.PxlCatEasterEggDialog
 import io.nekohasekai.sfa.compose.component.rememberPxlCatEasterEggState
 import io.nekohasekai.sfa.compose.theme.performPxlConfirmation
@@ -127,6 +128,7 @@ import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.utils.PxlLocalPreferences
+import io.nekohasekai.sfa.utils.PxlSecureTokenStore
 import io.nekohasekai.sfa.utils.PxlLatencySource
 import io.nekohasekai.sfa.utils.PxlServerLatencyProbe
 import io.nekohasekai.sfa.utils.PxlXhttpServerProbe
@@ -134,6 +136,7 @@ import io.nekohasekai.sfa.utils.PxlServerProbeCache
 import io.nekohasekai.sfa.utils.PxlMascotSettings
 import io.nekohasekai.sfa.utils.PxlQuickTile
 import io.nekohasekai.sfa.utils.PxlLinks
+import io.nekohasekai.sfa.utils.pxlCountryFlag
 import io.nekohasekai.sfa.utils.SubscriptionInfoStore
 import io.nekohasekai.sfa.widget.PxlConnectWidgetProvider
 import kotlinx.coroutines.delay
@@ -198,7 +201,13 @@ fun DashboardScreen(
     var showOnboarding by remember { mutableStateOf(PxlLocalPreferences.shouldShowOnboarding(context)) }
     var showAccountHelp by remember { mutableStateOf(false) }
     var showXhttpDetails by remember { mutableStateOf(false) }
-    var showGuestBanner by remember { mutableStateOf(true) }
+    var showGuestBanner by remember {
+        mutableStateOf(PxlLocalPreferences.shouldShowGuestBanner(context) &&
+            !PxlSecureTokenStore.hasStoredToken(context))
+    }
+    LaunchedEffect(Unit) {
+        if (showGuestBanner) PxlLocalPreferences.recordGuestBannerView(context)
+    }
     var guardEnabled by remember { mutableStateOf(PxlLocalPreferences.isGuardEnabled(context)) }
     var quickTileAdded by remember { mutableStateOf(PxlLocalPreferences.isQuickTileAdded(context)) }
     var pixTapCount by remember { mutableIntStateOf(0) }
@@ -296,6 +305,7 @@ fun DashboardScreen(
     val profileUpdatedAtMillis = uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }
         ?.typed?.lastUpdated?.time ?: 0L
     var healthCheckTimedOut by remember { mutableStateOf(false) }
+    val selectedServerReachable = (selectedItem?.delay ?: 0) > 0
 
     LaunchedEffect(serviceStatus, selectedServer, showServerPicker, pickerProbeRequested, latencySource, probeRevision, probeNetworkId,
         uiState.selectedProfileId, profileUpdatedAtMillis, manualChoices.map { it.tag }, selectedProbeTag, autoProbeTags) {
@@ -353,16 +363,17 @@ fun DashboardScreen(
         }
     }
 
-    LaunchedEffect(serviceStatus, selector?.tag, selectedServer, selectedItem?.delay) {
+    LaunchedEffect(serviceStatus, selector?.tag, selectedServer, selectedServerReachable) {
         healthCheckTimedOut = false
-        if (serviceStatus == Status.Started && selector != null && (selectedItem?.delay ?: 0) <= 0) {
+        if (serviceStatus == Status.Started && selector != null && !selectedServerReachable) {
+            // URLTest updates may change the delay repeatedly. Those updates must
+            // not restart the timeout and leave Home in "Checking" forever.
+            // A reachable -> unreachable transition starts a new bounded check.
             delay(600)
             resolvedGroupsViewModel.urlTest(selector.tag)
             delay(5_000)
-            if ((selectedItem?.delay ?: 0) <= 0) {
-                resolvedGroupsViewModel.urlTest(selector.tag)
-                delay(4_000)
-            }
+            resolvedGroupsViewModel.urlTest(selector.tag)
+            delay(4_000)
             healthCheckTimedOut = true
         }
     }
@@ -794,6 +805,46 @@ fun DashboardScreen(
             )
         }
 
+        if (hasProfile) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    FilledTonalButton(
+                        onClick = {
+                            viewModel.serverProbeCache.clear()
+                            pickerProbeRequested = true
+                            probeRevision++
+                            showServerPicker = true
+                        },
+                        enabled = manualChoices.isNotEmpty() && serviceStatus in setOf(Status.Started, Status.Stopped),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(20.dp),
+                    ) {
+                        Icon(Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text(stringResource(R.string.pxlnet_measure_ping), modifier = Modifier.padding(start = 6.dp), maxLines = 2)
+                    }
+                    FilledTonalButton(
+                        onClick = {
+                            uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }?.let(viewModel::updateProfile)
+                        },
+                        enabled = uiState.updatingProfileId == null &&
+                            uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }?.typed?.remoteURL?.isNotBlank() == true,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(20.dp),
+                    ) {
+                        if (uiState.updatingProfileId != null || uiState.telegramLoginPending) {
+                            PxlShapeLoadingIndicator(size = 18.dp)
+                        } else {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
+                        Text(stringResource(R.string.pxlnet_refresh_subscription), modifier = Modifier.padding(start = 6.dp), maxLines = 2)
+                    }
+                }
+            }
+        }
+
         if (unavailableXhttpCount > 0) {
             item {
                 Card(
@@ -1073,7 +1124,7 @@ private fun AccessStrip(
             if (profileName != null || hasAccountSession) {
                 IconButton(onClick = onRefresh, enabled = !updating) {
                     if (updating) {
-                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        PxlShapeLoadingIndicator()
                     } else {
                         Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.pxlnet_refresh_subscription))
                     }
@@ -1920,7 +1971,9 @@ private fun ServerLocationIcon(tag: String) {
             }
         }
         ServerRegion.OTHER -> {
-            Icon(
+            val flag = pxlCountryFlag(tag)
+            if (flag != null) Text(flag, style = MaterialTheme.typography.headlineSmall)
+            else Icon(
                 Icons.Default.Public,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,

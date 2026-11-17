@@ -10,6 +10,9 @@ object PxlLocalPreferences {
     private const val KEY_QUICK_TILE_ADDED = "quick_tile_added"
     private const val KEY_COSMOS_UNLOCKED = "cosmos_unlocked"
     private const val KEY_LATENCY_SOURCE = "latency_source"
+    private const val KEY_GUEST_BANNER_ENABLED = "guest_banner_enabled"
+    private const val KEY_GUEST_BANNER_VIEWS = "guest_banner_views"
+    private const val MAX_GUEST_BANNER_VIEWS = 3
 
     private fun preferences(context: Context) =
         context.applicationContext.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
@@ -19,6 +22,33 @@ object PxlLocalPreferences {
 
     fun setGuardEnabled(context: Context, enabled: Boolean) {
         preferences(context).edit().putBoolean(KEY_GUARD_ENABLED, enabled).apply()
+    }
+
+    fun isGuestBannerEnabled(context: Context): Boolean =
+        preferences(context).getBoolean(KEY_GUEST_BANNER_ENABLED, true)
+
+    fun shouldShowGuestBanner(context: Context): Boolean {
+        val prefs = preferences(context)
+        return prefs.getBoolean(KEY_GUEST_BANNER_ENABLED, true) &&
+            prefs.getInt(KEY_GUEST_BANNER_VIEWS, 0) < MAX_GUEST_BANNER_VIEWS
+    }
+
+    /** Count one actual Home appearance, not every Compose recomposition. */
+    fun recordGuestBannerView(context: Context) {
+        val prefs = preferences(context)
+        if (!shouldShowGuestBanner(context)) return
+        val views = prefs.getInt(KEY_GUEST_BANNER_VIEWS, 0) + 1
+        prefs.edit()
+            .putInt(KEY_GUEST_BANNER_VIEWS, views)
+            .putBoolean(KEY_GUEST_BANNER_ENABLED, views < MAX_GUEST_BANNER_VIEWS)
+            .apply()
+    }
+
+    fun setGuestBannerEnabled(context: Context, enabled: Boolean) {
+        preferences(context).edit()
+            .putBoolean(KEY_GUEST_BANNER_ENABLED, enabled)
+            .also { if (enabled) it.putInt(KEY_GUEST_BANNER_VIEWS, 0) }
+            .apply()
     }
 
     fun shouldShowOnboarding(context: Context): Boolean =

@@ -832,7 +832,8 @@
     <string name="pxlnet_tile_switching">Переключение…</string>
     <string name="pxlnet_tile_subscription_inactive">Подписка неактивна</string>
     <string name="pxlnet_account_title">Аккаунт PXLNET</string>
-    <string name="pxlnet_account_subtitle">Подписка и экосистема</string>
+    <string name="pxlnet_account_subtitle">Аккаунт и VPN-подписка</string>
+    <string name="pxlnet_current_vpn_subscription">Текущая VPN-подписка</string>
     <string name="pxlnet_guest_mode">Гостевой режим</string>
     <string name="pxlnet_guest_mode_description">VPN работает по ссылке без входа</string>
     <string name="pxlnet_signed_in_telegram">Вход выполнен через Telegram</string>
@@ -1010,10 +1011,13 @@
     <string name="pxlnet_upload">Отдача</string>
     <string name="pxlnet_guest_banner_title">Войдите в аккаунт для полного функционала. Это просто!</string>
     <string name="pxlnet_guest_banner_description">Без входа VPN продолжит работать по обычной ссылке подписки.</string>
+    <string name="pxlnet_guest_banner_setting">Напоминание о входе</string>
+    <string name="pxlnet_guest_banner_setting_summary">Появится на главной до трёх раз. Повторное включение сбросит счётчик.</string>
     <string name="pxlnet_learn_login">Узнать, как войти</string>
     <string name="pxlnet_subscription_missing">Подписка не добавлена</string>
     <string name="pxlnet_add_link_hint">Добавьте ссылку или CFG</string>
     <string name="pxlnet_refresh_subscription">Обновить подписку</string>
+    <string name="pxlnet_measure_ping">Измерить пинг</string>
     <string name="pxlnet_protected_delay">Защищено · %1$d мс</string>
     <string name="pxlnet_checking_internet">Проверяем интернет…</string>
     <string name="pxlnet_vpn_no_access">VPN запущен, но интернет недоступен</string>

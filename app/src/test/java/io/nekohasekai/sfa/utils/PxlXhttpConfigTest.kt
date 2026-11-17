@@ -61,6 +61,30 @@ class PxlXhttpConfigTest {
     }
 
     @Test
+    fun preservesXhttpExtraAndLegacyPaddingParameter() {
+        val link = "vless://$uuid@vpn.example:443?type=xhttp&security=tls&" +
+            "extra=%7B%22mode%22%3A%22auto%22%2C%22xPaddingBytes%22%3A%22100-1000%22%7D&" +
+            "x_padding_bytes=50-500"
+        val settings = PxlXhttpConfig.outbound(link).getValue("streamSettings").jsonObject
+            .getValue("xhttpSettings").jsonObject
+        assertEquals("100-1000", settings.getValue("extra").jsonObject.getValue("xPaddingBytes").jsonPrimitive.content)
+        assertEquals("auto", settings.getValue("extra").jsonObject.getValue("mode").jsonPrimitive.content)
+
+        val fallback = PxlXhttpConfig.outbound(
+            "vless://$uuid@vpn.example:443?type=xhttp&security=tls&x_padding_bytes=50-500",
+        ).getValue("streamSettings").jsonObject.getValue("xhttpSettings").jsonObject
+        assertEquals("50-500", fallback.getValue("extra").jsonObject.getValue("xPaddingBytes").jsonPrimitive.content)
+    }
+
+    @Test
+    fun doesNotForwardVisionFlowFromXhttpShareLink() {
+        val link = "vless://$uuid@vpn.example:443?type=xhttp&security=reality&pbk=public-key&flow=xtls-rprx-vision"
+        val user = PxlXhttpConfig.outbound(link).getValue("settings").jsonObject
+            .getValue("vnext").jsonArray.single().jsonObject.getValue("users").jsonArray.single().jsonObject
+        assertEquals(false, "flow" in user)
+    }
+
+    @Test
     fun buildsOneAuthenticatedLoopbackWithFailClosedRoutesForTwoNodes() {
         val de = "vless://$uuid@de.example:443?type=xhttp&security=tls&sni=de.example"
         val fi = "vless://$uuid@fi.example:443?type=xhttp&security=tls&sni=fi.example"

@@ -42,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -51,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.component.PxlRootTopBar
+import io.nekohasekai.sfa.compose.component.PxlShapeLoadingIndicator
 import io.nekohasekai.sfa.compose.component.LocalPxlTopBarInset
 import io.nekohasekai.sfa.compose.component.LocalPxlFloatingNavInset
 import io.nekohasekai.sfa.compose.navigation.NewProfileArgs
@@ -67,6 +69,11 @@ fun PxlAccountScreen(
     val context = LocalContext.current
     val hasSession = uiState.hasTelegramSession
     val hasVerifiedAccount = uiState.accountLastVerifiedAt != null
+    val summaryRevision by SubscriptionInfoStore.summaryRevision.collectAsState()
+    val selectedProfile = uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }
+    val linkSummary = remember(uiState.selectedProfileId, summaryRevision) {
+        SubscriptionInfoStore.summary(context, uiState.selectedProfileId)
+    }
 
     LaunchedEffect(uiState.telegramLoginError) {
         uiState.telegramLoginError?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
@@ -86,6 +93,7 @@ fun PxlAccountScreen(
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = topBarInset + 12.dp, bottom = floatingNavInset + 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        item { AccountSectionHeader(R.string.pxlnet_account_title) }
         item {
             PxlAccountCard(compact = true) {
                 Row(
@@ -186,7 +194,7 @@ fun PxlAccountScreen(
                             shape = RoundedCornerShape(18.dp),
                         ) {
                             if (uiState.telegramLoginPending) {
-                                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                PxlShapeLoadingIndicator(size = 18.dp)
                             } else {
                                 Text(stringResource(R.string.pxlnet_refresh))
                             }
@@ -227,62 +235,59 @@ fun PxlAccountScreen(
             }
         }
 
-        if (!hasSession) {
-            item {
-                PxlAccountCard {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Icon(
-                            if (uiState.selectedProfileId > 0) Icons.Default.CloudDone else Icons.Default.Link,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
+        item { AccountSectionHeader(R.string.pxlnet_current_vpn_subscription) }
+        item {
+            PxlAccountCard {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Icon(
+                        if (uiState.selectedProfileId > 0) Icons.Default.CloudDone else Icons.Default.Link,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            stringResource(R.string.pxlnet_current_vpn_subscription),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
                         )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                stringResource(R.string.pxlnet_subscription_title),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Text(
-                                stringResource(
-                                    if (uiState.selectedProfileId > 0) R.string.pxlnet_subscription_added
-                                    else R.string.pxlnet_subscription_not_added,
-                                ),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            if (uiState.selectedProfileId > 0) {
-                                SubscriptionInfoStore.summary(context, uiState.selectedProfileId)?.let { summary ->
-                                    Text(
-                                        stringResource(R.string.pxlnet_link_summary, summary),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
+                        Text(
+                            selectedProfile?.name ?: stringResource(R.string.pxlnet_subscription_not_added),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (uiState.selectedProfileId > 0) {
+                            linkSummary?.let { summary ->
+                                Text(
+                                    summary,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
                     }
-                    if (uiState.selectedProfileId <= 0) {
-                        Button(
-                            onClick = { onOpenNewProfile(NewProfileArgs()) },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(18.dp),
-                        ) {
-                            Text(stringResource(R.string.pxlnet_add_existing_subscription))
-                        }
-                        OutlinedButton(
-                            onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(18.dp),
-                        ) {
-                            Text(stringResource(R.string.pxlnet_buy_in_bot))
-                        }
+                }
+                Button(
+                    onClick = { onOpenNewProfile(NewProfileArgs()) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                ) {
+                    Text(stringResource(R.string.pxlnet_add_existing_subscription))
+                }
+                if (uiState.selectedProfileId <= 0) {
+                    OutlinedButton(
+                        onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                    ) {
+                        Text(stringResource(R.string.pxlnet_buy_in_bot))
                     }
                 }
             }
         }
 
+        item { AccountSectionHeader(R.string.pxlnet_ecosystem_title) }
         item {
             PxlAccountCard {
                 Text(
@@ -329,6 +334,16 @@ fun PxlAccountScreen(
             }
         }
     }
+}
+
+@Composable
+private fun AccountSectionHeader(title: Int) {
+    Text(
+        text = stringResource(title),
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 8.dp, top = 12.dp),
+    )
 }
 
 @Composable

@@ -16,6 +16,10 @@ object PxlSecureTokenStore {
     private const val CIPHERTEXT = "access_token"
     private const val IV = "access_token_iv"
 
+    fun hasStoredToken(context: Context): Boolean =
+        !context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .getString(CIPHERTEXT, null).isNullOrBlank()
+
     fun save(context: Context, token: String) {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())

@@ -178,6 +178,14 @@ internal object PxlXhttpConfig {
         require(query["type"].equals("xhttp", ignoreCase = true)) { "Not an XHTTP link" }
         val security = query["security"]?.lowercase()
         require(security == "reality" || security == "tls") { "XHTTP security is unsupported" }
+        val xhttpExtra = query["extra"]?.takeIf(String::isNotBlank)?.let { encoded ->
+            runCatching { Json.parseToJsonElement(encoded).jsonObject }.getOrNull()
+        }
+        val padding = query["x_padding_bytes"]?.takeIf(String::isNotBlank)
+        val xhttpExtraFields = buildMap {
+            xhttpExtra?.let(::putAll)
+            if ("xPaddingBytes" !in this && padding != null) put("xPaddingBytes", JsonPrimitive(padding))
+        }
 
         val stableFields = listOf(server, port.toString(), uuid) + query.toSortedMap().map { (key, value) -> "$key=$value" }
         val digest = MessageDigest.getInstance("SHA-256")
@@ -190,6 +198,7 @@ internal object PxlXhttpConfig {
                 listOf("path", "host", "mode").forEach { key ->
                     query[key]?.takeIf(String::isNotBlank)?.let { put(key, it) }
                 }
+                if (xhttpExtraFields.isNotEmpty()) put("extra", JsonObject(xhttpExtraFields))
             })
             val serverName = query["sni"].orEmpty().ifBlank { server }
             val fingerprint = query["fp"].orEmpty().ifBlank { "chrome" }
@@ -222,7 +231,7 @@ internal object PxlXhttpConfig {
                             add(buildJsonObject {
                                 put("id", uuid)
                                 put("encryption", "none")
-                                query["flow"]?.takeIf(String::isNotBlank)?.let { put("flow", it) }
+                                // Vision requires direct TLS/REALITY; XHTTP wraps that transport.
                             })
                         })
                     })
