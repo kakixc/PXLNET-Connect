@@ -819,7 +819,7 @@ fun DashboardScreen(
                             showServerPicker = true
                         },
                         enabled = manualChoices.isNotEmpty() && serviceStatus in setOf(Status.Started, Status.Stopped),
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).height(56.dp),
                         shape = RoundedCornerShape(20.dp),
                     ) {
                         Icon(Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -831,10 +831,10 @@ fun DashboardScreen(
                         },
                         enabled = uiState.updatingProfileId == null &&
                             uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }?.typed?.remoteURL?.isNotBlank() == true,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).height(56.dp),
                         shape = RoundedCornerShape(20.dp),
                     ) {
-                        if (uiState.updatingProfileId != null || uiState.telegramLoginPending) {
+                        if (uiState.updatingProfileId != null) {
                             PxlShapeLoadingIndicator(size = 18.dp)
                         } else {
                             Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
