@@ -31,7 +31,7 @@ class VPNService :
     }
     private val service: BoxService by lazy { BoxService(this, this, xraySession) }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = service.onStartCommand()
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = service.onStartCommand(intent)
 
     override fun onBind(intent: Intent): IBinder {
         val binder = super.onBind(intent)

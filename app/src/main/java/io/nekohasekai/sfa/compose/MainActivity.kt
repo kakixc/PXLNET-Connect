@@ -317,6 +317,10 @@ class MainActivity :
         handleIntent(intent)
     }
 
+    fun reconnectServiceConnection() {
+        connection.reconnect()
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean("pending_open_update_details", pendingOpenUpdateDetails)
         outState.putBoolean("show_update_preview", showUpdatePreview)
@@ -325,6 +329,23 @@ class MainActivity :
 
     private fun handleIntent(intent: Intent?) {
         if (intent == null) {
+            return
+        }
+        if (intent.getBooleanExtra(io.nekohasekai.sfa.bg.PxlDnsTileService.EXTRA_OPEN_DNS_SETTINGS, false)) {
+            val confirm = intent.getBooleanExtra(io.nekohasekai.sfa.bg.PxlDnsTileService.EXTRA_CONFIRM_DNS_ONLY, false)
+            val mode = intent.getStringExtra(io.nekohasekai.sfa.bg.PxlDnsTileService.EXTRA_START_DNS_MODE).orEmpty()
+            intent.removeExtra(io.nekohasekai.sfa.bg.PxlDnsTileService.EXTRA_OPEN_DNS_SETTINGS)
+            intent.removeExtra(io.nekohasekai.sfa.bg.PxlDnsTileService.EXTRA_CONFIRM_DNS_ONLY)
+            intent.removeExtra(io.nekohasekai.sfa.bg.PxlDnsTileService.EXTRA_START_DNS_MODE)
+            pendingNavigationRoute.value = "dns/start?confirm=$confirm&mode=$mode"
+            return
+        }
+        if (intent.action == android.service.quicksettings.TileService.ACTION_QS_TILE_PREFERENCES) {
+            @Suppress("DEPRECATION")
+            val component = intent.getParcelableExtra<android.content.ComponentName>(Intent.EXTRA_COMPONENT_NAME)
+            pendingNavigationRoute.value = if (component?.className == io.nekohasekai.sfa.bg.PxlDnsTileService::class.java.name) {
+                "dns/settings?confirm=false&mode="
+            } else "settings/app"
             return
         }
         if (intent.getBooleanExtra(EXTRA_OPEN_UPDATE_DETAILS, false)) {
@@ -979,6 +1000,7 @@ class MainActivity :
         }
 
         val isSettingsSubScreen = currentRoute?.startsWith("settings/") == true
+        val isDnsSubScreen = currentRoute?.startsWith("dns/") == true
         val isAppRoutingSubScreen = currentRoute == "pxlnet/app_routing"
         val isToolsSubScreen = currentRoute?.startsWith("tools/") == true
         val isConnectionsDetail = currentRoute?.startsWith("connections/detail") == true
@@ -986,6 +1008,7 @@ class MainActivity :
         val currentRootRoute =
             when {
                 isSettingsSubScreen -> Screen.Settings.route
+                isDnsSubScreen -> Screen.Dns.route
                 isAppRoutingSubScreen -> Screen.Dashboard.route
                 isToolsSubScreen -> Screen.Tools.route
                 currentRoute?.startsWith(Screen.Connections.route) == true -> Screen.Connections.route
@@ -1003,11 +1026,13 @@ class MainActivity :
         // which makes the still-visible Home list jump under the user's finger.
         val chromeRoute = outgoingRoute ?: currentRoute
         val isSubScreen = chromeRoute?.startsWith("settings/") == true ||
+            chromeRoute?.startsWith("dns/") == true ||
             chromeRoute == "pxlnet/app_routing" ||
             chromeRoute?.startsWith("tools/") == true ||
             chromeRoute?.startsWith("connections/detail") == true ||
             chromeRoute?.startsWith("profile/") == true
         val currentIsSubScreen = currentRoute?.startsWith("settings/") == true ||
+            currentRoute?.startsWith("dns/") == true ||
             currentRoute == "pxlnet/app_routing" ||
             currentRoute?.startsWith("tools/") == true ||
             currentRoute?.startsWith("connections/detail") == true ||
@@ -1080,10 +1105,12 @@ class MainActivity :
                 currentServiceStatus == Status.Started || currentServiceStatus == Status.Starting
             }
         val developerMode by PxlDeveloperMode.enabled.collectAsState()
+        val expressiveDnsEnabled = io.nekohasekai.sfa.utils.PxlDnsProfiles.enabled(this@MainActivity)
 
         val railScreens =
             buildList {
                 add(Screen.Dashboard)
+                if (expressiveDnsEnabled) add(Screen.Dns)
                 add(Screen.Account)
                 if (developerMode) {
                     if (showGroupsInNav) {
@@ -1100,16 +1127,17 @@ class MainActivity :
 
         val visibleBottomNavigationScreens =
             if (developerMode) {
-                bottomNavigationScreens
+                bottomNavigationScreens.filter { expressiveDnsEnabled || it != Screen.Dns }
             } else {
                 bottomNavigationScreens.filter {
-                    it == Screen.Dashboard || it == Screen.Account || it == Screen.Settings
+                    it == Screen.Dashboard || (expressiveDnsEnabled && it == Screen.Dns) || it == Screen.Account || it == Screen.Settings
                 }
             }
 
         val allowedRoutes =
             buildSet {
                 add(Screen.Dashboard.route)
+                if (expressiveDnsEnabled) add(Screen.Dns.route)
                 add(Screen.Account.route)
                 add(Screen.Settings.route)
                 if (developerMode) {
@@ -1193,7 +1221,7 @@ class MainActivity :
                 page()
             } else {
                 val rootGlass = floatingNavigation && navigationBlur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                    entry.destination.route in setOf(Screen.Dashboard.route, Screen.Account.route, Screen.Settings.route)
+                    entry.destination.route in setOf(Screen.Dashboard.route, Screen.Dns.route, Screen.Account.route, Screen.Settings.route)
                 var topBarHeightPx by remember(entry) { mutableIntStateOf(0) }
                 val topInset = if (rootGlass) {
                     if (topBarHeightPx > 0) with(LocalDensity.current) { topBarHeightPx.toDp() } else 88.dp
@@ -1418,32 +1446,6 @@ class MainActivity :
                             )
                         }
                     }
-                } else {
-                    // Start FAB (shown when service is stopped and a profile is selected)
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = !isRemote &&
-                            currentServiceStatus == Status.Stopped &&
-                            dashboardUiState.selectedProfileId != -1L &&
-                            !isSubScreen &&
-                            !isDashboardRoute,
-                        enter = scaleIn(),
-                        exit = scaleOut(),
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(16.dp)
-                            .padding(bottom = floatingPanelInset),
-                    ) {
-                        FloatingActionButton(
-                            onClick = { startService() },
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = stringResource(R.string.action_start),
-                            )
-                        }
-                    }
                 }
             }
         }
@@ -1462,10 +1464,16 @@ class MainActivity :
 
         val glassChrome = !useNavigationRail && floatingNavigation && navigationBlur &&
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !isSubScreen &&
-            currentRootRoute in setOf(Screen.Dashboard.route, Screen.Account.route, Screen.Settings.route)
+            currentRootRoute in setOf(Screen.Dashboard.route, Screen.Dns.route, Screen.Account.route, Screen.Settings.route)
         val floatingRoot = !useNavigationRail && floatingNavigation && !isSubScreen &&
-            currentRootRoute in setOf(Screen.Dashboard.route, Screen.Account.route, Screen.Settings.route)
-        val floatingPanelVisible = !useNavigationRail && floatingNavigation && !isSubScreen
+            currentRootRoute in setOf(Screen.Dashboard.route, Screen.Dns.route, Screen.Account.route, Screen.Settings.route)
+        // Match the inset to the panel's visibility on the incoming route. During a
+        // pop transition isSubScreen still describes the outgoing settings page.
+        // Keep the root page's bottom inset while either root page is still visible
+        // during a push/pop. Dropping it at the start of the App routing transition
+        // clamps Home's LazyColumn scroll offset and visibly jerks the page.
+        val floatingPanelVisible = !useNavigationRail && floatingNavigation &&
+            (!currentIsSubScreen || !isSubScreen)
         val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
         val floatingNavInset = if (floatingPanelVisible) {
             (if (floatingNavHeightPx > 0) with(LocalDensity.current) { floatingNavHeightPx.toDp() } else 76.dp) +
@@ -1510,6 +1518,7 @@ class MainActivity :
                                     label = { Text(stringResource(screen.titleRes)) },
                                     selected = selected,
                                     onClick = {
+                                        if (currentRoute == screen.route) return@NavigationRailItem
                                         navController.navigate(screen.route) {
                                             popUpTo(navController.graph.findStartDestination().id) {
                                                 saveState = true
@@ -1577,6 +1586,7 @@ class MainActivity :
                                             it.route == screen.route
                                         } == true,
                                         onClick = {
+                                            if (currentRoute == screen.route) return@NavigationBarItem
                                             navController.navigate(screen.route) {
                                                 // Pop up to the start destination of the graph to
                                                 // avoid building up a large stack of destinations
@@ -1705,6 +1715,7 @@ class MainActivity :
                                                 else Color.Transparent,
                                             )
                                             .selectable(selected = selected, role = Role.Tab) {
+                                                if (currentRoute == screen.route) return@selectable
                                                 navController.navigate(screen.route) {
                                                     popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                                                     launchSingleTop = true

@@ -1,6 +1,8 @@
 package io.nekohasekai.sfa.compose.screen.settings
 
 import android.content.Intent
+import android.content.ComponentName
+import android.service.quicksettings.TileService
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
@@ -30,7 +32,9 @@ import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.FilterAlt
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.ListAlt
 import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Settings
@@ -70,6 +74,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.navigation.NavController
 import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.bg.BoxService
+import io.nekohasekai.sfa.bg.PxlDnsTileService
 import io.nekohasekai.sfa.compose.component.PxlRootTopBar
 import io.nekohasekai.sfa.compose.component.LocalPxlTopBarInset
 import io.nekohasekai.sfa.compose.component.LocalPxlFloatingNavInset
@@ -78,11 +84,15 @@ import io.nekohasekai.sfa.update.UpdateState
 import io.nekohasekai.sfa.vendor.UpdateNotification
 import io.nekohasekai.sfa.utils.PxlDeveloperMode
 import io.nekohasekai.sfa.utils.PxlDiagnostics
+import io.nekohasekai.sfa.utils.PxlDnsProfiles
+import io.nekohasekai.sfa.utils.PxlDnsTileMode
 import io.nekohasekai.sfa.utils.PxlLinks
 import io.nekohasekai.sfa.utils.PxlLocalPreferences
 import io.nekohasekai.sfa.utils.PxlSubscriptionReminderSettings
 import io.nekohasekai.sfa.utils.PxlSupportReport
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -98,11 +108,44 @@ fun SettingsScreen(navController: NavController) {
     val scope = rememberCoroutineScope()
     var showAlwaysOnHelp by remember { mutableStateOf(false) }
     var diagnosticReport by remember { mutableStateOf<PxlSupportReport?>(null) }
+    var reportToSave by remember { mutableStateOf<PxlSupportReport?>(null) }
     var checkingDiagnostics by remember { mutableStateOf(false) }
+    val saveDiagnostics = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+        val report = reportToSave
+        reportToSave = null
+        if (uri != null && report != null) scope.launch {
+            val saved = withContext(Dispatchers.IO) {
+                runCatching {
+                    val output = context.contentResolver.openOutputStream(uri, "w")
+                        ?: error("Unable to open diagnostics destination")
+                    output.bufferedWriter().use { it.write(PxlDiagnostics.formatReport(report)) }
+                }.isSuccess
+            }
+            Toast.makeText(
+                context,
+                if (saved) R.string.pxlnet_settings_report_saved else R.string.pxlnet_settings_report_save_failed,
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+    }
     val developerMode by PxlDeveloperMode.enabled.collectAsState()
     val subscriptionRemindersEnabled by PxlSubscriptionReminderSettings.enabled.collectAsState()
     val hasUpdate by UpdateState.hasUpdate
     var guardEnabled by remember { mutableStateOf(PxlLocalPreferences.isGuardEnabled(context)) }
+    val dnsEnabled = PxlDnsProfiles.enabled(context)
+    fun changeDnsEnabled(enabled: Boolean) {
+        if (!enabled) {
+            when (PxlDnsProfiles.activeMode(context)) {
+                PxlDnsTileMode.DNS_ONLY -> BoxService.stop()
+                PxlDnsTileMode.DNS_AND_VPN -> BoxService.setIntegratedDnsEnabled(false)
+                null -> Unit
+            }
+        }
+        PxlDnsProfiles.setEnabled(context, enabled)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            TileService.requestListeningState(context, ComponentName(context, PxlDnsTileService::class.java))
+        }
+    }
     val topBarInset = LocalPxlTopBarInset.current
     val floatingNavInset = LocalPxlFloatingNavInset.current
     var batteryOptimizationIgnored by remember(context) {
@@ -170,6 +213,11 @@ fun SettingsScreen(navController: NavController) {
                 ) { Text(stringResource(R.string.pxlnet_settings_send_report)) }
             },
             dismissButton = {
+                TextButton(onClick = {
+                    reportToSave = report
+                    diagnosticReport = null
+                    saveDiagnostics.launch(PxlDiagnostics.suggestedFilename())
+                }) { Text(stringResource(R.string.pxlnet_settings_save_report)) }
                 TextButton(onClick = { diagnosticReport = null }) { Text(stringResource(R.string.pxlnet_settings_close)) }
             },
         )
@@ -259,6 +307,16 @@ fun SettingsScreen(navController: NavController) {
                 },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             )
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.pxlnet_dns_title)) },
+                supportingContent = { Text(stringResource(R.string.pxlnet_dns_feature_hint)) },
+                leadingContent = { PxlSettingsIcon(Icons.Outlined.Public) },
+                trailingContent = {
+                    Switch(checked = dnsEnabled, onCheckedChange = ::changeDnsEnabled)
+                },
+                modifier = Modifier.clickable { changeDnsEnabled(!dnsEnabled) },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !batteryOptimizationIgnored) {
                 ListItem(
                     headlineContent = { Text(stringResource(R.string.request_background_permission)) },
@@ -342,6 +400,13 @@ fun SettingsScreen(navController: NavController) {
                             checkingDiagnostics = false
                         }
                     },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.pxlnet_settings_open_log)) },
+                supportingContent = { Text(stringResource(R.string.pxlnet_settings_open_log_hint)) },
+                leadingContent = { PxlSettingsIcon(Icons.Outlined.ListAlt) },
+                modifier = Modifier.clickable { navController.navigate("settings/log") },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             )
         }

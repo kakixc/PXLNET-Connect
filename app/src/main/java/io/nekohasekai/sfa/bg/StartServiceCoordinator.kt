@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.VpnService
 import android.os.SystemClock
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
 import io.nekohasekai.sfa.Application
@@ -12,6 +14,9 @@ import io.nekohasekai.sfa.constant.ServiceMode
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.utils.SubscriptionInfoStore
+import io.nekohasekai.sfa.utils.PxlDnsProfiles
+import io.nekohasekai.sfa.utils.PxlDnsTileMode
+import io.nekohasekai.sfa.utils.PxlRestartMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -24,7 +29,15 @@ internal object StartServiceCoordinator {
     private const val TAG = "ServiceStart"
     const val EXTRA_START_AFTER_PREREQUISITES = "net.pxlnet.connect.extra.START_AFTER_PREREQUISITES"
 
-    enum class Source { HOME, WIDGET, QUICK_SETTINGS, BOOT }
+    enum class Source { HOME, WIDGET, QUICK_SETTINGS, BOOT, DNS_TILE, DNS_SCREEN }
+
+    enum class DnsDecision {
+        START,
+        SELECT_PROFILE,
+        OPEN_APP_FOR_NOTIFICATION_PERMISSION,
+        OPEN_APP_FOR_VPN_PERMISSION,
+        ALREADY_IN_PROGRESS,
+    }
 
     enum class Decision {
         START,
@@ -47,8 +60,11 @@ internal object StartServiceCoordinator {
         var sawStarting: Boolean = false,
     )
 
+    private data class PendingTransition(val source: Source, val target: PxlDnsTileMode)
+
     private val lock = Any()
     private var pendingStart: PendingStart? = null
+    private var pendingTransition: PendingTransition? = null
     private var lastKnownStatus: Status? = null
 
     fun currentStatus(): Status? = synchronized(lock) { lastKnownStatus }
@@ -86,8 +102,42 @@ internal object StartServiceCoordinator {
         )
     }
 
+    suspend fun preflightDnsOnly(context: Context): DnsDecision {
+        if (!PxlDnsProfiles.enabled(context)) return DnsDecision.SELECT_PROFILE
+        if (PxlDnsProfiles.selected(context) == null) return DnsDecision.SELECT_PROFILE
+        if (isStartPending() || currentStatus() !in setOf(null, Status.Stopped)) return DnsDecision.ALREADY_IN_PROGRESS
+        if (!ServiceNotification.checkPermission()) return DnsDecision.OPEN_APP_FOR_NOTIFICATION_PERMISSION
+        val permissionGranted = withContext(Dispatchers.Main) { VpnService.prepare(context) == null }
+        return if (permissionGranted) DnsDecision.START else DnsDecision.OPEN_APP_FOR_VPN_PERMISSION
+    }
+
+    /** DNS-only owns the same VPNService, but requires no PXLNET subscription. */
+    fun startDnsOnly(source: Source, profileId: String? = null): Boolean {
+        if (!PxlDnsProfiles.enabled(Application.application)) return false
+        val selected = if (profileId == null) PxlDnsProfiles.selected(Application.application)
+            else PxlDnsProfiles.all(Application.application).firstOrNull { it.id == profileId }
+        selected ?: return false
+        val request = PendingStart(source, SystemClock.elapsedRealtime())
+        if (!reserveStart(request)) return false
+        PxlDnsProfiles.setActiveMode(Application.application, PxlDnsTileMode.DNS_ONLY)
+        PxlDnsProfiles.setRestartMode(Application.application, PxlRestartMode.DNS_ONLY, selected.id)
+        return try {
+            ContextCompat.startForegroundService(
+                Application.application,
+                Intent(Application.application, VPNService::class.java)
+                    .putExtra(BoxService.EXTRA_DNS_ONLY_PROFILE, selected.id),
+            )
+            true
+        } catch (error: Exception) {
+            PxlDnsProfiles.setActiveMode(Application.application, null)
+            PxlDnsProfiles.setRestartMode(Application.application, null)
+            finishPending("DNS-only start failed: ${error.javaClass.simpleName}")
+            false
+        }
+    }
+
     /** Starts only after [preflight] returned [Decision.START]. */
-    fun start(source: Source): Boolean {
+    fun start(source: Source, dnsMode: PxlDnsTileMode? = null, restoreMode: Boolean = false): Boolean {
         if (SubscriptionInfoStore.connectionAccess(Application.application, Settings.selectedProfile) != SubscriptionInfoStore.ConnectionAccess.ALLOWED) {
             Log.i(TAG, "start blocked: inactive selected subscription source=$source")
             return false
@@ -100,7 +150,13 @@ internal object StartServiceCoordinator {
         return try {
             ContextCompat.startForegroundService(
                 Application.application,
-                Intent(Application.application, Settings.serviceClass()),
+                Intent(Application.application, Settings.serviceClass()).apply {
+                    if (restoreMode || dnsMode == PxlDnsTileMode.DNS_AND_VPN) {
+                        putExtra(BoxService.EXTRA_DNS_WITH_VPN,
+                            dnsMode == PxlDnsTileMode.DNS_AND_VPN && PxlDnsProfiles.enabled(Application.application) &&
+                                PxlDnsProfiles.selected(Application.application) != null)
+                    }
+                },
             )
             Log.i(TAG, "request source=$source at=${request.requestedAtElapsedMs}ms")
             true
@@ -111,10 +167,21 @@ internal object StartServiceCoordinator {
     }
 
     fun onServiceStatusChanged(status: Status) {
-        val pending = synchronized(lock) {
+        val transition = synchronized(lock) {
             lastKnownStatus = status
-            pendingStart
-        } ?: return
+            if (status == Status.Stopped) pendingTransition.also { pendingTransition = null } else null
+        }
+        if (transition != null) {
+            Handler(Looper.getMainLooper()).post {
+                val started = if (transition.target == PxlDnsTileMode.DNS_ONLY) {
+                    startDnsOnly(transition.source)
+                } else {
+                    start(transition.source, transition.target)
+                }
+                if (!started) Log.w(TAG, "mode transition could not start target=${transition.target}")
+            }
+        }
+        val pending = synchronized(lock) { pendingStart } ?: return
         when (status) {
             Status.Starting -> {
                 synchronized(lock) { pending.sawStarting = true }
@@ -138,6 +205,16 @@ internal object StartServiceCoordinator {
 
     fun isStartPending(): Boolean = synchronized(lock) { pendingStart != null }
 
+    /** The target survives a Compose screen leaving while the old service stops. */
+    fun switchMode(source: Source, target: PxlDnsTileMode): Boolean {
+        synchronized(lock) {
+            if (lastKnownStatus != Status.Started || pendingStart != null || pendingTransition != null) return false
+            pendingTransition = PendingTransition(source, target)
+        }
+        BoxService.stop()
+        return true
+    }
+
     private fun reserveStart(request: PendingStart): Boolean = synchronized(lock) {
         if (pendingStart != null || (lastKnownStatus != null && lastKnownStatus != Status.Stopped)) {
             false
@@ -149,7 +226,7 @@ internal object StartServiceCoordinator {
 
     /** Testable reservation without starting an Android foreground service. */
     internal fun reserveForTest(source: Source): Boolean = reserveStart(PendingStart(source, 0L))
-    internal fun clearForTest() = synchronized(lock) { pendingStart = null }
+    internal fun clearForTest() = synchronized(lock) { pendingStart = null; pendingTransition = null }
 
     fun permissionIntent(context: Context): Intent =
         Intent(context, MainActivity::class.java)

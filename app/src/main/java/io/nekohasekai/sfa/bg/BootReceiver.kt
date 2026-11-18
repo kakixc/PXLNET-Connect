@@ -4,6 +4,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import io.nekohasekai.sfa.database.Settings
+import io.nekohasekai.sfa.utils.PxlDnsProfiles
+import io.nekohasekai.sfa.utils.PxlDnsTileMode
+import io.nekohasekai.sfa.utils.PxlRestartMode
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -19,16 +22,30 @@ class BootReceiver : BroadcastReceiver() {
 
             else -> return
         }
+        val pending = goAsync()
         GlobalScope.launch(Dispatchers.IO) {
-            if (Settings.startedByUser) {
-                CrashReportManager.refresh()
-                if (CrashReportManager.unreadCount.value > 0) {
-                    Settings.startedByUser = false
-                    return@launch
+            try {
+                if (Settings.startedByUser) {
+                    CrashReportManager.refresh()
+                    if (CrashReportManager.unreadCount.value > 0) {
+                        Settings.startedByUser = false
+                        PxlDnsProfiles.setRestartMode(context, null)
+                        return@launch
+                    }
+                    withContext(Dispatchers.Main) {
+                        when (PxlDnsProfiles.restartMode(context)) {
+                            PxlRestartMode.DNS_ONLY -> StartServiceCoordinator.startDnsOnly(
+                                StartServiceCoordinator.Source.BOOT, PxlDnsProfiles.restartDnsProfileId(context))
+                            PxlRestartMode.DNS_AND_VPN -> StartServiceCoordinator.start(
+                                StartServiceCoordinator.Source.BOOT, PxlDnsTileMode.DNS_AND_VPN, restoreMode = true)
+                            PxlRestartMode.VPN -> StartServiceCoordinator.start(
+                                StartServiceCoordinator.Source.BOOT, restoreMode = true)
+                            null -> BoxService.start()
+                        }
+                    }
                 }
-                withContext(Dispatchers.Main) {
-                    BoxService.start()
-                }
+            } finally {
+                pending.finish()
             }
         }
     }

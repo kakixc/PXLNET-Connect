@@ -6,11 +6,50 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Base64
 
 class PxlSubscriptionConverterTest {
+    @Test
+    fun duplicateAndEscapedServerNamesRemainSelectable() {
+        val uuid = "11111111-1111-1111-1111-111111111111"
+        val links = (1..3).joinToString("\n") { index ->
+            "vless://$uuid@de$index.example.com:443?type=tcp#Name%20%22quoted%22%20%5C%5C"
+        }
+        val root = Json.parseToJsonElement(PxlSubscriptionConverter.convert(links).config).jsonObject
+        val outbounds = root.getValue("outbounds").jsonArray.map { it.jsonObject }
+        val nodeTags = outbounds.filter { it["type"]?.jsonPrimitive?.content == "vless" }
+            .map { it.getValue("tag").jsonPrimitive.content }
+        val selector = outbounds.first().getValue("outbounds").jsonArray.map { it.jsonPrimitive.content }
+        val automatic = outbounds[1].getValue("outbounds").jsonArray.map { it.jsonPrimitive.content }
+        assertEquals(3, nodeTags.distinct().size)
+        assertEquals(nodeTags, selector.drop(1))
+        assertEquals(nodeTags, automatic)
+    }
+
+    @Test
+    fun malformedLinkNeverExposesItsCredentialInException() {
+        val marker = "PRIVATE_MARKER_12345"
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            PxlSubscriptionConverter.convert("vless://$marker@bad host:443?type=tcp#Germany")
+        }
+        assertFalse(failure.message.orEmpty().contains(marker))
+        assertFalse(failure.cause?.toString().orEmpty().contains(marker))
+    }
+
+    @Test
+    fun rejectsUnknownVlessSecurityAndTransport() {
+        val prefix = "vless://11111111-1111-1111-1111-111111111111@de.example.com:443?"
+        assertThrows(IllegalArgumentException::class.java) {
+            PxlSubscriptionConverter.convert(prefix + "type=tcp&security=unknown#Germany")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            PxlSubscriptionConverter.convert(prefix + "type=unknown&security=tls#Germany")
+        }
+    }
+
     @Test
     fun convertsBase64VlessAndHysteria2Subscription() {
         val links =
@@ -91,6 +130,23 @@ class PxlSubscriptionConverterTest {
         val result = PxlSubscriptionConverter.convert(original)
         assertEquals(original, result.config)
         assertEquals(0, result.serverCount)
+    }
+
+    @Test
+    fun removesResolverAddedToSavedConnectProfileByBrokenBeta() {
+        val original = """{"dns":{"servers":[{"type":"local","tag":"local"}]},"outbounds":[{"type":"selector","tag":"PXLNET","outbounds":["proxy"]},{"type":"vless","tag":"proxy","server":"vpn.example.org"}],"route":{"final":"PXLNET","default_domain_resolver":"local"}}"""
+
+        val migrated = Json.parseToJsonElement(PxlSubscriptionConverter.sanitizeConfig(original)).jsonObject
+
+        assertFalse("default_domain_resolver" in migrated.getValue("route").jsonObject)
+        assertEquals("PXLNET", migrated.getValue("route").jsonObject.getValue("final").jsonPrimitive.content)
+    }
+
+    @Test
+    fun keepsExplicitResolverInOtherConfigs() {
+        val native = """{"dns":{"servers":[{"type":"local","tag":"local"}]},"outbounds":[{"type":"vless","tag":"proxy","server":"vpn.example.org"}],"route":{"final":"proxy","default_domain_resolver":"local"}}"""
+
+        assertEquals(native, PxlSubscriptionConverter.sanitizeConfig(native))
     }
 
     @Test

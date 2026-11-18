@@ -13,6 +13,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.net.URI
+import java.net.URISyntaxException
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.util.Base64
@@ -75,7 +76,7 @@ object PxlSubscriptionConverter {
 
         val (xhttpLinks, compatibleLinks) = links.partition { link ->
             link.startsWith("vless://", true) &&
-                queryParameters(URI(link.replace(" ", "%20")).rawQuery)["type"].equals("xhttp", ignoreCase = true)
+                queryParameters(parseShareUri(link).rawQuery)["type"].equals("xhttp", ignoreCase = true)
         }
         val usedTags = mutableSetOf<String>()
         val nodes =
@@ -85,7 +86,7 @@ object PxlSubscriptionConverter {
                     else -> parseHysteria2(link, usedTags)
                 }
             }
-        val tags = nodes.map { it.getValue("tag").toString().trim('"') }
+        val tags = nodes.map { it.getValue("tag").jsonPrimitive.content }
 
         val config =
             buildJsonObject {
@@ -216,7 +217,7 @@ object PxlSubscriptionConverter {
     internal fun xhttpLinks(content: String): List<String> = runCatching {
         decodeSubscription(content.trim().removePrefix("\uFEFF")).lineSequence().map(String::trim).filter { link ->
             link.startsWith("vless://", ignoreCase = true) && runCatching {
-                queryParameters(URI(link.replace(" ", "%20")).rawQuery)["type"].equals("xhttp", true)
+                queryParameters(parseShareUri(link).rawQuery)["type"].equals("xhttp", true)
             }.getOrDefault(false)
         }.distinctBy { link ->
             runCatching { PxlXhttpConfig.outbound(link).getValue("tag").jsonPrimitive.content }
@@ -328,7 +329,29 @@ object PxlSubscriptionConverter {
      * "unsupported usage for uTLS" even though some subscription generators include it.
      */
     fun sanitizeConfig(content: String): String =
-        removeUnsupportedHysteriaUtls(removeRemoteRoutingDependencies(content))
+        removeGeneratedResolverRegression(removeUnsupportedHysteriaUtls(removeRemoteRoutingDependencies(content)))
+
+    /** .47 added this resolver to generated profiles and broke VLESS on some Android networks. */
+    private fun removeGeneratedResolverRegression(content: String): String {
+        val root = runCatching { json.parseToJsonElement(content).jsonObject }.getOrNull() ?: return content
+        val route = root["route"]?.let { runCatching { it.jsonObject }.getOrNull() } ?: return content
+        if (route["default_domain_resolver"] != JsonPrimitive("local") ||
+            route["final"] != JsonPrimitive("PXLNET")) return content
+        val generated = runCatching { root["outbounds"]?.jsonArray?.any {
+            val outbound = it.jsonObject
+            outbound["type"]?.jsonPrimitive?.content == "selector" &&
+                outbound["tag"]?.jsonPrimitive?.content == "PXLNET"
+        } }.getOrNull() == true
+        val localDns = runCatching { root["dns"]?.jsonObject?.get("servers")?.jsonArray?.let { servers ->
+            servers.size == 1 && servers[0].jsonObject["type"] == JsonPrimitive("local") &&
+                servers[0].jsonObject["tag"] == JsonPrimitive("local")
+        } }.getOrNull() == true
+        if (!generated || !localDns) return content
+        return json.encodeToString(
+            JsonObject.serializer(),
+            JsonObject(root + ("route" to JsonObject(route - "default_domain_resolver"))),
+        )
+    }
 
     private fun removeUnsupportedHysteriaUtls(content: String): String {
         val root = runCatching { json.parseToJsonElement(content).jsonObject }.getOrNull() ?: return content
@@ -447,7 +470,7 @@ object PxlSubscriptionConverter {
     }
 
     private fun parseVless(link: String, usedTags: MutableSet<String>): JsonObject {
-        val uri = URI(link.replace(" ", "%20"))
+        val uri = parseShareUri(link)
         val host = requireHost(uri)
         val port = requirePort(uri)
         val uuid = decode(uri.rawUserInfo.orEmpty())
@@ -468,6 +491,9 @@ object PxlSubscriptionConverter {
             put("packet_encoding", query["packetEncoding"] ?: query["packet_encoding"] ?: "xudp")
 
             val security = query["security"]?.lowercase()
+            require(security == null || security == "none" || security == "tls" || security == "reality") {
+                "Unsupported VLESS security"
+            }
             if (security == "tls" || security == "reality") {
                 put("tls", tlsOptions(query, reality = security == "reality"))
             }
@@ -477,10 +503,7 @@ object PxlSubscriptionConverter {
 
     private fun parseHysteria2(link: String, usedTags: MutableSet<String>): JsonObject {
         val uri =
-            URI(
-                link.replaceFirst(Regex("^hy2://", RegexOption.IGNORE_CASE), "hysteria2://")
-                    .replace(" ", "%20"),
-            )
+            parseShareUri(link.replaceFirst(Regex("^hy2://", RegexOption.IGNORE_CASE), "hysteria2://"))
         val host = requireHost(uri)
         val port = requirePort(uri)
         val query = queryParameters(uri.rawQuery)
@@ -570,7 +593,8 @@ object PxlSubscriptionConverter {
                 query["host"]?.takeIf(String::isNotBlank)?.let { put("host", stringArray(listOf(it))) }
                 query["path"]?.takeIf(String::isNotBlank)?.let { put("path", it) }
             }
-        else -> null
+        null, "", "tcp", "raw" -> null
+        else -> throw IllegalArgumentException("Unsupported VLESS transport")
     }
 
     private fun decodeSubscription(content: String): String {
@@ -606,7 +630,10 @@ object PxlSubscriptionConverter {
     private fun uniqueTag(tag: String, usedTags: MutableSet<String>): String {
         var candidate = tag
         var suffix = 2
-        while (!usedTags.add(candidate)) candidate = "$tag ($suffix++)"
+        while (!usedTags.add(candidate)) {
+            candidate = "$tag ($suffix)"
+            suffix++
+        }
         return candidate
     }
 
@@ -619,7 +646,17 @@ object PxlSubscriptionConverter {
         return uri.port
     }
 
-    private fun decode(value: String): String = URLDecoder.decode(value.replace("+", "%2B"), StandardCharsets.UTF_8.name())
+    private fun parseShareUri(link: String): URI = try {
+        URI(link.replace(" ", "%20"))
+    } catch (_: URISyntaxException) {
+        throw IllegalArgumentException("Invalid server link")
+    }
+
+    private fun decode(value: String): String = try {
+        URLDecoder.decode(value.replace("+", "%2B"), StandardCharsets.UTF_8.name())
+    } catch (_: IllegalArgumentException) {
+        throw IllegalArgumentException("Invalid server link encoding")
+    }
 
     private fun padBase64(value: String): String = value + "=".repeat((4 - value.length % 4) % 4)
 

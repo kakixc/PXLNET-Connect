@@ -8,6 +8,7 @@ import android.provider.DocumentsContract
 import android.provider.DocumentsProvider
 import android.webkit.MimeTypeMap
 import java.io.File
+import java.io.FileNotFoundException
 
 class WorkingDirectoryProvider : DocumentsProvider() {
 
@@ -66,8 +67,9 @@ class WorkingDirectoryProvider : DocumentsProvider() {
     override fun queryChildDocuments(parentDocumentId: String, projection: Array<out String>?, sortOrder: String?): Cursor {
         val result = MatrixCursor(projection ?: DEFAULT_DOCUMENT_PROJECTION)
         val parent = getFileForDocId(parentDocumentId)
+        if (!parent.isDirectory) throw FileNotFoundException("Parent is not a directory")
         parent.listFiles()?.forEach { file ->
-            includeFile(result, getDocIdForFile(file), file)
+            runCatching { includeFile(result, getDocIdForFile(file), file) }
         }
         return result
     }
@@ -80,19 +82,22 @@ class WorkingDirectoryProvider : DocumentsProvider() {
 
     override fun createDocument(parentDocumentId: String, mimeType: String, displayName: String): String {
         val parent = getFileForDocId(parentDocumentId)
-        val file = File(parent, displayName)
+        if (!parent.isDirectory) throw FileNotFoundException("Parent is not a directory")
+        val file = childFile(parent, displayName)
 
-        if (mimeType == DocumentsContract.Document.MIME_TYPE_DIR) {
-            file.mkdirs()
+        val created = if (mimeType == DocumentsContract.Document.MIME_TYPE_DIR) {
+            file.mkdir()
         } else {
             file.createNewFile()
         }
+        if (!created) throw FileNotFoundException("Could not create document")
 
         return getDocIdForFile(file)
     }
 
     override fun deleteDocument(documentId: String) {
         val file = getFileForDocId(documentId)
+        if (file == canonicalRoot()) throw FileNotFoundException("Cannot delete root")
         if (file.isDirectory) {
             file.deleteRecursively()
         } else {
@@ -102,33 +107,54 @@ class WorkingDirectoryProvider : DocumentsProvider() {
 
     override fun renameDocument(documentId: String, displayName: String): String {
         val file = getFileForDocId(documentId)
-        val newFile = File(file.parentFile, displayName)
-        file.renameTo(newFile)
+        if (file == canonicalRoot()) throw FileNotFoundException("Cannot rename root")
+        val newFile = childFile(file.parentFile ?: throw FileNotFoundException("Document has no parent"), displayName)
+        if (!file.renameTo(newFile)) throw FileNotFoundException("Could not rename document")
         return getDocIdForFile(newFile)
     }
 
     override fun isChildDocument(parentDocumentId: String, documentId: String): Boolean {
         val parent = getFileForDocId(parentDocumentId)
         val child = getFileForDocId(documentId)
-        return child.absolutePath.startsWith(parent.absolutePath)
+        return child != parent && child.path.startsWith(parent.path + File.separator)
     }
 
     private fun getFileForDocId(documentId: String): File {
-        if (documentId == ROOT_DOC_ID) {
-            return baseDir
-        }
-        return File(baseDir, documentId)
+        if (documentId == ROOT_DOC_ID) return canonicalRoot()
+        if (documentId.isBlank() || File(documentId).isAbsolute) throw FileNotFoundException("Invalid document ID")
+        return checkedFile(File(canonicalRoot(), documentId))
     }
 
     private fun getDocIdForFile(file: File): String {
-        val path = file.absolutePath
-        val basePath = baseDir.absolutePath
+        val path = checkedFile(file).path
+        val basePath = canonicalRoot().path
 
         return if (path == basePath) {
             ROOT_DOC_ID
         } else {
-            path.removePrefix("$basePath/")
+            path.removePrefix(basePath + File.separator)
         }
+    }
+
+    private fun canonicalRoot(): File = baseDir.canonicalFile
+
+    private fun checkedFile(file: File): File {
+        val root = canonicalRoot()
+        val resolved = file.canonicalFile
+        if (resolved != root && !resolved.path.startsWith(root.path + File.separator)) {
+            throw FileNotFoundException("Document is outside working directory")
+        }
+        return resolved
+    }
+
+    private fun childFile(parent: File, name: String): File {
+        if (name.isBlank() || name == "." || name == ".." || name.contains('/') ||
+            name.contains('\\') || name.contains('\u0000')) {
+            throw FileNotFoundException("Invalid document name")
+        }
+        val child = checkedFile(File(parent, name))
+        if (child.parentFile != checkedFile(parent)) throw FileNotFoundException("Invalid document name")
+        return child
     }
 
     private fun includeFile(result: MatrixCursor, documentId: String, file: File) {
@@ -140,7 +166,7 @@ class WorkingDirectoryProvider : DocumentsProvider() {
             flags = flags or DocumentsContract.Document.FLAG_SUPPORTS_WRITE
         }
 
-        if (file.parentFile?.canWrite() == true) {
+        if (file != canonicalRoot() && file.parentFile?.canWrite() == true) {
             flags = flags or DocumentsContract.Document.FLAG_SUPPORTS_DELETE
             flags = flags or DocumentsContract.Document.FLAG_SUPPORTS_RENAME
         }

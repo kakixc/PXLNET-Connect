@@ -37,6 +37,7 @@ internal class PxlBackgroundGuard(
 
     override fun onDisconnected() {
         snapshots.update { Snapshot(it.revision + 1) }
+        Log.i("PxlBackgroundGuard", "local group stream disconnected")
     }
 
     fun start(profileId: Long) {
@@ -45,9 +46,11 @@ internal class PxlBackgroundGuard(
         val connection = CommandClient(scope, CommandClient.ConnectionType.Groups, this, localOnly = true)
         client = connection
         connection.connect()
+        Log.i("PxlBackgroundGuard", "monitor started")
         monitorJob = scope.launch(Dispatchers.IO) {
             var lastFailedTag: String? = null
             var cooldownUntil = 0L
+            var reportedMissingGroup = false
             while (isActive && isCurrent(profileId, currentGeneration)) {
                 if (!PxlLocalPreferences.isGuardEnabled(context)) {
                     delay(5_000)
@@ -55,6 +58,12 @@ internal class PxlBackgroundGuard(
                 }
                 val initial = snapshots.value
                 val group = initial.selector
+                if (group == null && !reportedMissingGroup) {
+                    Log.i("PxlBackgroundGuard", "waiting for local selector group")
+                    reportedMissingGroup = true
+                } else if (group != null) {
+                    reportedMissingGroup = false
+                }
                 val selected = group?.selected?.takeIf { tag -> group.items.any { it.tag == tag } }
                 val activeNode = selected?.let { resolveLeaf(initial.groups, it) }
                 if (selected == null || activeNode == null || System.currentTimeMillis() < cooldownUntil) {
@@ -65,6 +74,7 @@ internal class PxlBackgroundGuard(
 
                 // A single failed URL check can be a transient network change.
                 val first = probe(selected, activeNode)
+                Log.d("PxlBackgroundGuard", "first check result: $first")
                 if (first != false) {
                     if (first == true) lastFailedTag = null
                     delay(45_000)
@@ -74,6 +84,7 @@ internal class PxlBackgroundGuard(
                 if (!isCurrent(profileId, currentGeneration) || !PxlLocalPreferences.isGuardEnabled(context)) break
                 val secondTestStartedAt = System.currentTimeMillis() / 1000
                 val second = probe(selected, activeNode)
+                Log.d("PxlBackgroundGuard", "second check result: $second")
                 if (second != false || lastFailedTag == selected) {
                     delay(45_000)
                     continue
@@ -90,8 +101,10 @@ internal class PxlBackgroundGuard(
                         activeNode,
                         latest.items.map { PxlGuard.Candidate(it.tag, it.urlTestDelay, it.urlTestTime) },
                         testedAt,
+                        resolveLeaf = { tag -> resolveLeaf(latestSnapshot.groups, tag) },
                     )
                 } else null
+                if (fallback == null) Log.i("PxlBackgroundGuard", "no fresh fallback")
                 if (fallback != null && isCurrent(profileId, currentGeneration) &&
                     PxlLocalPreferences.isGuardEnabled(context) &&
                     snapshots.value.let { it.selector?.selected == selected && resolveLeaf(it.groups, selected) == activeNode }
@@ -142,11 +155,7 @@ internal class PxlBackgroundGuard(
         if (snapshot.revision <= before) return null
         val item = snapshot.groups.asSequence().flatMap { it.items.asSequence() }
             .firstOrNull { it.tag == expectedNode } ?: return null
-        return when {
-            item.urlTestTime >= startedAt && item.urlTestDelay > 0 -> true
-            item.urlTestDelay <= 0 -> false
-            else -> null
-        }
+        return PxlGuard.classifyProbeResult(item.urlTestDelay, item.urlTestTime, startedAt)
     }
 
     private fun resolveLeaf(groups: List<Group>, selectedTag: String): String? {

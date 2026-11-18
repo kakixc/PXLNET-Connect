@@ -297,7 +297,8 @@ class DashboardViewModel :
             val snapshot = PxlXhttpSidecar.read(file)
             val xhttpServers = snapshot?.links.orEmpty().map { PxlXhttpConfig.presentation(it) }
                 .associate { it.tag to DashboardUiState.XhttpServer(it.label, it.type) }
-            val tags = (base.tags + xhttpServers.keys).distinct()
+            val autoTag = if (xhttpServers.isNotEmpty() && "AUTO" !in base.tags) listOf("AUTO") else emptyList()
+            val tags = (base.tags + autoTag + xhttpServers.keys).distinct()
             val selected = snapshot?.preferredTag?.takeIf(tags::contains) ?: base.selectedTag
             StoredServers(PxlSubscriptionConverter.ServerSelection(tags, selected, base.singleChoiceTargets), xhttpServers)
         }.getOrDefault(empty)

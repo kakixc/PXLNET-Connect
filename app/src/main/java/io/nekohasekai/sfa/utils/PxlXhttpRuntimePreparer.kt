@@ -1,6 +1,8 @@
 package io.nekohasekai.sfa.utils
 
 import java.io.File
+import java.net.InetAddress
+import java.net.ServerSocket
 import java.security.SecureRandom
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -13,13 +15,19 @@ internal object PxlXhttpRuntimePreparer {
         val augmentedSingboxJson: String,
         val xrayJson: String,
         val nodeTags: List<String>,
+        val listenerPorts: List<Int>,
         val smartRevisions: HTTPClient.SmartRevisions?,
     ) {
         override fun toString(): String = "PxlXhttpRuntimePrepared(nodes=${nodeTags.size})"
     }
 
     /** A missing, changed, or invalid sidecar leaves the current sing-box config untouched. */
-    fun prepare(configFile: File, localPort: Int, random: SecureRandom = SecureRandom()): Prepared? {
+    fun prepare(
+        configFile: File,
+        localPort: Int,
+        random: SecureRandom = SecureRandom(),
+        chooseAdditionalPort: () -> Int = ::availableLoopbackPort,
+    ): Prepared? {
         if (localPort !in 1..65535) return null
         return try {
             val base = configFile.readText()
@@ -29,12 +37,19 @@ internal object PxlXhttpRuntimePreparer {
             val tags = snapshot.links.map { link ->
                 PxlXhttpConfig.outbound(link).getValue("tag").jsonPrimitive.content
             }.distinct()
+            val ports = mutableListOf(localPort)
+            repeat(tags.size - 1) {
+                val next = generateSequence { runCatching(chooseAdditionalPort).getOrNull() }
+                    .take(8).filterNotNull().firstOrNull { it in 1..65535 && it !in ports }
+                    ?: return null
+                ports += next
+            }
             val passwords = tags.associateWith {
                 ByteArray(32).also(random::nextBytes).joinToString("") { byte ->
                     "%02x".format(byte.toInt() and 0xff)
                 }
             }
-            val runtime = PxlXhttpConfig.runtime(snapshot.links, localPort, passwords)
+            val runtime = PxlXhttpConfig.runtime(snapshot.links, ports, passwords)
             val augmented = (if (snapshot.smartRevisions == null) {
                 PxlXhttpConfig.augmentLegacyConfig(base, runtime)
             } else {
@@ -49,10 +64,14 @@ internal object PxlXhttpRuntimePreparer {
                 augmentedSingboxJson = augmented,
                 xrayJson = Json.encodeToString(JsonObject.serializer(), runtime.xray),
                 nodeTags = tags,
+                listenerPorts = ports,
                 smartRevisions = snapshot.smartRevisions,
             )
         } catch (_: Exception) {
             null
         }
     }
+
+    private fun availableLoopbackPort(): Int =
+        ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { it.localPort }
 }

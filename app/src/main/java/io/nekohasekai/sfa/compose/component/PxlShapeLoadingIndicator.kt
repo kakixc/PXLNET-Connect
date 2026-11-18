@@ -17,6 +17,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -25,12 +26,11 @@ import kotlin.math.min
 
 /** A compact loading shape for shared UI, including the older Compose Legacy build. */
 @Composable
-fun PxlShapeLoadingIndicator(modifier: Modifier = Modifier, size: Dp = 20.dp) {
+fun PxlShapeLoadingIndicator(modifier: Modifier = Modifier, size: Dp = 20.dp, color: Color = MaterialTheme.colorScheme.primary) {
     val context = LocalContext.current
     val animationsEnabled = remember(context) {
         Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f
     }
-    val color = MaterialTheme.colorScheme.primary
     val phase = if (animationsEnabled) {
         val transition = rememberInfiniteTransition(label = "pxl-loading-shape")
         val animatedPhase by transition.animateFloat(

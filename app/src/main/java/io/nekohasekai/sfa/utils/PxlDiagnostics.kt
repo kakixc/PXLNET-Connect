@@ -58,21 +58,26 @@ object PxlDiagnostics {
         )
     }
 
-    fun shareWithTelegram(context: Context, logs: String, summary: String? = null) {
-        val diagnostics = buildString {
+    fun formatReport(report: PxlSupportReport): String =
+        buildString {
             appendLine("PXLNET Connect ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
             appendLine("Android ${Build.VERSION.RELEASE} / SDK ${Build.VERSION.SDK_INT}")
             appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
             appendLine("Sensitive values: removed locally before sharing")
-            if (!summary.isNullOrBlank()) appendLine("Quick check: $summary")
+            if (report.summary.isNotBlank()) appendLine("Quick check: ${report.summary}")
             appendLine()
-            append(PxlDiagnosticRedactor.redact(logs).ifBlank { "No recent application logs." })
+            append(PxlDiagnosticRedactor.redact(report.logs).ifBlank { "No recent application logs." })
         }
 
-        val directory = File(context.cacheDir, "logs").also { it.mkdirs() }
+    fun suggestedFilename(): String {
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val file = File(directory, "pxlnet_diagnostics_$timestamp.txt")
-        file.writeText(diagnostics)
+        return "pxlnet_diagnostics_$timestamp.txt"
+    }
+
+    fun shareWithTelegram(context: Context, logs: String, summary: String? = null) {
+        val directory = File(context.cacheDir, "logs").also { it.mkdirs() }
+        val file = File(directory, suggestedFilename())
+        file.writeText(formatReport(PxlSupportReport(summary.orEmpty(), logs)))
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.cache", file)
 
         val intent = Intent(Intent.ACTION_SEND).apply {

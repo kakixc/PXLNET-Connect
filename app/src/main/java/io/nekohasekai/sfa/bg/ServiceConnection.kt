@@ -14,6 +14,8 @@ import io.nekohasekai.sfa.constant.Action
 import io.nekohasekai.sfa.constant.Alert
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Settings
+import io.nekohasekai.sfa.utils.PxlDnsProfiles
+import io.nekohasekai.sfa.utils.PxlDnsTileMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -32,7 +34,7 @@ class ServiceConnection(private val context: Context, callback: Callback, privat
         val intent =
             runBlocking {
                 withContext(Dispatchers.IO) {
-                    Intent(context, Settings.serviceClass()).setAction(Action.SERVICE)
+                    Intent(context, if (PxlDnsProfiles.activeMode(context) == PxlDnsTileMode.DNS_ONLY) VPNService::class.java else Settings.serviceClass()).setAction(Action.SERVICE)
                 }
             }
         context.bindService(intent, this, AppCompatActivity.BIND_AUTO_CREATE)
@@ -40,6 +42,7 @@ class ServiceConnection(private val context: Context, callback: Callback, privat
     }
 
     fun disconnect() {
+        unregisterCallback()
         try {
             context.unbindService(this)
         } catch (_: IllegalArgumentException) {
@@ -48,6 +51,7 @@ class ServiceConnection(private val context: Context, callback: Callback, privat
     }
 
     fun reconnect() {
+        unregisterCallback()
         try {
             context.unbindService(this)
         } catch (_: IllegalArgumentException) {
@@ -55,7 +59,7 @@ class ServiceConnection(private val context: Context, callback: Callback, privat
         val intent =
             runBlocking {
                 withContext(Dispatchers.IO) {
-                    Intent(context, Settings.serviceClass()).setAction(Action.SERVICE)
+                    Intent(context, if (PxlDnsProfiles.activeMode(context) == PxlDnsTileMode.DNS_ONLY) VPNService::class.java else Settings.serviceClass()).setAction(Action.SERVICE)
                 }
             }
         context.bindService(intent, this, AppCompatActivity.BIND_AUTO_CREATE)
@@ -75,12 +79,18 @@ class ServiceConnection(private val context: Context, callback: Callback, privat
     }
 
     override fun onServiceDisconnected(name: ComponentName?) {
+        unregisterCallback()
+        Log.d(TAG, "service disconnected")
+    }
+
+    private fun unregisterCallback() {
         try {
-            service?.unregisterCallback(callback)
+            if (register) service?.unregisterCallback(callback)
         } catch (e: RemoteException) {
             Log.e(TAG, "cleanup service connection", e)
+        } finally {
+            service = null
         }
-        Log.d(TAG, "service disconnected")
     }
 
     override fun onBindingDied(name: ComponentName?) {

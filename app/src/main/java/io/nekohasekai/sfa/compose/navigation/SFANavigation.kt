@@ -51,6 +51,7 @@ import io.nekohasekai.sfa.compose.screen.settings.RemoteControlScreen
 import io.nekohasekai.sfa.compose.screen.settings.ServiceSettingsScreen
 import io.nekohasekai.sfa.compose.screen.settings.SettingsScreen
 import io.nekohasekai.sfa.compose.screen.settings.SubscriptionSettingsScreen
+import io.nekohasekai.sfa.compose.screen.settings.PxlDnsScreen
 import io.nekohasekai.sfa.compose.screen.settings.TailscaleFontPickerScreen
 import io.nekohasekai.sfa.compose.screen.settings.TailscaleTerminalConfigScreen
 import io.nekohasekai.sfa.compose.screen.settings.TailscaleThemePickerScreen
@@ -195,7 +196,8 @@ fun SFANavHost(
                     showStartFab = showStartFab,
                     showStatusBar = showStatusBar,
                     onOpenNewProfile = onOpenNewProfile,
-                    onOpenAppRouting = { navController.navigate("pxlnet/app_routing") },
+                    onOpenAppRouting = { navController.navigate("pxlnet/app_routing") { launchSingleTop = true } },
+                    onOpenDns = { navController.navigate(Screen.Dns.route) },
                     viewModel = dashboardViewModel,
                     groupsViewModel = groupsViewModel,
                 )
@@ -205,7 +207,7 @@ fun SFANavHost(
                     showStartFab = showStartFab,
                     showStatusBar = showStatusBar,
                     onOpenNewProfile = onOpenNewProfile,
-                    onOpenAppRouting = { navController.navigate("pxlnet/app_routing") },
+                    onOpenAppRouting = { navController.navigate("pxlnet/app_routing") { launchSingleTop = true } },
                     groupsViewModel = groupsViewModel,
                 )
             }
@@ -215,6 +217,29 @@ fun SFANavHost(
             PxlAccountScreen(
                 onOpenNewProfile = onOpenNewProfile,
                 viewModel = dashboardViewModel ?: viewModel(),
+            )
+        }
+
+        composable(Screen.Dns.route) {
+            PxlDnsScreen(navController = navController, serviceStatus = serviceStatus, rootTab = true)
+        }
+
+        composable(
+            route = "dns/start?confirm={confirm}&mode={mode}",
+            arguments = listOf(
+                navArgument("confirm") { type = NavType.BoolType; defaultValue = false },
+                navArgument("mode") { type = NavType.StringType; defaultValue = "" },
+            ),
+            enterTransition = slideInFromRight,
+            exitTransition = slideOutToLeft,
+            popEnterTransition = slideInFromLeft,
+            popExitTransition = slideOutToRight,
+        ) { entry ->
+            PxlDnsScreen(
+                navController = navController,
+                serviceStatus = serviceStatus,
+                confirmTileStart = entry.arguments?.getBoolean("confirm") == true,
+                tileStartMode = entry.arguments?.getString("mode").orEmpty(),
             )
         }
 
@@ -669,7 +694,42 @@ fun SFANavHost(
             SubscriptionSettingsScreen(navController = navController)
         }
 
+        composable(
+            route = "dns/settings?confirm={confirm}&mode={mode}",
+            arguments = listOf(
+                navArgument("confirm") { type = NavType.BoolType; defaultValue = false },
+                navArgument("mode") { type = NavType.StringType; defaultValue = "" },
+            ),
+            enterTransition = slideInFromRight,
+            exitTransition = slideOutToLeft,
+            popEnterTransition = slideInFromLeft,
+            popExitTransition = slideOutToRight,
+        ) { entry ->
+            PxlDnsScreen(
+                navController = navController,
+                serviceStatus = serviceStatus,
+                confirmTileStart = entry.arguments?.getBoolean("confirm") == true,
+                tileStartMode = entry.arguments?.getString("mode").orEmpty(),
+                settingsOnly = true,
+            )
+        }
+
         // Settings subscreens with slide animations
+        composable(
+            route = "settings/log",
+            enterTransition = slideInFromRight,
+            exitTransition = slideOutToLeft,
+            popEnterTransition = slideInFromLeft,
+            popExitTransition = slideOutToRight,
+        ) {
+            LogScreen(
+                serviceStatus = serviceStatus,
+                showStartFab = false,
+                showStatusBar = false,
+                onBack = { navController.navigateUp() },
+            )
+        }
+
         composable(
             route = "settings/app",
             enterTransition = slideInFromRight,

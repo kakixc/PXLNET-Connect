@@ -20,6 +20,7 @@ internal class PxlXhttpActivation(
     private val choosePort: () -> Int = ::availableLoopbackPort,
     private val listenerReady: suspend (Int) -> Boolean = ::waitForLoopbackListener,
     private val canContinue: () -> Boolean = { true },
+    private val prepareXrayJson: suspend (String) -> String = { it },
 ) {
     enum class Result { Unavailable, Activated, BaseOnly, Fatal }
 
@@ -29,12 +30,14 @@ internal class PxlXhttpActivation(
         repeat(attempts) {
             if (!canContinue()) return Result.BaseOnly
             val port = runCatching(choosePort).getOrNull() ?: return Result.BaseOnly
-            val candidate = PxlXhttpRuntimePreparer.prepare(configFile, port)
+            val candidate = PxlXhttpRuntimePreparer.prepare(configFile, port, chooseAdditionalPort = choosePort)
                 ?: return if (prepared == null) Result.Unavailable else Result.BaseOnly
             prepared = candidate
-            val started = runCatching { session.start(candidate.xrayJson) }.getOrDefault(false)
+            val started = runCatching { session.start(prepareXrayJson(candidate.xrayJson)) }.getOrDefault(false)
             val ready = started && session.isRunning() &&
-                runCatching { listenerReady(port) }.getOrDefault(false) && session.isRunning()
+                candidate.listenerPorts.all { listenerPort ->
+                    runCatching { listenerReady(listenerPort) }.getOrDefault(false)
+                } && session.isRunning()
             if (ready && canContinue()) {
                 return publish(candidate)
             }

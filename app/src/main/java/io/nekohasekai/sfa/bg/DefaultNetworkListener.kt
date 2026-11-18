@@ -34,8 +34,10 @@ import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.ObsoleteCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.actor
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 
 object DefaultNetworkListener {
     private sealed class NetworkMessage {
@@ -44,6 +46,8 @@ object DefaultNetworkListener {
         class Get : NetworkMessage() {
             val response = CompletableDeferred<Network>()
         }
+
+        class CancelGet(val request: Get) : NetworkMessage()
 
         class Stop(val key: Any) : NetworkMessage()
 
@@ -78,6 +82,8 @@ object DefaultNetworkListener {
                             )
                         }
                     }
+
+                    is NetworkMessage.CancelGet -> pendingRequests.remove(message.request)
 
                     is NetworkMessage.Stop ->
                         if (listeners.isNotEmpty() &&
@@ -128,7 +134,11 @@ object DefaultNetworkListener {
     } else {
         NetworkMessage.Get().run {
             networkActor.send(this)
-            response.await()
+            try {
+                response.await()
+            } finally {
+                withContext(NonCancellable) { networkActor.send(NetworkMessage.CancelGet(this@run)) }
+            }
         }
     }
 

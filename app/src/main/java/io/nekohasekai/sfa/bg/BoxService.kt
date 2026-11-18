@@ -42,9 +42,16 @@ import io.nekohasekai.sfa.utils.SubscriptionInfoStore
 import io.nekohasekai.sfa.utils.PxlXhttpActivation
 import io.nekohasekai.sfa.utils.PxlBackgroundGuard
 import io.nekohasekai.sfa.utils.PxlXhttpSidecar
+import io.nekohasekai.sfa.utils.PxlXhttpConfig
 import io.nekohasekai.sfa.utils.PxlSubscriptionConverter
+import io.nekohasekai.sfa.utils.PxlDnsConfig
+import io.nekohasekai.sfa.utils.PxlDnsProfiles
+import io.nekohasekai.sfa.utils.PxlDnsTileMode
+import io.nekohasekai.sfa.utils.PxlRestartMode
+import io.nekohasekai.sfa.utils.PxlXrayBootstrap
 import io.nekohasekai.sfa.xray.PxlXraySession
 import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -68,6 +75,9 @@ class BoxService(
     companion object {
         private const val PROFILE_UPDATE_INTERVAL = 15L * 60 * 1000 // 15 minutes in milliseconds
         private const val TAG = "BoxService"
+        const val EXTRA_DNS_ONLY_PROFILE = "net.pxlnet.connect.extra.DNS_ONLY_PROFILE"
+        const val EXTRA_DNS_WITH_VPN = "net.pxlnet.connect.extra.DNS_WITH_VPN"
+        const val EXTRA_DNS_SET_ENABLED = "net.pxlnet.connect.extra.DNS_SET_ENABLED"
 
         internal fun start(source: StartServiceCoordinator.Source = StartServiceCoordinator.Source.BOOT): Boolean =
             StartServiceCoordinator.start(source)
@@ -79,6 +89,15 @@ class BoxService(
                 ),
             )
         }
+
+        /** Changes the DNS route in the already running Connect VPN service. */
+        fun setIntegratedDnsEnabled(enabled: Boolean) {
+            ContextCompat.startForegroundService(
+                Application.application,
+                Intent(Application.application, VPNService::class.java)
+                    .putExtra(EXTRA_DNS_SET_ENABLED, enabled),
+            )
+        }
     }
 
     var fileDescriptor: ParcelFileDescriptor? = null
@@ -86,12 +105,21 @@ class BoxService(
     private val status = MutableLiveData(Status.Stopped)
     private val widgetStatusObserver = Observer<Status> { currentStatus ->
         StartServiceCoordinator.onServiceStatusChanged(currentStatus)
-        PxlConnectWidgetProvider.updateAll(Application.application, currentStatus)
+        PxlConnectWidgetProvider.updateAll(
+            Application.application,
+            if (PxlDnsProfiles.activeMode(Application.application) == PxlDnsTileMode.DNS_ONLY) Status.Stopped else currentStatus,
+        )
     }
     private val binder = ServiceBinder(status)
     private val notification = ServiceNotification(status, service)
     private val xrayStartGate = PxlXrayStartGate()
     private val lifecycleMutex = Mutex()
+    private val dnsCommandMutex = Mutex()
+    @Volatile private var dnsCommandGeneration = 0L
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var startJob: Job? = null
+    private var dnsOnlyProfileId: String? = null
+    private var dnsWithVpnRequested = false
     private lateinit var commandServer: CommandServer
 
     private var receiverRegistered = false
@@ -124,7 +152,12 @@ class BoxService(
 
     private fun serviceOverrides() = OverrideOptions().apply {
         autoRedirect = Settings.autoRedirect
-        if (Vendor.isPerAppProxyAvailable() && Settings.perAppProxyEnabled) {
+        val dnsOnlyPackages = dnsOnlyProfileId?.let { id ->
+            PxlDnsProfiles.all(service).firstOrNull { it.id == id }?.appPackages.orEmpty()
+        }.orEmpty()
+        if (dnsOnlyProfileId != null && dnsOnlyPackages.isNotEmpty()) {
+            includePackage = PlatformInterfaceWrapper.StringArray((dnsOnlyPackages + service.packageName).iterator())
+        } else if (dnsOnlyProfileId == null && Vendor.isPerAppProxyAvailable() && Settings.perAppProxyEnabled) {
             val appList = Settings.getEffectivePerAppProxyList()
             if (Settings.getEffectivePerAppProxyMode() == Settings.PER_APP_PROXY_INCLUDE) {
                 includePackage = PlatformInterfaceWrapper.StringArray((appList + Application.application.packageName).iterator())
@@ -133,6 +166,23 @@ class BoxService(
             }
         }
     }
+
+    private fun applyExpressiveDns(content: String): String {
+        // A quick tile can start the VPN before Dashboard has repaired a profile saved by .47.
+        val base = PxlSubscriptionConverter.sanitizeConfig(content)
+        if (!dnsWithVpnRequested) return base
+        val profile = PxlDnsProfiles.selected(service) ?: error("Select an Expressive DNS profile first")
+        return PxlDnsConfig.withVpn(base, profile, underlyingDnsAddress())
+    }
+
+    private fun underlyingDnsAddress(): String? = DefaultNetworkMonitor.defaultNetwork
+        ?.let { Application.connectivity.getLinkProperties(it)?.dnsServers?.firstOrNull()?.hostAddress }
+
+    private fun xhttpNotificationLabels(configFile: File): Map<String, String> = runCatching {
+        PxlXhttpSidecar.read(configFile)?.links.orEmpty()
+            .map(PxlXhttpConfig::presentation)
+            .associate { it.tag to it.label }
+    }.getOrDefault(emptyMap())
 
     private suspend fun activateXhttp(configFile: File, generation: Long): Boolean {
         val sidecar = PxlXhttpSidecar.read(configFile)
@@ -149,9 +199,17 @@ class BoxService(
         val result = PxlXhttpActivation(
             session = companion,
             reloadSingbox = { config ->
-                commandServer.startOrReloadService(config, serviceOverrides())
+                val configured = applyExpressiveDns(config)
+                Libbox.checkConfig(configured)
+                commandServer.startOrReloadService(configured, serviceOverrides())
             },
             canContinue = { xrayStartGate.isStarting(generation) },
+            prepareXrayJson = { xrayJson ->
+                val network = DefaultNetworkMonitor.defaultNetwork
+                if (network == null) xrayJson else PxlXrayBootstrap.resolveOutboundAddresses(xrayJson) { host ->
+                    runCatching { network.getAllByName(host).firstOrNull()?.hostAddress }.getOrNull()
+                }
+            },
         ).activate(configFile)
         Log.i(TAG, "XHTTP activation: nodes=${sidecar?.links?.size ?: 0}, manual=$requiresXhttp, result=$result")
         return if (requiresXhttp) {
@@ -187,6 +245,10 @@ class BoxService(
     private suspend fun startService(startGeneration: Long): Unit = lifecycleMutex.withLock {
         try {
             xraySession?.stop()
+            if (dnsOnlyProfileId != null) {
+                startDnsOnlyService(startGeneration)
+                return
+            }
             withContext(Dispatchers.Main) {
                 notification.show(lastProfileName, R.string.status_starting)
             }
@@ -210,6 +272,7 @@ class BoxService(
             }
 
             lastProfileName = profile.name
+            notification.setXhttpServerLabels(xhttpNotificationLabels(File(profile.typed.path)))
             withContext(Dispatchers.Main) {
                 notification.show(lastProfileName, R.string.status_starting)
             }
@@ -217,10 +280,14 @@ class BoxService(
             DefaultNetworkMonitor.start()
 
             try {
+                val configured = applyExpressiveDns(content)
+                Libbox.checkConfig(configured)
                 commandServer.startOrReloadService(
-                    content,
+                    configured,
                     serviceOverrides(),
                 )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 stopAndAlert(Alert.CreateService, e.message)
                 return
@@ -250,6 +317,8 @@ class BoxService(
                     notification.show(lastProfileName, R.string.status_started)
                     monitorSelectedProfileAccess(selectedProfileId)
                     status.value = Status.Started
+                    PxlDnsProfiles.setActiveMode(service, if (dnsWithVpnRequested) PxlDnsTileMode.DNS_AND_VPN else null)
+                    if (dnsWithVpnRequested) PxlDnsProfiles.setActiveProfileId(service, PxlDnsProfiles.selected(service)?.id)
                     if (service is VPNService) backgroundGuard.start(selectedProfileId)
                 }
             }
@@ -257,16 +326,49 @@ class BoxService(
                 stopAndAlert(Alert.StartService)
                 return
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             stopAndAlert(Alert.StartService, e.message)
             return
         }
     }
 
+    private suspend fun startDnsOnlyService(generation: Long) {
+        val profile = PxlDnsProfiles.all(service).firstOrNull { it.id == dnsOnlyProfileId }
+            ?: run { stopAndAlert(Alert.EmptyConfiguration, "DNS profile is missing"); return }
+        lastProfileName = profile.name
+        notification.setXhttpServerLabels(emptyMap())
+        withContext(Dispatchers.Main) { notification.show(lastProfileName, R.string.status_starting) }
+        DefaultNetworkMonitor.start()
+        try {
+            val configured = PxlDnsConfig.dnsOnly(profile, underlyingDnsAddress())
+            Libbox.checkConfig(configured)
+            commandServer.startOrReloadService(configured, serviceOverrides())
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            stopAndAlert(Alert.CreateService, error.message)
+            return
+        }
+        notification.start()
+        val published = withContext(Dispatchers.Main) {
+            xrayStartGate.publish(generation) {
+                notification.show(lastProfileName, R.string.status_started)
+                PxlDnsProfiles.setActiveMode(service, PxlDnsTileMode.DNS_ONLY)
+                PxlDnsProfiles.setActiveProfileId(service, profile.id)
+                PxlDnsProfiles.setRestartMode(service, PxlRestartMode.DNS_ONLY, profile.id)
+                status.value = Status.Started
+            }
+        }
+        if (!published) stopAndAlert(Alert.StartService)
+    }
+
     override fun serviceStop() {
         xrayStartGate.close()
         xraySession?.invalidate()
         backgroundGuard.stop()
+        PxlDnsProfiles.setActiveMode(service, null)
         runBlocking {
             lifecycleMutex.withLock {
                 accessMonitorJob?.cancel()
@@ -296,6 +398,13 @@ class BoxService(
         // full shutdown, however, must never reopen the VPN.
         if (status.value == Status.Stopped || status.value == Status.Stopping) return
         backgroundGuard.stop()
+        if (dnsOnlyProfileId != null) {
+            dnsOnlyProfileId = PxlDnsProfiles.selected(service)?.id ?: dnsOnlyProfileId
+            val reloadGeneration = xrayStartGate.begin()
+            withContext(Dispatchers.Main) { status.value = Status.Starting }
+            startDnsOnlyService(reloadGeneration)
+            return
+        }
         val selectedProfileId = Settings.selectedProfile
         if (SubscriptionInfoStore.connectionAccess(Application.application, selectedProfileId) != SubscriptionInfoStore.ConnectionAccess.ALLOWED) {
             if (status.value == Status.Started) stopService() else stopAndAlert(Alert.StartService)
@@ -323,9 +432,12 @@ class BoxService(
             return
         }
         lastProfileName = profile.name
+        notification.setXhttpServerLabels(xhttpNotificationLabels(File(profile.typed.path)))
         try {
+            val configured = applyExpressiveDns(content)
+            Libbox.checkConfig(configured)
             commandServer.startOrReloadService(
-                content,
+                configured,
                 serviceOverrides(),
             )
         } catch (e: Exception) {
@@ -362,6 +474,9 @@ class BoxService(
                 notification.show(lastProfileName, R.string.status_started)
                 monitorSelectedProfileAccess(selectedProfileId)
                 status.value = Status.Started
+                PxlDnsProfiles.setActiveMode(service, if (dnsWithVpnRequested) PxlDnsTileMode.DNS_AND_VPN else null)
+                if (dnsWithVpnRequested) PxlDnsProfiles.setActiveProfileId(service, PxlDnsProfiles.selected(service)?.id)
+                PxlDnsProfiles.setRestartMode(service, if (dnsWithVpnRequested) PxlRestartMode.DNS_AND_VPN else PxlRestartMode.VPN)
                 if (service is VPNService) backgroundGuard.start(selectedProfileId)
             }
         }
@@ -390,22 +505,26 @@ class BoxService(
         }
     }
 
-    @OptIn(DelicateCoroutinesApi::class)
     private fun stopService() {
         xrayStartGate.close()
         xraySession?.invalidate()
         backgroundGuard.stop()
-        if (status.value != Status.Started) return
+        PxlDnsProfiles.setActiveMode(service, null)
+        PxlDnsProfiles.setRestartMode(service, null)
+        if (status.value != Status.Started && status.value != Status.Starting) return
         accessMonitorJob?.cancel()
         status.value = Status.Stopping
+        val pendingStart = startJob
+        pendingStart?.cancel()
         if (receiverRegistered) {
             service.unregisterReceiver(receiver)
             receiverRegistered = false
         }
         notification.close()
-        GlobalScope.launch(Dispatchers.IO) {
+        serviceScope.launch {
+            pendingStart?.join()
             lifecycleMutex.withLock {
-                closeService()
+                if (::commandServer.isInitialized) closeService()
                 xraySession?.stop()
                 val pfd = fileDescriptor
                 if (pfd != null) {
@@ -413,7 +532,7 @@ class BoxService(
                     fileDescriptor = null
                 }
                 DefaultNetworkMonitor.stop()
-                commandServer.apply {
+                if (::commandServer.isInitialized) commandServer.apply {
                     close()
 //                Seq.destroyRef(refnum)
                 }
@@ -438,6 +557,8 @@ class BoxService(
         xrayStartGate.close()
         xraySession?.invalidate()
         backgroundGuard.stop()
+        PxlDnsProfiles.setActiveMode(service, null)
+        PxlDnsProfiles.setRestartMode(service, null)
         accessMonitorJob?.cancel()
         StartServiceCoordinator.onStartFailed("$type${message?.let { ": $it" } ?: ""}")
         Settings.startedByUser = false
@@ -470,14 +591,56 @@ class BoxService(
 
     @OptIn(DelicateCoroutinesApi::class)
     @Suppress("SameReturnValue")
-    internal fun onStartCommand(): Int {
+    internal fun onStartCommand(intent: Intent? = null): Int {
+        if (status.value == Status.Started && service is VPNService && intent?.hasExtra(EXTRA_DNS_SET_ENABLED) == true) {
+            val enabled = intent.getBooleanExtra(EXTRA_DNS_SET_ENABLED, false)
+            if (enabled && (!PxlDnsProfiles.enabled(service) || PxlDnsProfiles.selected(service) == null)) return Service.START_NOT_STICKY
+            val generation = ++dnsCommandGeneration
+            serviceScope.launch {
+                dnsCommandMutex.withLock {
+                    if (enabled) {
+                        val valid = runCatching {
+                            val profile = requireNotNull(ProfileManager.get(Settings.selectedProfile))
+                            val content = File(profile.typed.path).readText()
+                            val dnsProfile = requireNotNull(PxlDnsProfiles.selected(service))
+                            Libbox.checkConfig(PxlDnsConfig.withVpn(PxlSubscriptionConverter.sanitizeConfig(content), dnsProfile, underlyingDnsAddress()))
+                        }.isSuccess
+                        if (!valid) {
+                            binder.broadcast { callback -> callback.onServiceAlert(Alert.CreateService.ordinal, null) }
+                            return@withLock
+                        }
+                    }
+                    if (generation != dnsCommandGeneration || status.value != Status.Started) return@withLock
+                    dnsWithVpnRequested = enabled
+                    serviceReload0()
+                }
+            }
+            return Service.START_NOT_STICKY
+        }
         if (status.value != Status.Stopped) return Service.START_NOT_STICKY
-        if (SubscriptionInfoStore.connectionAccess(Application.application, Settings.selectedProfile) != SubscriptionInfoStore.ConnectionAccess.ALLOWED) {
+        if (intent?.hasExtra(EXTRA_DNS_ONLY_PROFILE) == true && !PxlDnsProfiles.enabled(service)) {
+            service.stopSelf()
+            return Service.START_NOT_STICKY
+        }
+        dnsOnlyProfileId = intent?.getStringExtra(EXTRA_DNS_ONLY_PROFILE)?.takeIf { service is VPNService && PxlDnsProfiles.enabled(service) }
+        val requestedDnsWithVpn = if (intent?.hasExtra(EXTRA_DNS_WITH_VPN) == true) {
+            intent.getBooleanExtra(EXTRA_DNS_WITH_VPN, false)
+        } else PxlDnsProfiles.startWithVpn(service)
+        dnsWithVpnRequested = service is VPNService && dnsOnlyProfileId == null &&
+            PxlDnsProfiles.enabled(service) &&
+            requestedDnsWithVpn &&
+            PxlDnsProfiles.selected(service) != null
+        if (dnsOnlyProfileId == null && SubscriptionInfoStore.connectionAccess(Application.application, Settings.selectedProfile) != SubscriptionInfoStore.ConnectionAccess.ALLOWED) {
             StartServiceCoordinator.onStartFailed("inactive selected subscription")
             PxlConnectWidgetProvider.updateAll(Application.application, Status.Stopped)
             service.stopSelf()
             return Service.START_NOT_STICKY
         }
+        PxlDnsProfiles.setRestartMode(service, when {
+            dnsOnlyProfileId != null -> PxlRestartMode.DNS_ONLY
+            dnsWithVpnRequested -> PxlRestartMode.DNS_AND_VPN
+            else -> PxlRestartMode.VPN
+        }, dnsOnlyProfileId)
         val startGeneration = xrayStartGate.begin()
         status.value = Status.Starting
 
@@ -496,10 +659,12 @@ class BoxService(
             receiverRegistered = true
         }
 
-        GlobalScope.launch(Dispatchers.IO) {
+        startJob = serviceScope.launch {
             Settings.startedByUser = true
             try {
                 startCommandServer()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 stopAndAlert(Alert.StartCommandServer, e.message)
                 return@launch
@@ -515,9 +680,11 @@ class BoxService(
         xrayStartGate.close()
         xraySession?.invalidate()
         backgroundGuard.stop()
+        PxlDnsProfiles.setActiveMode(service, null)
         xraySession?.close()
         accessMonitorJob?.cancel()
         accessMonitorScope.cancel()
+        serviceScope.cancel()
         StartServiceCoordinator.onServiceStatusChanged(Status.Stopped)
         PxlConnectWidgetProvider.updateAll(Application.application, Status.Stopped)
         status.removeObserver(widgetStatusObserver)

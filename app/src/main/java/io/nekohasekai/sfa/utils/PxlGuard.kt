@@ -25,10 +25,16 @@ object PxlGuard {
         return null
     }
 
-    fun selectFreshFallback(selectedTag: String, candidates: List<Candidate>, testedSinceSeconds: Long): String? =
+    fun selectFreshFallback(
+        selectedTag: String,
+        candidates: List<Candidate>,
+        testedSinceSeconds: Long,
+        resolveLeaf: (String) -> String? = { it },
+    ): String? =
         selectFallback(
             selectedTag,
             candidates.filter { it.testedAtSeconds >= testedSinceSeconds }
+                .filter { candidate -> resolveLeaf(candidate.tag)?.let { it != selectedTag } == true }
                 .map { it.tag to it.delay },
         )
 

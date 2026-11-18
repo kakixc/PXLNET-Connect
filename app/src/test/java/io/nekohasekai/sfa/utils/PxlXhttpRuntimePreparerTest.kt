@@ -37,6 +37,19 @@ class PxlXhttpRuntimePreparerTest {
     }
 
     @Test
+    fun givesEachXhttpNodeItsOwnListener() = withConfig(smart) { config ->
+        val secondLink = link.replace("vpn.example", "second.example")
+        assertTrue(PxlXhttpSidecar.write(config, listOf(link, secondLink), revisions))
+        val plan = requireNotNull(PxlXhttpRuntimePreparer.prepare(config, 19001,
+            chooseAdditionalPort = { 19002 }))
+        assertEquals(listOf(19001, 19002), plan.listenerPorts)
+        val inbounds = Json.parseToJsonElement(plan.xrayJson).jsonObject.getValue("inbounds").jsonArray
+        assertEquals(2, inbounds.size)
+        assertTrue(inbounds.all { it.jsonObject.getValue("settings").jsonObject
+            .getValue("udp").jsonPrimitive.content == "true" })
+    }
+
+    @Test
     fun refusesStaleOrNonSmartProfileWithoutPublishingProxy() = withConfig(smart) { config ->
         assertTrue(PxlXhttpSidecar.write(config, listOf(link), revisions))
         config.writeText(smart + " ")
@@ -66,7 +79,7 @@ class PxlXhttpRuntimePreparerTest {
     }
 
     @Test
-    fun preparesLegacyManualChoiceWithoutChangingLegacyAuto() = withConfig(
+    fun preparesLegacyManualChoiceAndAddsXhttpToAuto() = withConfig(
         """{"outbounds":[{"type":"selector","tag":"PXLNET","outbounds":["AUTO","Germany"],"default":"AUTO"},{"type":"urltest","tag":"AUTO","outbounds":["Germany"]},{"type":"hysteria2","tag":"Germany"}],"route":{"final":"PXLNET"}}""",
     ) { config ->
         assertTrue(PxlXhttpSidecar.write(config, listOf(link), null))
@@ -77,7 +90,7 @@ class PxlXhttpRuntimePreparerTest {
         assertEquals(tag, PxlSubscriptionConverter.serverSelection(plan.augmentedSingboxJson).selectedTag)
         val outbounds = Json.parseToJsonElement(plan.augmentedSingboxJson).jsonObject.getValue("outbounds").jsonArray
         val auto = outbounds.map { it.jsonObject }.single { it.getValue("tag").jsonPrimitive.content == "AUTO" }
-        assertEquals(listOf("Germany"), auto.getValue("outbounds").jsonArray.map { it.jsonPrimitive.content })
+        assertEquals(listOf("Germany", tag), auto.getValue("outbounds").jsonArray.map { it.jsonPrimitive.content })
     }
 
     @Test

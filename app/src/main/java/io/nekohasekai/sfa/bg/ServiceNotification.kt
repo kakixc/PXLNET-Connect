@@ -65,6 +65,7 @@ class ServiceNotification(private val status: MutableLiveData<Status>, private v
     private var profileName = ""
     private var statusTextId = R.string.status_starting
     private var selectedServerTag: String? = null
+    private var xhttpServerLabels: Map<String, String> = emptyMap()
     private var trafficText: String? = null
 
     private val notificationBuilder by lazy {
@@ -161,11 +162,17 @@ class ServiceNotification(private val status: MutableLiveData<Status>, private v
         publish()
     }
 
+    @Synchronized
+    fun setXhttpServerLabels(labels: Map<String, String>) {
+        xhttpServerLabels = labels
+        publish()
+    }
+
     private fun contentText(): String {
         val statusText = service.getString(statusTextId)
         val tag = selectedServerTag ?: return statusText
         if (statusTextId != R.string.status_started) return statusText
-        val serverName = when (serverRegion(tag)) {
+        val serverName = xhttpServerLabels[tag] ?: when (serverRegion(tag)) {
             ServerRegion.AUTO -> when {
                 tag.equals("Fast", ignoreCase = true) -> service.getString(R.string.pxlnet_smart_fast)
                 tag.equals("Stable", ignoreCase = true) -> service.getString(R.string.pxlnet_smart_stable)
@@ -207,6 +214,7 @@ class ServiceNotification(private val status: MutableLiveData<Status>, private v
     @Synchronized
     fun close() {
         isShowing = false
+        xhttpServerLabels = emptyMap()
         commandClient.disconnect()
         ServiceCompat.stopForeground(service, ServiceCompat.STOP_FOREGROUND_REMOVE)
         if (receiverRegistered) {

@@ -100,7 +100,7 @@ class PxlXhttpActivationTest {
         val session = FakeSession()
         val loads = mutableListOf<String>()
         var checks = 0
-        val activation = PxlXhttpActivation(session, loads::add, { 19001 }, { true }) { ++checks < 3 }
+        val activation = PxlXhttpActivation(session, loads::add, { 19001 }, { true }, canContinue = { ++checks < 3 })
 
         assertEquals(PxlXhttpActivation.Result.BaseOnly, activation.activate(file))
         assertEquals(emptyList<String>(), loads)
@@ -115,7 +115,7 @@ class PxlXhttpActivationTest {
         val activation = PxlXhttpActivation(session, {
             events += "reload-augmented"
             current = false
-        }, { 19001 }, { true }) { current }
+        }, { 19001 }, { true }, canContinue = { current })
 
         assertEquals(PxlXhttpActivation.Result.Fatal, activation.activate(file))
         assertTrue(session.isRunning())

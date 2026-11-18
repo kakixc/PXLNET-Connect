@@ -77,47 +77,77 @@ class PxlXhttpConfigTest {
     }
 
     @Test
-    fun doesNotForwardVisionFlowFromXhttpShareLink() {
-        val link = "vless://$uuid@vpn.example:443?type=xhttp&security=reality&pbk=public-key&flow=xtls-rprx-vision"
-        val user = PxlXhttpConfig.outbound(link).getValue("settings").jsonObject
-            .getValue("vnext").jsonArray.single().jsonObject.getValue("users").jsonArray.single().jsonObject
-        assertEquals(false, "flow" in user)
+    fun preservesLiteralPlusAndRejectsInvalidExtra() {
+        val link = "vless://$uuid@vpn.example:443?type=xhttp&security=tls&path=%2Fone+two%2Bthree"
+        val settings = PxlXhttpConfig.outbound(link).getValue("streamSettings").jsonObject
+            .getValue("xhttpSettings").jsonObject
+        assertEquals("/one+two+three", settings.getValue("path").jsonPrimitive.content)
+        assertThrows(IllegalArgumentException::class.java) {
+            PxlXhttpConfig.outbound(link + "&extra=%7Bbroken")
+        }
     }
 
     @Test
-    fun buildsOneAuthenticatedLoopbackWithFailClosedRoutesForTwoNodes() {
+    fun forwardsVlessEncryptionButNotUnsupportedVisionFlow() {
+        val encryption = "mlkem768x25519plus.native.0rtt.example"
+        val link = "vless://$uuid@vpn.example:443?type=xhttp&security=reality&pbk=public-key&" +
+            "encryption=$encryption&flow=xtls-rprx-vision&spx=%2Fbootstrap"
+        val user = PxlXhttpConfig.outbound(link).getValue("settings").jsonObject
+            .getValue("vnext").jsonArray.single().jsonObject.getValue("users").jsonArray.single().jsonObject
+        val reality = PxlXhttpConfig.outbound(link).getValue("streamSettings").jsonObject
+            .getValue("realitySettings").jsonObject
+        assertEquals(encryption, user.getValue("encryption").jsonPrimitive.content)
+        assertEquals(false, "flow" in user)
+        assertEquals("/bootstrap", reality.getValue("spiderX").jsonPrimitive.content)
+        val plainUser = PxlXhttpConfig.outbound(link.replace("&encryption=$encryption", ""))
+            .getValue("settings").jsonObject.getValue("vnext").jsonArray.single().jsonObject
+            .getValue("users").jsonArray.single().jsonObject
+        assertEquals("none", plainUser.getValue("encryption").jsonPrimitive.content)
+    }
+
+    @Test
+    fun buildsAuthenticatedLoopbackPerNodeWithFailClosedRoutes() {
         val de = "vless://$uuid@de.example:443?type=xhttp&security=tls&sni=de.example"
         val fi = "vless://$uuid@fi.example:443?type=xhttp&security=tls&sni=fi.example"
         val deTag = PxlXhttpConfig.outbound(de).getValue("tag").jsonPrimitive.content
         val fiTag = PxlXhttpConfig.outbound(fi).getValue("tag").jsonPrimitive.content
-        val runtime = PxlXhttpConfig.runtime(listOf(de, fi), 19100, mapOf(deTag to "test-de", fiTag to "test-fi"))
-        val inbound = runtime.xray.getValue("inbounds").jsonArray.single().jsonObject
+        val runtime = PxlXhttpConfig.runtime(listOf(de, fi), listOf(19100, 19101),
+            mapOf(deTag to "test-de", fiTag to "test-fi"))
+        val inbounds = runtime.xray.getValue("inbounds").jsonArray.map { it.jsonObject }
         val routes = runtime.xray.getValue("routing").jsonObject.getValue("rules").jsonArray
-        val accounts = inbound.getValue("settings").jsonObject.getValue("accounts").jsonArray
 
-        assertEquals("127.0.0.1", inbound.getValue("listen").jsonPrimitive.content)
-        assertEquals("password", inbound.getValue("settings").jsonObject.getValue("auth").jsonPrimitive.content)
-        assertEquals(2, accounts.size)
+        assertEquals(listOf(19100, 19101), inbounds.map { it.getValue("port").jsonPrimitive.content.toInt() })
+        assertTrue(inbounds.all { it.getValue("listen").jsonPrimitive.content == "127.0.0.1" })
+        assertTrue(inbounds.all { it.getValue("settings").jsonObject.getValue("udp").jsonPrimitive.content == "true" })
+        assertEquals(listOf(deTag, fiTag), inbounds.map { inbound ->
+            inbound.getValue("settings").jsonObject.getValue("accounts").jsonArray.single().jsonObject
+                .getValue("user").jsonPrimitive.content
+        })
         assertEquals(listOf(deTag, fiTag), runtime.singboxOutbounds.map { it.getValue("username").jsonPrimitive.content })
         assertEquals(listOf(deTag, fiTag), routes.dropLast(1).map {
             it.jsonObject.getValue("outboundTag").jsonPrimitive.content
         })
+        assertEquals(listOf(deTag, fiTag).map { "pxlnet-socks-$it" }, routes.dropLast(1).map {
+            it.jsonObject.getValue("inboundTag").jsonArray.single().jsonPrimitive.content
+        })
         assertEquals("pxlnet-xhttp-reject", routes.last().jsonObject.getValue("outboundTag").jsonPrimitive.content)
-        assertTrue(runtime.singboxOutbounds.all { it.getValue("server_port").jsonPrimitive.content == "19100" })
+        assertEquals(listOf("19100", "19101"), runtime.singboxOutbounds.map {
+            it.getValue("server_port").jsonPrimitive.content
+        })
         assertEquals(false, runtime.toString().contains("test-de"))
     }
 
     @Test
     fun refusesMissingLocalAuthentication() {
         val link = "vless://$uuid@vpn.example:443?type=xhttp&security=tls"
-        assertThrows(IllegalArgumentException::class.java) { PxlXhttpConfig.runtime(listOf(link), 19100, emptyMap()) }
+        assertThrows(IllegalArgumentException::class.java) { PxlXhttpConfig.runtime(listOf(link), listOf(19100), emptyMap()) }
     }
 
     @Test
     fun addsEphemeralXhttpToSmartManualAndAutoWithoutChangingOtherGroups() {
         val link = "vless://$uuid@vpn.example:443?type=xhttp&security=tls"
         val tag = PxlXhttpConfig.outbound(link).getValue("tag").jsonPrimitive.content
-        val runtime = PxlXhttpConfig.runtime(listOf(link), 19100, mapOf(tag to "local-only-password"))
+        val runtime = PxlXhttpConfig.runtime(listOf(link), listOf(19100), mapOf(tag to "local-only-password"))
         val original = """{"outbounds":[{"type":"selector","tag":"PXLNET","outbounds":["AUTO","01-hysteria2"]},{"type":"selector","tag":"AUTO","outbounds":["Stable","01-hysteria2"]},{"type":"selector","tag":"Stable","outbounds":["01-hysteria2"]},{"type":"hysteria2","tag":"01-hysteria2"}],"route":{"final":"PXLNET"}}"""
 
         val updated = Json.parseToJsonElement(PxlXhttpConfig.augmentSmartConfig(original, runtime)).jsonObject
@@ -134,18 +164,35 @@ class PxlXhttpConfigTest {
     }
 
     @Test
-    fun legacyManualGetsXhttpButLegacyAutoKeepsExactlyTheSameMembers() {
+    fun legacyAutoTestsXhttpAlongsideOrdinaryVless() {
         val link = "vless://$uuid@vpn.example:443?type=xhttp&security=tls"
+        val secondLink = "vless://$uuid@second.example:443?type=xhttp&security=tls"
         val tag = PxlXhttpConfig.outbound(link).getValue("tag").jsonPrimitive.content
-        val runtime = PxlXhttpConfig.runtime(listOf(link), 19100, mapOf(tag to "local-only-password"))
+        val secondTag = PxlXhttpConfig.outbound(secondLink).getValue("tag").jsonPrimitive.content
+        val runtime = PxlXhttpConfig.runtime(listOf(link, secondLink), listOf(19100, 19101),
+            mapOf(tag to "local-only-password", secondTag to "second-password"))
         val original = """{"outbounds":[{"type":"selector","tag":"PXLNET","outbounds":["AUTO","Germany"]},{"type":"urltest","tag":"AUTO","outbounds":["Germany"]},{"type":"hysteria2","tag":"Germany"}],"route":{"final":"PXLNET"}}"""
 
         val updated = Json.parseToJsonElement(PxlXhttpConfig.augmentLegacyConfig(original, runtime)).jsonObject
         val outbounds = updated.getValue("outbounds").jsonArray.map { it.jsonObject }
         fun members(name: String) = outbounds.single { it.getValue("tag").jsonPrimitive.content == name }
             .getValue("outbounds").jsonArray.map { it.jsonPrimitive.content }
-        assertEquals(listOf("AUTO", "Germany", tag), members("PXLNET"))
-        assertEquals(listOf("Germany"), members("AUTO"))
+        assertEquals(listOf("AUTO", "Germany", tag, secondTag), members("PXLNET"))
+        assertEquals(listOf("Germany", tag, secondTag), members("AUTO"))
+    }
+
+    @Test
+    fun xhttpOnlyProfileGetsWorkingAutoChoice() {
+        val link = "vless://$uuid@vpn.example:443?type=xhttp&security=tls"
+        val tag = PxlXhttpConfig.outbound(link).getValue("tag").jsonPrimitive.content
+        val runtime = PxlXhttpConfig.runtime(listOf(link), listOf(19100), mapOf(tag to "local-only-password"))
+        val original = PxlSubscriptionConverter.convert(link).config
+        val updated = Json.parseToJsonElement(PxlXhttpConfig.augmentLegacyConfig(original, runtime)).jsonObject
+        val outbounds = updated.getValue("outbounds").jsonArray.map { it.jsonObject }
+        fun members(name: String) = outbounds.single { it.getValue("tag").jsonPrimitive.content == name }
+            .getValue("outbounds").jsonArray.map { it.jsonPrimitive.content }
+        assertEquals(listOf("AUTO", tag), members("PXLNET"))
+        assertEquals(listOf(tag), members("AUTO"))
     }
 
     @Test
@@ -161,7 +208,7 @@ class PxlXhttpConfigTest {
     fun rejectsNonSmartOrAmbiguousSelectorBeforeAddingProxy() {
         val link = "vless://$uuid@vpn.example:443?type=xhttp&security=tls"
         val tag = PxlXhttpConfig.outbound(link).getValue("tag").jsonPrimitive.content
-        val runtime = PxlXhttpConfig.runtime(listOf(link), 19100, mapOf(tag to "local-only-password"))
+        val runtime = PxlXhttpConfig.runtime(listOf(link), listOf(19100), mapOf(tag to "local-only-password"))
         val legacy = """{"outbounds":[{"type":"direct","tag":"DIRECT"}],"route":{"final":"DIRECT"}}"""
         assertThrows(IllegalArgumentException::class.java) { PxlXhttpConfig.augmentSmartConfig(legacy, runtime) }
         val collision = """{"outbounds":[{"type":"selector","tag":"PXLNET","outbounds":["AUTO"]},{"type":"selector","tag":"AUTO","outbounds":["$tag"]},{"type":"direct","tag":"$tag"}],"route":{"final":"PXLNET"}}"""

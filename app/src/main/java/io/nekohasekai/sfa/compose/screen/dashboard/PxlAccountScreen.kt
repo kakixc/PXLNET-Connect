@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.component.PxlRootTopBar
 import io.nekohasekai.sfa.compose.component.PxlShapeLoadingIndicator
+import io.nekohasekai.sfa.compose.component.pxlPressMotion
 import io.nekohasekai.sfa.compose.component.LocalPxlTopBarInset
 import io.nekohasekai.sfa.compose.component.LocalPxlFloatingNavInset
 import io.nekohasekai.sfa.compose.navigation.NewProfileArgs
@@ -93,7 +94,6 @@ fun PxlAccountScreen(
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = topBarInset + 12.dp, bottom = floatingNavInset + 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item { AccountSectionHeader(R.string.pxlnet_account_title) }
         item {
             PxlAccountCard(compact = true) {
                 Row(
@@ -190,7 +190,7 @@ fun PxlAccountScreen(
                         OutlinedButton(
                             onClick = viewModel::refreshTelegramAccount,
                             enabled = !uiState.telegramLoginPending,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).pxlPressMotion(enabled = !uiState.telegramLoginPending),
                             shape = RoundedCornerShape(18.dp),
                         ) {
                             if (uiState.telegramLoginPending) {
@@ -202,7 +202,7 @@ fun PxlAccountScreen(
                         if (hasVerifiedAccount) {
                             Button(
                                 onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) },
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.weight(1f).pxlPressMotion(),
                                 shape = RoundedCornerShape(18.dp),
                             ) {
                                 Text(stringResource(if (uiState.telegramSubscriptionActive) R.string.pxlnet_renew else R.string.pxlnet_buy))
@@ -219,7 +219,7 @@ fun PxlAccountScreen(
                     Button(
                         onClick = viewModel::startTelegramLogin,
                         enabled = !uiState.telegramLoginPending,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().pxlPressMotion(enabled = !uiState.telegramLoginPending),
                         shape = RoundedCornerShape(18.dp),
                     ) {
                         if (uiState.telegramLoginPending) {
@@ -249,13 +249,9 @@ fun PxlAccountScreen(
                     )
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            stringResource(R.string.pxlnet_current_vpn_subscription),
+                            selectedProfile?.name ?: stringResource(R.string.pxlnet_subscription_not_added),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            selectedProfile?.name ?: stringResource(R.string.pxlnet_subscription_not_added),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         if (uiState.selectedProfileId > 0) {
                             linkSummary?.let { summary ->
@@ -268,17 +264,19 @@ fun PxlAccountScreen(
                         }
                     }
                 }
-                Button(
-                    onClick = { onOpenNewProfile(NewProfileArgs()) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                ) {
-                    Text(stringResource(R.string.pxlnet_add_existing_subscription))
+                if (!hasSession || uiState.selectedProfileId <= 0) {
+                    Button(
+                        onClick = { onOpenNewProfile(NewProfileArgs()) },
+                        modifier = Modifier.fillMaxWidth().pxlPressMotion(),
+                        shape = RoundedCornerShape(18.dp),
+                    ) {
+                        Text(stringResource(R.string.pxlnet_add_existing_subscription))
+                    }
                 }
                 if (uiState.selectedProfileId <= 0) {
                     OutlinedButton(
                         onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().pxlPressMotion(),
                         shape = RoundedCornerShape(18.dp),
                     ) {
                         Text(stringResource(R.string.pxlnet_buy_in_bot))
@@ -290,11 +288,6 @@ fun PxlAccountScreen(
         item { AccountSectionHeader(R.string.pxlnet_ecosystem_title) }
         item {
             PxlAccountCard {
-                Text(
-                    stringResource(R.string.pxlnet_ecosystem_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
                 Text(
                     stringResource(R.string.pxlnet_ecosystem_description),
                     style = MaterialTheme.typography.bodySmall,
@@ -362,6 +355,7 @@ private fun PxlPulsePanel(
         serviceAvailable == false -> stringResource(R.string.pxlnet_pulse_offline)
         serverCount == 0 -> stringResource(R.string.pxlnet_pulse_no_servers)
         isLoggedIn && !subscriptionActive -> stringResource(R.string.pxlnet_pulse_renew)
+        !isLoggedIn && hasLocalSubscription -> stringResource(R.string.pxlnet_pulse_guest_ready)
         else -> stringResource(R.string.pxlnet_pulse_ready)
     }
     val statusIcon = when {
@@ -427,7 +421,7 @@ private fun PxlPulsePanel(
         OutlinedButton(
             onClick = onRefresh,
             enabled = !checking,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().pxlPressMotion(enabled = !checking),
             shape = RoundedCornerShape(18.dp),
         ) {
             if (checking) {

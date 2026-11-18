@@ -5,6 +5,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.TextSnippet
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapVert
@@ -23,6 +24,12 @@ sealed class Screen(val route: String, @StringRes val titleRes: Int, val icon: I
         route = "account",
         titleRes = R.string.title_account,
         icon = Icons.Default.AccountCircle,
+    )
+
+    object Dns : Screen(
+        route = "dns",
+        titleRes = R.string.pxlnet_dns_title,
+        icon = Icons.Default.Dns,
     )
 
     object Log : Screen(
@@ -59,6 +66,7 @@ sealed class Screen(val route: String, @StringRes val titleRes: Int, val icon: I
 val bottomNavigationScreens =
     listOf(
         Screen.Dashboard,
+        Screen.Dns,
         Screen.Account,
         Screen.Log,
         Screen.Tools,

@@ -12,6 +12,8 @@ import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.MainActivity
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.utils.PxlLocalPreferences
+import io.nekohasekai.sfa.utils.PxlDnsProfiles
+import io.nekohasekai.sfa.utils.PxlDnsTileMode
 import io.nekohasekai.sfa.utils.SubscriptionInfoStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -26,11 +28,12 @@ class TileService :
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onServiceStatusChanged(status: Status) {
+        val dnsOnly = PxlDnsProfiles.activeMode(this) == PxlDnsTileMode.DNS_ONLY
         val access = SubscriptionInfoStore.connectionAccess(this, io.nekohasekai.sfa.database.Settings.selectedProfile)
         qsTile?.apply {
             label = getString(R.string.pxlnet_tile_label)
             state =
-                if (access != SubscriptionInfoStore.ConnectionAccess.ALLOWED) {
+                if (dnsOnly || access != SubscriptionInfoStore.ConnectionAccess.ALLOWED) {
                     Tile.STATE_INACTIVE
                 } else when (status) {
                     Status.Started -> Tile.STATE_ACTIVE
@@ -38,7 +41,9 @@ class TileService :
                     else -> Tile.STATE_UNAVAILABLE
                 }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                subtitle = if (access != SubscriptionInfoStore.ConnectionAccess.ALLOWED) {
+                subtitle = if (dnsOnly) {
+                    getString(R.string.pxlnet_dns_only)
+                } else if (access != SubscriptionInfoStore.ConnectionAccess.ALLOWED) {
                     getString(R.string.pxlnet_tile_subscription_inactive)
                 } else {
                     when (status) {
@@ -85,6 +90,12 @@ class TileService :
     }
 
     private fun toggleService() {
+        if (PxlDnsProfiles.activeMode(this) == PxlDnsTileMode.DNS_ONLY) {
+            openActivity(Intent(this, MainActivity::class.java)
+                .putExtra(PxlDnsTileService.EXTRA_OPEN_DNS_SETTINGS, true)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP))
+            return
+        }
         when (StartServiceCoordinator.currentStatus() ?: connection.status) {
             Status.Stopped -> startService()
             Status.Started -> BoxService.stop()

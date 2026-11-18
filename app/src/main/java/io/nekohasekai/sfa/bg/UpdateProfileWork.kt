@@ -122,7 +122,7 @@ class UpdateProfileWork {
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    Log.e(TAG, "update profile ${profile.name}", e)
+                    Log.e(TAG, "update profile failed (${e.javaClass.simpleName})")
                     success = false
                 }
             }

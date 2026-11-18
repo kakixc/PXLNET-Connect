@@ -38,6 +38,21 @@ class PxlGuardTest {
     }
 
     @Test
+    fun fallbackCannotSelectAutoGroupThatStillPointsToFailedNode() {
+        val candidates = listOf(
+            PxlGuard.Candidate("AUTO", 20, 500),
+            PxlGuard.Candidate("Fast", 40, 500),
+            PxlGuard.Candidate("Germany Hysteria2", 90, 500),
+        )
+        val leaves = mapOf("AUTO" to "Germany VLESS", "Fast" to "Germany VLESS")
+
+        assertEquals(
+            "Germany Hysteria2",
+            PxlGuard.selectFreshFallback("Germany VLESS", candidates, 500) { leaves[it] ?: it },
+        )
+    }
+
+    @Test
     fun staleOrMissingProbeCannotTriggerFailover() {
         assertNull(PxlGuard.classifyProbeResult(0, 0, 500))
         assertNull(PxlGuard.classifyProbeResult(0, 499, 500))

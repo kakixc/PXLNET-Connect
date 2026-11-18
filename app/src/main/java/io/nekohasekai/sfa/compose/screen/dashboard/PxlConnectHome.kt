@@ -111,12 +111,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
-import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.Application
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.bg.DefaultNetworkMonitor
 import io.nekohasekai.sfa.compose.component.PxlRootTopBar
 import io.nekohasekai.sfa.compose.component.PxlShapeLoadingIndicator
+import io.nekohasekai.sfa.compose.component.pxlPressMotion
 import io.nekohasekai.sfa.compose.component.PxlCatEasterEggDialog
 import io.nekohasekai.sfa.compose.component.rememberPxlCatEasterEggState
 import io.nekohasekai.sfa.compose.theme.performPxlConfirmation
@@ -128,6 +128,8 @@ import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.utils.PxlLocalPreferences
+import io.nekohasekai.sfa.utils.PxlDnsProfiles
+import io.nekohasekai.sfa.utils.PxlDnsTileMode
 import io.nekohasekai.sfa.utils.PxlSecureTokenStore
 import io.nekohasekai.sfa.utils.PxlLatencySource
 import io.nekohasekai.sfa.utils.PxlServerLatencyProbe
@@ -180,6 +182,7 @@ fun DashboardScreen(
     showStatusBar: Boolean = false,
     onOpenNewProfile: (NewProfileArgs) -> Unit = {},
     onOpenAppRouting: () -> Unit = {},
+    onOpenDns: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel(),
     groupsViewModel: GroupsViewModel? = null,
 ) {
@@ -282,10 +285,11 @@ fun DashboardScreen(
         val xhttp = uiState.xhttpServers[tag]
         return ServerChoice(tag, xhttp?.type ?: type, delay, xhttp?.label ?: tag)
     }
-    val serverChoices = selector?.items
+    val liveChoices = selector?.items
         ?.map { serverChoice(it.tag, it.type, it.urlTestDelay) }
-        ?.takeIf { serviceStatus == Status.Started && it.isNotEmpty() }
-        ?: uiState.availableServerTags.map { serverChoice(it, type = "") }
+        ?.takeIf { serviceStatus == Status.Started && it.isNotEmpty() }.orEmpty()
+    val serverChoices = (liveChoices + uiState.availableServerTags.map { serverChoice(it, type = "") })
+        .distinctBy { it.tag }
     val automaticChoices = serverChoices.filter { serverRegion(it.tag) == ServerRegion.AUTO }
     val manualChoices = serverChoices.filter { serverRegion(it.tag) != ServerRegion.AUTO }
     val selectedServer = selector?.selected?.takeIf { serviceStatus == Status.Started } ?: uiState.preferredServerTag
@@ -363,17 +367,19 @@ fun DashboardScreen(
         }
     }
 
-    LaunchedEffect(serviceStatus, selector?.tag, selectedServer, selectedServerReachable) {
+    LaunchedEffect(serviceStatus, selector?.tag, selectedServer) {
         healthCheckTimedOut = false
-        if (serviceStatus == Status.Started && selector != null && !selectedServerReachable) {
-            // URLTest updates may change the delay repeatedly. Those updates must
-            // not restart the timeout and leave Home in "Checking" forever.
-            // A reachable -> unreachable transition starts a new bounded check.
-            delay(600)
-            resolvedGroupsViewModel.urlTest(selector.tag)
-            delay(5_000)
-            resolvedGroupsViewModel.urlTest(selector.tag)
-            delay(4_000)
+        if (serviceStatus == Status.Started && selector != null) {
+            // Delay samples can briefly alternate between zero and positive as
+            // URLTest updates arrive. Keep one deadline per selected server so
+            // that this screen cannot stay in "Checking" indefinitely.
+            if (!selectedServerReachable) {
+                delay(600)
+                resolvedGroupsViewModel.urlTest(selector.tag)
+                delay(5_000)
+                resolvedGroupsViewModel.urlTest(selector.tag)
+                delay(4_000)
+            }
             healthCheckTimedOut = true
         }
     }
@@ -384,7 +390,8 @@ fun DashboardScreen(
         healthCheckTimedOut -> ConnectionReachability.Unreachable
         else -> ConnectionReachability.Checking
     }
-    val displayedServiceStatus = if (subscriptionInactive) Status.Stopped else serviceStatus
+    val dnsOnlyActive = PxlDnsProfiles.enabled(context) && serviceStatus == Status.Started && PxlDnsProfiles.activeMode(context) == PxlDnsTileMode.DNS_ONLY
+    val displayedServiceStatus = if (subscriptionInactive || dnsOnlyActive) Status.Stopped else serviceStatus
     val connectionState = connectionPresentationState(
         serviceStatus = displayedServiceStatus,
         isSwitchingServer = uiState.switchingServerTag != null,
@@ -416,7 +423,7 @@ fun DashboardScreen(
     OverrideTopBar {
         PxlRootTopBar(
             title = "PXLNET Connect",
-            subtitle = BuildConfig.VERSION_NAME,
+            subtitle = "",
             onTitleClick = { catEasterEgg.tap(context) },
             actions = {
                 IconButton(onClick = { showOnboarding = true }) {
@@ -575,7 +582,8 @@ fun DashboardScreen(
                     pickerProbeRequested = true
                     probeRevision++
                 },
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+                    .pxlPressMotion(enabled = serviceStatus in setOf(Status.Started, Status.Stopped) && hasProfile && manualChoices.isNotEmpty()),
                 shape = RoundedCornerShape(18.dp),
                 enabled = serviceStatus in setOf(Status.Started, Status.Stopped) && hasProfile && manualChoices.isNotEmpty(),
             ) {
@@ -607,9 +615,15 @@ fun DashboardScreen(
                     bestPreconnectDelay,
                     manualChoices.any { serverProbeResults[it.tag] == ServerProbeDisplay.Loading },
                 )
+                val missingFromSession = serviceStatus == Status.Started &&
+                    selector?.items?.none { it.tag == item.tag } == true
+                val unavailable = missingFromSession ||
+                    (pickerShowingServerProbes && probe == ServerProbeDisplay.Unavailable)
                 ServerPickerRow(
                     item = item,
                     selected = item.tag == selectedServer,
+                    unavailable = unavailable,
+                    enabled = !missingFromSession,
                     delay = if (pickerShowingServerProbes) {
                         if (autoBest) bestPreconnectDelay else (probe as? ServerProbeDisplay.Measured)?.milliseconds
                     } else {
@@ -617,7 +631,11 @@ fun DashboardScreen(
                     },
                     loading = pickerShowingServerProbes &&
                         (probe == ServerProbeDisplay.Loading || autoLoading),
-                    hint = if (autoBest) stringResource(R.string.pxlnet_latency_best_found) else null,
+                    hint = when {
+                        unavailable -> stringResource(R.string.pxlnet_server_unavailable)
+                        autoBest -> stringResource(R.string.pxlnet_latency_best_found)
+                        else -> null
+                    },
                 ) {
                     hapticFeedback.performPxlConfirmation()
                     viewModel.selectPreferredServer(item.tag)
@@ -745,13 +763,27 @@ fun DashboardScreen(
                 )
             }
         }
+        if (dnsOnlyActive) item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                onClick = onOpenDns,
+            ) {
+                Text(
+                    stringResource(R.string.pxlnet_dns_home_active),
+                    modifier = Modifier.padding(18.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
         item {
             ConnectionControl(
                 serviceStatus = displayedServiceStatus,
                 state = connectionState,
                 reachability = reachability,
                 delay = selectedDisplayedDelay,
-                enabled = (availableOtherProfiles.isNotEmpty() || !subscriptionInactive) && hasProfile && connectionState !in setOf(
+                enabled = !dnsOnlyActive && (availableOtherProfiles.isNotEmpty() || !subscriptionInactive) && hasProfile && connectionState !in setOf(
                     ConnectionPresentationState.Connecting,
                     ConnectionPresentationState.Disconnecting,
                     ConnectionPresentationState.Switching,
@@ -802,47 +834,19 @@ fun DashboardScreen(
                 latencySource = latencySource,
                 enabled = serverChoices.isNotEmpty(),
                 onClick = { if (serverChoices.isNotEmpty()) showServerPicker = true },
+                onMeasurePing = if (hasProfile && manualChoices.isNotEmpty() && serviceStatus in setOf(Status.Started, Status.Stopped)) ({
+                    viewModel.serverProbeCache.clear()
+                    pickerProbeRequested = true
+                    probeRevision++
+                    showServerPicker = true
+                }) else null,
+                onRefresh = if (hasProfile && uiState.updatingProfileId == null &&
+                    uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }?.typed?.remoteURL?.isNotBlank() == true
+                ) ({
+                    uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }?.let(viewModel::updateProfile)
+                }) else null,
+                refreshing = uiState.updatingProfileId != null,
             )
-        }
-
-        if (hasProfile) {
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    FilledTonalButton(
-                        onClick = {
-                            viewModel.serverProbeCache.clear()
-                            pickerProbeRequested = true
-                            probeRevision++
-                            showServerPicker = true
-                        },
-                        enabled = manualChoices.isNotEmpty() && serviceStatus in setOf(Status.Started, Status.Stopped),
-                        modifier = Modifier.weight(1f).height(56.dp),
-                        shape = RoundedCornerShape(20.dp),
-                    ) {
-                        Icon(Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text(stringResource(R.string.pxlnet_measure_ping), modifier = Modifier.padding(start = 6.dp), maxLines = 2)
-                    }
-                    FilledTonalButton(
-                        onClick = {
-                            uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }?.let(viewModel::updateProfile)
-                        },
-                        enabled = uiState.updatingProfileId == null &&
-                            uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }?.typed?.remoteURL?.isNotBlank() == true,
-                        modifier = Modifier.weight(1f).height(56.dp),
-                        shape = RoundedCornerShape(20.dp),
-                    ) {
-                        if (uiState.updatingProfileId != null) {
-                            PxlShapeLoadingIndicator(size = 18.dp)
-                        } else {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                        }
-                        Text(stringResource(R.string.pxlnet_refresh_subscription), modifier = Modifier.padding(start = 6.dp), maxLines = 2)
-                    }
-                }
-            }
         }
 
         if (unavailableXhttpCount > 0) {
@@ -924,7 +928,7 @@ fun DashboardScreen(
                 ) {
                     OutlinedButton(
                         onClick = importFromClipboard,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).pxlPressMotion(),
                         shape = RoundedCornerShape(10.dp),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                     ) {
@@ -934,7 +938,7 @@ fun DashboardScreen(
                     }
                     OutlinedButton(
                         onClick = { onOpenNewProfile(NewProfileArgs()) },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).pxlPressMotion(),
                         shape = RoundedCornerShape(10.dp),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                     ) {
@@ -1373,9 +1377,9 @@ private fun ConnectionControl(
         animationSpec = spring(dampingRatio = 0.78f, stiffness = 650f),
         label = "connect-press",
     )
-    // Hold is restrained; the released tap has the stronger spring, without over-rounding.
+    // A pressed M3E control becomes slightly more compact; keep the VPN action recognizably square.
     val buttonScale = 1f - maxOf(pressMotion * 0.035f, tapMotion.value * 0.11f)
-    val buttonCorner = (52f + maxOf(pressMotion * 12f, tapMotion.value * 7f)).dp
+    val buttonCorner = (52f - maxOf(pressMotion * 16f, tapMotion.value * 8f)).dp
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
@@ -1504,7 +1508,7 @@ private fun QuickTileCard(onAdd: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            OutlinedButton(onClick = onAdd, shape = RoundedCornerShape(50)) {
+            OutlinedButton(onClick = onAdd, shape = RoundedCornerShape(50), modifier = Modifier.pxlPressMotion()) {
                 Text(stringResource(R.string.pxlnet_add))
             }
         }
@@ -1520,42 +1524,42 @@ private fun ServerCard(
     latencySource: PxlLatencySource,
     enabled: Boolean,
     onClick: () -> Unit,
+    onMeasurePing: (() -> Unit)?,
+    onRefresh: (() -> Unit)?,
+    refreshing: Boolean,
 ) {
     val context = LocalContext.current
     Card(
-        modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             ServerLocationIcon(serverTag)
             Column(modifier = Modifier.weight(1f)) {
                 Text(stringResource(R.string.pxlnet_selected_server_label), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(serverTitle(context, serverTag), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+                Text(serverTitle(context, serverTag), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 serverProtocol(serverTag, serverType).takeIf(String::isNotBlank)?.let { protocol ->
                     Text(protocol, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-            }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    stringResource(
-                        if (latencySource == PxlLatencySource.VPN_SERVER) {
-                            R.string.pxlnet_latency_server_short
-                        } else {
-                            R.string.pxlnet_website_delay_short
-                        },
-                    ),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 DelayIndicator(delay, loading)
             }
-            Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
+            if (onMeasurePing != null || onRefresh != null || refreshing) {
+                Row {
+                    IconButton(onClick = { onMeasurePing?.invoke() }, enabled = onMeasurePing != null) {
+                        Icon(Icons.Default.Speed, contentDescription = stringResource(R.string.pxlnet_measure_ping))
+                    }
+                    IconButton(onClick = { onRefresh?.invoke() }, enabled = onRefresh != null) {
+                        if (refreshing) PxlShapeLoadingIndicator(size = 18.dp)
+                        else Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.pxlnet_refresh_subscription))
+                    }
+                }
+            }
         }
     }
 }
@@ -1702,14 +1706,14 @@ private fun PxlOnboardingSheet(
                             onTelegramLogin()
                         },
                         enabled = !telegramLoginPending && !hasTelegramSession,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().pxlPressMotion(enabled = !telegramLoginPending && !hasTelegramSession),
                     ) {
                         Text(stringResource(if (telegramLoginPending) R.string.pxlnet_login_waiting_telegram else R.string.pxlnet_login_telegram))
                     }
-                    OutlinedButton(onClick = onAddLink, modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(onClick = onAddLink, modifier = Modifier.fillMaxWidth().pxlPressMotion()) {
                         Text(stringResource(R.string.pxlnet_add_subscription))
                     }
-                    TextButton(onClick = onImportClipboard, modifier = Modifier.fillMaxWidth()) {
+                    TextButton(onClick = onImportClipboard, modifier = Modifier.fillMaxWidth().pxlPressMotion()) {
                         Text(stringResource(R.string.pxlnet_from_clipboard))
                     }
                 }
@@ -1721,7 +1725,7 @@ private fun PxlOnboardingSheet(
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(
                             onClick = { onSmartRoutingChanged(true) },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).pxlPressMotion(enabled = !smartRouting),
                             enabled = !smartRouting,
                             shape = RoundedCornerShape(10.dp),
                         ) {
@@ -1729,7 +1733,7 @@ private fun PxlOnboardingSheet(
                         }
                         OutlinedButton(
                             onClick = { onSmartRoutingChanged(false) },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).pxlPressMotion(enabled = smartRouting),
                             enabled = smartRouting,
                             shape = RoundedCornerShape(10.dp),
                         ) {
@@ -1765,6 +1769,7 @@ private fun PxlOnboardingSheet(
                 Button(
                     onClick = { if (step < titles.lastIndex) step++ else onFinish() },
                     shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.pxlPressMotion(),
                 ) {
                     Text(stringResource(if (step < titles.lastIndex) R.string.pxlnet_next else R.string.pxlnet_done))
                 }
@@ -1827,6 +1832,8 @@ private fun AccountLoginDialog(
 private fun ServerPickerRow(
     item: ServerChoice,
     selected: Boolean,
+    unavailable: Boolean,
+    enabled: Boolean,
     delay: Int?,
     loading: Boolean,
     hint: String? = null,
@@ -1834,20 +1841,26 @@ private fun ServerPickerRow(
 ) {
     val context = LocalContext.current
     val rowShape = RoundedCornerShape(20.dp)
-    val titleColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-    val supportColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+    val titleColor = when {
+        unavailable -> MaterialTheme.colorScheme.onSurfaceVariant
+        selected -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    val supportColor = if (selected && !unavailable) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 3.dp)
             .clip(rowShape)
-            .background(if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow)
-            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .background(if (selected && !unavailable) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow)
+            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        ServerLocationIcon(item.displayTag)
+        Box(Modifier.graphicsLayer { alpha = if (unavailable) 0.55f else 1f }) {
+            ServerLocationIcon(item.displayTag)
+        }
         Column(modifier = Modifier.weight(1f)) {
             Text(serverTitle(context, item.displayTag, item.type), color = titleColor, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
             val protocol = serverProtocol(item.displayTag, item.type)
@@ -1917,8 +1930,10 @@ private fun serverTitle(context: Context, tag: String, type: String = ""): Strin
         tag.equals("Anti-Block", ignoreCase = true) -> context.getString(R.string.pxlnet_smart_anti_block)
         else -> context.getString(R.string.pxlnet_server_auto)
     }
-    ServerRegion.GERMANY -> context.getString(R.string.pxlnet_country_germany)
-    ServerRegion.FINLAND -> context.getString(R.string.pxlnet_country_finland)
+    ServerRegion.GERMANY -> cleanServerTag(tag).takeIf { it.contains('•') || it.contains('·') }
+        ?: context.getString(R.string.pxlnet_country_germany)
+    ServerRegion.FINLAND -> cleanServerTag(tag).takeIf { it.contains('•') || it.contains('·') }
+        ?: context.getString(R.string.pxlnet_country_finland)
     ServerRegion.OTHER -> cleanServerTag(tag)
 }
 
@@ -1972,7 +1987,17 @@ private fun ServerLocationIcon(tag: String) {
         }
         ServerRegion.OTHER -> {
             val flag = pxlCountryFlag(tag)
-            if (flag != null) Text(flag, style = MaterialTheme.typography.headlineSmall)
+            if (flag == "🇵🇱") {
+                Column(
+                    modifier = Modifier
+                        .size(width = 32.dp, height = 22.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(3.dp)),
+                ) {
+                    Box(Modifier.fillMaxWidth().weight(1f).background(Color.White))
+                    Box(Modifier.fillMaxWidth().weight(1f).background(Color(0xFFDC143C)))
+                }
+            } else if (flag != null) Text(flag, style = MaterialTheme.typography.headlineSmall)
             else Icon(
                 Icons.Default.Public,
                 contentDescription = null,

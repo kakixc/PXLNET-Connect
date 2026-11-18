@@ -36,32 +36,35 @@ internal object PxlXhttpConfig {
     }
 
     /** The caller supplies fresh local SOCKS passwords; never use subscription credentials for them. */
-    fun runtime(links: List<String>, localPort: Int, passwords: Map<String, String>): RuntimeConfig {
-        require(localPort in 1..65535) { "Invalid local SOCKS port" }
+    fun runtime(links: List<String>, localPorts: List<Int>, passwords: Map<String, String>): RuntimeConfig {
         val nodes = links.map(::outbound).distinctBy { it.getValue("tag").jsonPrimitive.content }
         require(nodes.isNotEmpty()) { "No XHTTP servers" }
         val tags = nodes.map { it.getValue("tag").jsonPrimitive.content }
+        require(localPorts.size == tags.size && localPorts.all { it in 1..65535 } &&
+            localPorts.distinct().size == localPorts.size) { "Invalid local SOCKS ports" }
         require(tags.all { !passwords[it].isNullOrBlank() }) { "Missing local SOCKS password" }
+        val portsByTag = tags.zip(localPorts).toMap()
         val xray = buildJsonObject {
             put("inbounds", buildJsonArray {
-                add(buildJsonObject {
-                    put("tag", "pxlnet-xhttp-socks")
-                    put("listen", "127.0.0.1")
-                    put("port", localPort)
-                    put("protocol", "socks")
-                    put("settings", buildJsonObject {
-                        put("auth", "password")
-                        put("accounts", buildJsonArray {
-                            tags.forEach { tag ->
+                tags.forEach { tag ->
+                    add(buildJsonObject {
+                        put("tag", "pxlnet-socks-$tag")
+                        put("listen", "127.0.0.1")
+                        put("port", portsByTag.getValue(tag))
+                        put("protocol", "socks")
+                        put("settings", buildJsonObject {
+                            put("auth", "password")
+                            put("accounts", buildJsonArray {
                                 add(buildJsonObject {
                                     put("user", tag)
                                     put("pass", passwords.getValue(tag))
                                 })
-                            }
+                            })
+                            put("udp", true)
+                            put("ip", "127.0.0.1")
                         })
-                        put("udp", false)
                     })
-                })
+                }
             })
             put("outbounds", buildJsonArray {
                 nodes.forEach(::add)
@@ -72,7 +75,7 @@ internal object PxlXhttpConfig {
                     tags.forEach { tag ->
                         add(buildJsonObject {
                             put("type", "field")
-                            put("user", buildJsonArray { add(JsonPrimitive(tag)) })
+                            put("inboundTag", buildJsonArray { add(JsonPrimitive("pxlnet-socks-$tag")) })
                             put("outboundTag", tag)
                         })
                     }
@@ -89,7 +92,7 @@ internal object PxlXhttpConfig {
                 put("type", "socks")
                 put("tag", tag)
                 put("server", "127.0.0.1")
-                put("server_port", localPort)
+                put("server_port", portsByTag.getValue(tag))
                 put("version", "5")
                 put("username", tag)
                 put("password", passwords.getValue(tag))
@@ -132,7 +135,7 @@ internal object PxlXhttpConfig {
         return Json.encodeToString(JsonObject.serializer(), JsonObject(root + ("outbounds" to updated)))
     }
 
-    /** Adds manual XHTTP choices to Legacy without changing its existing AUTO urltest. */
+    /** Adds XHTTP choices to Legacy after the local companion is ready, including AUTO. */
     fun augmentLegacyConfig(content: String, runtime: RuntimeConfig): String {
         val root = Json.parseToJsonElement(content).jsonObject
         require(root["route"]?.jsonObject?.get("final")?.jsonPrimitive?.content == "PXLNET") {
@@ -157,9 +160,30 @@ internal object PxlXhttpConfig {
                 "Missing Legacy XHTTP-only placeholder"
             }
         }
-        val updatedSelector = JsonObject(selector +
-            ("outbounds" to JsonArray(members + newTags.map(::JsonPrimitive))))
-        val updated = JsonArray(existing.map { if (it === selector) updatedSelector else it } + runtime.singboxOutbounds)
+        val selectorMembers = if (auto == null) listOf(JsonPrimitive("AUTO")) else members
+        val selectorFields = selector + ("outbounds" to JsonArray(selectorMembers + newTags.map(::JsonPrimitive))) +
+            if (auto == null) mapOf("default" to JsonPrimitive("AUTO")) else emptyMap()
+        val updatedSelector = JsonObject(selectorFields)
+        val updatedAuto = auto?.let {
+            val choices = it["outbounds"]?.jsonArray ?: error("Missing Legacy AUTO members")
+            JsonObject(it + ("outbounds" to JsonArray(choices + newTags.map(::JsonPrimitive))))
+        }
+        val newAuto = if (auto == null) buildJsonObject {
+            put("type", "urltest")
+            put("tag", "AUTO")
+            put("outbounds", JsonArray(newTags.map(::JsonPrimitive)))
+            put("url", "https://www.gstatic.com/generate_204")
+            put("interval", "3m")
+            put("tolerance", 50)
+            put("interrupt_exist_connections", true)
+        } else null
+        val updated = JsonArray(existing.map { outbound ->
+            when (outbound) {
+                selector -> updatedSelector
+                auto -> updatedAuto ?: outbound
+                else -> outbound
+            }
+        } + listOfNotNull(newAuto) + runtime.singboxOutbounds)
         return Json.encodeToString(JsonObject.serializer(), JsonObject(root + ("outbounds" to updated)))
     }
 
@@ -179,7 +203,8 @@ internal object PxlXhttpConfig {
         val security = query["security"]?.lowercase()
         require(security == "reality" || security == "tls") { "XHTTP security is unsupported" }
         val xhttpExtra = query["extra"]?.takeIf(String::isNotBlank)?.let { encoded ->
-            runCatching { Json.parseToJsonElement(encoded).jsonObject }.getOrNull()
+            runCatching { Json.parseToJsonElement(encoded).jsonObject }
+                .getOrElse { throw IllegalArgumentException("Invalid XHTTP extra settings") }
         }
         val padding = query["x_padding_bytes"]?.takeIf(String::isNotBlank)
         val xhttpExtraFields = buildMap {
@@ -230,8 +255,8 @@ internal object PxlXhttpConfig {
                         put("users", buildJsonArray {
                             add(buildJsonObject {
                                 put("id", uuid)
-                                put("encryption", "none")
-                                // Vision requires direct TLS/REALITY; XHTTP wraps that transport.
+                                put("encryption", query["encryption"].orEmpty().ifBlank { "none" })
+                                // This Xray core cannot use Vision over XHTTP.
                             })
                         })
                     })
@@ -242,6 +267,6 @@ internal object PxlXhttpConfig {
     }
 
     private fun decode(value: String): String =
-        runCatching { URLDecoder.decode(value, StandardCharsets.UTF_8.name()) }
+        runCatching { URLDecoder.decode(value.replace("+", "%2B"), StandardCharsets.UTF_8.name()) }
             .getOrElse { throw IllegalArgumentException("Invalid XHTTP encoding") }
 }

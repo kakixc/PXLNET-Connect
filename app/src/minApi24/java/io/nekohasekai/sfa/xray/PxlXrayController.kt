@@ -8,6 +8,7 @@ import android.net.VpnService
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import android.os.RemoteException
+import android.util.Log
 import io.nekohasekai.sfa.bg.VPNService
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -233,6 +234,8 @@ class PxlXrayController(
 
     private inner class Session {
         val active = AtomicBoolean(true)
+        private val loggedProtectedSocket = AtomicBoolean(false)
+        private val loggedProtectionFailure = AtomicBoolean(false)
         val protector = object : IProtectSocket.Stub() {
             override fun isReady(): Boolean = isUsable()
 
@@ -241,8 +244,17 @@ class PxlXrayController(
                 return socket.use { descriptor ->
                     if (!isUsable()) return@use false
                     try {
-                        owner.protect(descriptor.fd)
+                        owner.protect(descriptor.fd).also { protected ->
+                            if (protected && loggedProtectedSocket.compareAndSet(false, true)) {
+                                Log.i("PxlXrayController", "XHTTP outbound socket protected")
+                            } else if (!protected && loggedProtectionFailure.compareAndSet(false, true)) {
+                                Log.w("PxlXrayController", "XHTTP outbound socket protection failed")
+                            }
+                        }
                     } catch (_: RuntimeException) {
+                        if (loggedProtectionFailure.compareAndSet(false, true)) {
+                            Log.w("PxlXrayController", "XHTTP outbound socket protection failed")
+                        }
                         false
                     }
                 }
