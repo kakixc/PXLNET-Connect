@@ -19,6 +19,9 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.cos
@@ -41,7 +44,7 @@ fun PxlShapeLoadingIndicator(modifier: Modifier = Modifier, size: Dp = 20.dp, co
         )
         animatedPhase
     } else 0f
-    Canvas(modifier.size(size)) {
+    Canvas(modifier.size(size).semantics { progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate }) {
         val side = min(this.size.width, this.size.height)
         val morph = ((1f - cos(phase * Math.PI * 2).toFloat()) / 2f)
         val width = side * (0.68f + 0.16f * morph)

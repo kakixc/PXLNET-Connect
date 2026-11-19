@@ -64,6 +64,7 @@
     <string name="pxlnet_dns_notification_permission_needed">Allow notifications in Android settings, then try connecting DNS again</string>
     <string name="pxlnet_dns_save_and_apply">Save and apply</string>
     <string name="pxlnet_dns_apply_failed">Could not apply DNS changes. Check the connection and try again.</string>
+    <string name="pxlnet_dns_active_profile">Running now</string>
     <string name="pxlnet_continue_setup">Continue setup</string>
     <string name="pxlnet_routing_preview_title">Apply routing mode?</string>
     <string name="pxlnet_routing_preview_apply">Apply</string>

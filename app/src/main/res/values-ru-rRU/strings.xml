@@ -886,6 +886,7 @@
     <string name="pxlnet_dns_notification_permission_needed">Разрешите уведомления в настройках Android и повторите подключение DNS</string>
     <string name="pxlnet_dns_save_and_apply">Сохранить и применить</string>
     <string name="pxlnet_dns_apply_failed">Не удалось применить DNS. Проверьте подключение и повторите попытку.</string>
+    <string name="pxlnet_dns_active_profile">Работает сейчас</string>
     <string name="pxlnet_continue_setup">Продолжить настройку</string>
     <string name="pxlnet_routing_preview_title">Применить маршрутизацию?</string>
     <string name="pxlnet_routing_preview_apply">Применить</string>

@@ -146,7 +146,8 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
     var startWithVpn by remember(revision) { mutableStateOf(PxlDnsProfiles.startWithVpn(context)) }
     val activeDnsMode = PxlDnsProfiles.activeMode(context)
     val dnsActive = activeDnsMode != null && serviceStatus == Status.Started
-    val activeProfile = if (dnsActive) profiles.firstOrNull { it.id == PxlDnsProfiles.activeProfileId(context) } else null
+    val activeProfileId = PxlDnsProfiles.activeProfileId(context)
+    val activeProfile = if (dnsActive) profiles.firstOrNull { it.id == activeProfileId } else null
     val vpnActive = serviceStatus == Status.Started && activeDnsMode != PxlDnsTileMode.DNS_ONLY
     val dnsBusy = serviceStatus == Status.Starting || serviceStatus == Status.Stopping
     val floatingNavInset = LocalPxlFloatingNavInset.current
@@ -449,6 +450,7 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
         }
         if (!settingsOnly) items(profiles, key = { it.id }) { profile ->
             val isSelected = selected?.id == profile.id
+            val isRunning = dnsActive && activeProfileId == profile.id
             Card(
                 shape = RoundedCornerShape(if (isSelected) 32.dp else 24.dp),
                 colors = CardDefaults.cardColors(containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow),
@@ -471,6 +473,12 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
                         }
                         Column(Modifier.weight(1f)) {
                             Text(profile.name, style = MaterialTheme.typography.titleMedium)
+                            if (isRunning) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                                    Text(stringResource(R.string.pxlnet_dns_active_profile), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                }
+                            }
                             Text(
                                 runCatching { PxlDnsEndpoint.parse(profile.address) }.getOrNull()?.let { "${it.type.uppercase()} · ${it.host}" } ?: profile.address,
                                 style = MaterialTheme.typography.bodySmall,
@@ -605,6 +613,8 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
             Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                 if (dnsBusy) {
                     PxlShapeLoadingIndicator(size = 30.dp, color = actionContentColor)
+                    Spacer(Modifier.size(12.dp))
+                    Text(stringResource(if (serviceStatus == Status.Starting) R.string.pxlnet_connecting else R.string.pxlnet_disconnecting), style = MaterialTheme.typography.titleMedium)
                 } else {
                     AnimatedContent(
                         targetState = dnsActive,
@@ -684,11 +694,11 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
             onChooseIcon = { showIconPicker = true },
             onChooseApps = { showAppPicker = true },
             onDelete = if (candidate.id.isNotBlank() &&
-                (PxlDnsProfiles.activeMode(context) == null || PxlDnsProfiles.activeProfileId(context) != candidate.id)) {
+                (PxlDnsProfiles.activeMode(context) == null || activeProfileId != candidate.id)) {
                 { editing = null; deleteCandidate = candidate }
             } else null,
             canApplyNow = dnsActive,
-            editingActiveProfile = dnsActive && candidate.id == PxlDnsProfiles.activeProfileId(context),
+            editingActiveProfile = dnsActive && candidate.id == activeProfileId,
             onSave = { profile, applyNow ->
                 runCatching {
                     PxlDnsProfiles.save(context, profile).also { saved ->
