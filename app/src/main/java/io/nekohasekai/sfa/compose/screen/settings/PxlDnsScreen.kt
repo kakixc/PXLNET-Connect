@@ -25,9 +25,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
-import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -92,6 +90,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.stringResource
@@ -132,10 +131,6 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
     val profiles = remember(revision) { PxlDnsProfiles.all(context) }
     val selected = remember(revision) { PxlDnsProfiles.selected(context) }
     var editing by remember { mutableStateOf<PxlDnsProfile?>(null) }
-    var quickAddress by remember { mutableStateOf("") }
-    val quickAddressValid = remember(quickAddress) {
-        quickAddress.isNotBlank() && runCatching { PxlDnsEndpoint.parse(quickAddress) }.isSuccess
-    }
     var probeJob by remember { mutableStateOf<Job?>(null) }
     var probeBusy by remember { mutableStateOf(false) }
     var probeResult by remember { mutableStateOf<String?>(null) }
@@ -149,7 +144,6 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
     var pendingPermissionMode by remember { mutableStateOf<PxlDnsTileMode?>(null) }
     var tileMode by remember(revision) { mutableStateOf(PxlDnsProfiles.tileMode(context)) }
     var startWithVpn by remember(revision) { mutableStateOf(PxlDnsProfiles.startWithVpn(context)) }
-    val addressBringIntoView = remember { BringIntoViewRequester() }
     val activeDnsMode = PxlDnsProfiles.activeMode(context)
     val dnsActive = activeDnsMode != null && serviceStatus == Status.Started
     val activeProfile = if (dnsActive) profiles.firstOrNull { it.id == PxlDnsProfiles.activeProfileId(context) } else null
@@ -446,29 +440,6 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
             }
         }
         if (!settingsOnly) item {
-            OutlinedTextField(
-                value = quickAddress,
-                onValueChange = { quickAddress = it },
-                isError = quickAddress.isNotBlank() && !quickAddressValid,
-                modifier = Modifier.fillMaxWidth()
-                    .bringIntoViewRequester(addressBringIntoView)
-                    .onFocusChanged { if (it.isFocused) scope.launch { addressBringIntoView.bringIntoView() } },
-                singleLine = true,
-                shape = RoundedCornerShape(28.dp),
-                label = { Text(stringResource(R.string.pxlnet_dns_server)) },
-                placeholder = { Text(stringResource(R.string.pxlnet_dns_server_hint)) },
-                supportingText = if (quickAddress.isNotBlank() && !quickAddressValid) ({ Text(stringResource(R.string.pxlnet_dns_invalid_address)) }) else null,
-                trailingIcon = {
-                    IconButton(onClick = {
-                        editing = PxlDnsProfile("", "", quickAddress.trim())
-                        quickAddress = ""
-                    }, enabled = quickAddressValid) {
-                        Icon(Icons.Default.Add, contentDescription = stringResource(R.string.pxlnet_dns_add_profile))
-                    }
-                },
-            )
-        }
-        if (!settingsOnly) item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.pxlnet_dns_profiles), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
                 IconButton(onClick = { editing = PxlDnsProfile("", "", "") }) {
@@ -485,7 +456,7 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
             ) {
                 Row(Modifier.fillMaxWidth().padding(start = 16.dp, top = 10.dp, bottom = 10.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Row(
-                        Modifier.weight(1f).clickable {
+                        Modifier.weight(1f).selectable(selected = isSelected, role = Role.RadioButton) {
                             PxlDnsProfiles.select(context, profile.id)
                             revision++
                             if (serviceStatus == Status.Started && PxlDnsProfiles.activeMode(context) != null) {
@@ -622,8 +593,6 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
             colors = ButtonDefaults.buttonColors(
                 containerColor = actionColor,
                 contentColor = actionContentColor,
-                disabledContainerColor = actionColor,
-                disabledContentColor = actionContentColor,
             ),
             interactionSource = actionInteraction,
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp),
