@@ -718,10 +718,24 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
                 (PxlDnsProfiles.activeMode(context) == null || PxlDnsProfiles.activeProfileId(context) != candidate.id)) {
                 { editing = null; deleteCandidate = candidate }
             } else null,
-            onSave = {
-                runCatching { PxlDnsProfiles.save(context, it) }.onSuccess {
+            canApplyNow = dnsActive,
+            editingActiveProfile = dnsActive && candidate.id == PxlDnsProfiles.activeProfileId(context),
+            onSave = { profile, applyNow ->
+                runCatching {
+                    PxlDnsProfiles.save(context, profile).also { saved ->
+                        if (applyNow) PxlDnsProfiles.select(context, saved.id)
+                    }
+                }.onSuccess {
                     editing = null
-                    revision++
+                    if (applyNow) {
+                        scope.launch {
+                            val applied = withContext(Dispatchers.IO) {
+                                runCatching { Libbox.newStandaloneCommandClient().serviceReload() }.isSuccess
+                            }
+                            revision++
+                            if (!applied) Toast.makeText(context, R.string.pxlnet_dns_apply_failed, Toast.LENGTH_LONG).show()
+                        }
+                    } else revision++
                 }.onFailure { error -> Toast.makeText(context, error.message, Toast.LENGTH_LONG).show() }
             },
         )
@@ -742,7 +756,9 @@ private fun DnsProfileEditor(
     onChooseIcon: () -> Unit,
     onChooseApps: () -> Unit,
     onDelete: (() -> Unit)?,
-    onSave: (PxlDnsProfile) -> Unit,
+    canApplyNow: Boolean,
+    editingActiveProfile: Boolean,
+    onSave: (PxlDnsProfile, Boolean) -> Unit,
 ) {
     var name by remember(initial.id) { mutableStateOf(initial.name) }
     var address by remember(initial.id) { mutableStateOf(initial.address) }
@@ -855,15 +871,23 @@ private fun DnsProfileEditor(
             }
             HorizontalDivider()
             Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f).pxlPressMotion()) {
-                    Text(stringResource(R.string.pxlnet_dns_cancel))
+                val candidate = initial.copy(name = name, address = address, domains = domains.split(',').map(String::trim).filter(String::isNotBlank))
+                val canSave = name.isNotBlank() && address.isNotBlank() && error == null
+                if (!canApplyNow || editingActiveProfile) {
+                    OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f).pxlPressMotion()) {
+                        Text(stringResource(R.string.pxlnet_dns_cancel))
+                    }
+                } else {
+                    OutlinedButton(onClick = { onSave(candidate, false) }, enabled = canSave, modifier = Modifier.weight(1f).pxlPressMotion(enabled = canSave)) {
+                        Text(stringResource(R.string.pxlnet_dns_save))
+                    }
                 }
                 Button(
-                    onClick = { onSave(initial.copy(name = name, address = address, domains = domains.split(',').map(String::trim).filter(String::isNotBlank))) },
-                    enabled = name.isNotBlank() && address.isNotBlank() && error == null,
-                    modifier = Modifier.weight(1.5f).pxlPressMotion(enabled = name.isNotBlank() && address.isNotBlank() && error == null),
+                    onClick = { onSave(candidate, canApplyNow) },
+                    enabled = canSave,
+                    modifier = Modifier.weight(1.5f).pxlPressMotion(enabled = canSave),
                 ) {
-                    Text(stringResource(R.string.pxlnet_dns_save))
+                    Text(stringResource(if (canApplyNow) R.string.pxlnet_dns_save_and_apply else R.string.pxlnet_dns_save))
                 }
             }
         }

@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -36,6 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -86,6 +88,7 @@ fun PxlAppRoutingScreen(
     }
     var mode by remember { mutableStateOf(savedPreset) }
     var modeChangeInProgress by remember { mutableStateOf(false) }
+    var pendingPreset by remember { mutableStateOf<PxlRoutingPreset?>(null) }
     val presetPackages = remember {
         mapOf(
             PxlRoutingPreset.Games to PxlRoutingPresets.matchedPackages(context, PxlRoutingPreset.Games),
@@ -118,6 +121,53 @@ fun PxlAppRoutingScreen(
                 PxlRoutingDiagnostics.record(context, next, PxlRoutingDiagnostics.Outcome.Reverted)
             }
         }
+    }
+
+    fun requestMode(next: PxlRoutingPreset) {
+        if (next == mode || modeChangeInProgress) return
+        if (next in setOf(PxlRoutingPreset.Games, PxlRoutingPreset.Video, PxlRoutingPreset.Banks) &&
+            presetPackages[next].isNullOrEmpty()) {
+            Toast.makeText(context, R.string.pxlnet_preset_no_matches, Toast.LENGTH_LONG).show()
+            onManageApps()
+        } else if (next == PxlRoutingPreset.SelectedApps && Settings.perAppProxyList.isEmpty()) {
+            onManageApps()
+        } else pendingPreset = next
+    }
+
+    pendingPreset?.let { next ->
+        val packages = if (next == PxlRoutingPreset.SelectedApps) Settings.perAppProxyList else presetPackages[next].orEmpty()
+        val appNames = remember(next, packages) {
+            packages.map { packageName ->
+                runCatching {
+                    context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(packageName, 0)).toString()
+                }.getOrDefault(packageName)
+            }.sorted()
+        }
+        AlertDialog(
+            onDismissRequest = { pendingPreset = null },
+            title = { Text(stringResource(R.string.pxlnet_routing_preview_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(when (next) {
+                        PxlRoutingPreset.Full -> R.string.pxlnet_routing_preview_full
+                        PxlRoutingPreset.Smart -> R.string.pxlnet_routing_preview_smart
+                        PxlRoutingPreset.Banks -> R.string.pxlnet_routing_preview_exclude
+                        else -> R.string.pxlnet_routing_preview_include
+                    }))
+                    if (appNames.isNotEmpty()) {
+                        Text(stringResource(R.string.pxlnet_selected_apps_count, appNames.size), style = MaterialTheme.typography.titleSmall)
+                        Text(appNames.take(8).joinToString(" · ") + if (appNames.size > 8) "…" else "")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingPreset = null
+                    applyMode(next)
+                }) { Text(stringResource(R.string.pxlnet_routing_preview_apply)) }
+            },
+            dismissButton = { TextButton(onClick = { pendingPreset = null }) { Text(stringResource(R.string.cancel)) } },
+        )
     }
 
     OverrideTopBar {
@@ -161,7 +211,7 @@ fun PxlAppRoutingScreen(
                 description = stringResource(R.string.pxlnet_route_all_description),
                 selected = mode == PxlRoutingPreset.Full,
                 enabled = !modeChangeInProgress,
-                onClick = { applyMode(PxlRoutingPreset.Full) },
+                onClick = { requestMode(PxlRoutingPreset.Full) },
             )
         }
         item {
@@ -171,7 +221,7 @@ fun PxlAppRoutingScreen(
                 description = stringResource(R.string.pxlnet_route_smart_description),
                 selected = mode == PxlRoutingPreset.Smart,
                 enabled = !modeChangeInProgress,
-                onClick = { applyMode(PxlRoutingPreset.Smart) },
+                onClick = { requestMode(PxlRoutingPreset.Smart) },
             )
         }
         item {
@@ -184,7 +234,7 @@ fun PxlAppRoutingScreen(
                 ),
                 selected = mode == PxlRoutingPreset.Games,
                 enabled = !modeChangeInProgress,
-                onClick = { applyMode(PxlRoutingPreset.Games) },
+                onClick = { requestMode(PxlRoutingPreset.Games) },
             )
         }
         item {
@@ -197,7 +247,7 @@ fun PxlAppRoutingScreen(
                 ),
                 selected = mode == PxlRoutingPreset.Video,
                 enabled = !modeChangeInProgress,
-                onClick = { applyMode(PxlRoutingPreset.Video) },
+                onClick = { requestMode(PxlRoutingPreset.Video) },
             )
         }
         item {
@@ -210,7 +260,7 @@ fun PxlAppRoutingScreen(
                 ),
                 selected = mode == PxlRoutingPreset.Banks,
                 enabled = !modeChangeInProgress,
-                onClick = { applyMode(PxlRoutingPreset.Banks) },
+                onClick = { requestMode(PxlRoutingPreset.Banks) },
             )
         }
         item {
@@ -220,7 +270,7 @@ fun PxlAppRoutingScreen(
                 description = stringResource(R.string.pxlnet_route_selected_description),
                 selected = mode == PxlRoutingPreset.SelectedApps,
                 enabled = !modeChangeInProgress,
-                onClick = { applyMode(PxlRoutingPreset.SelectedApps) },
+                onClick = { requestMode(PxlRoutingPreset.SelectedApps) },
             )
         }
         if (mode in setOf(

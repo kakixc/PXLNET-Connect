@@ -884,7 +884,15 @@
     <string name="pxlnet_dns_no_profile">Сначала создайте профиль DNS</string>
     <string name="pxlnet_dns_requires_vpn">Выберите VPN-профиль для режима DNS + VPN</string>
     <string name="pxlnet_dns_notification_permission_needed">Разрешите уведомления в настройках Android и повторите подключение DNS</string>
+    <string name="pxlnet_dns_save_and_apply">Сохранить и применить</string>
+    <string name="pxlnet_dns_apply_failed">Не удалось применить DNS. Проверьте подключение и повторите попытку.</string>
     <string name="pxlnet_continue_setup">Продолжить настройку</string>
+    <string name="pxlnet_routing_preview_title">Применить маршрутизацию?</string>
+    <string name="pxlnet_routing_preview_apply">Применить</string>
+    <string name="pxlnet_routing_preview_full">Все приложения будут работать через VPN.</string>
+    <string name="pxlnet_routing_preview_smart">Правила Smart Routing определят, какой трафик пойдёт через VPN.</string>
+    <string name="pxlnet_routing_preview_include">Указанные приложения будут работать через VPN. Остальные — напрямую.</string>
+    <string name="pxlnet_routing_preview_exclude">Указанные приложения будут работать напрямую. Остальные — через VPN.</string>
     <string name="pxlnet_dns_other_vpn_warning">Может работать другой VPN. Режим DNS-only использует единственный VPN-слот Android и может заменить это подключение. Продолжить?</string>
     <string name="pxlnet_dns_vpn_running_warning">PXLNET VPN сейчас работает. Режим «Только DNS» заменит его. Выберите «DNS + VPN», чтобы сохранить соединение, либо подтвердите переключение.</string>
     <string name="pxlnet_dns_switch">Переключить на DNS-only</string>
