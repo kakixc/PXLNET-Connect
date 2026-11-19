@@ -20,6 +20,8 @@ import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.ProfileManager
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.utils.PxlLinks
+import io.nekohasekai.sfa.utils.PxlDnsProfiles
+import io.nekohasekai.sfa.utils.PxlDnsTileMode
 import io.nekohasekai.sfa.utils.PxlUiPreferences
 import io.nekohasekai.sfa.utils.PxlSubscriptionConverter
 import io.nekohasekai.sfa.utils.SubscriptionInfoStore
@@ -48,6 +50,10 @@ class PxlConnectWidgetProvider : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         if (intent.action != ACTION_TOGGLE) return
+        if (PxlDnsProfiles.activeMode(context) == PxlDnsTileMode.DNS_ONLY) {
+            context.startActivity(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP))
+            return
+        }
         if (StartServiceCoordinator.currentStatus() == Status.Started) {
             BoxService.stop()
             updateAll(context, Status.Stopping)
@@ -131,12 +137,18 @@ class PxlConnectWidgetProvider : AppWidgetProvider() {
                     val secondsLeft = (expiry - System.currentTimeMillis() / 1000).coerceAtLeast(0)
                     (secondsLeft + TimeUnit.DAYS.toSeconds(1) - 1) / TimeUnit.DAYS.toSeconds(1)
                 }
+            val dnsOnlyActive = PxlDnsProfiles.activeMode(context) == PxlDnsTileMode.DNS_ONLY
             return WidgetSnapshot(
-                status = explicitStatus ?: StartServiceCoordinator.currentStatus() ?: Status.Stopped,
+                status = if (dnsOnlyActive) StartServiceCoordinator.currentStatus() ?: explicitStatus ?: Status.Stopped
+                    else explicitStatus ?: StartServiceCoordinator.currentStatus() ?: Status.Stopped,
                 profileName = profile?.name,
                 serverName = selectedServer,
                 daysLeft = daysLeft,
                 access = access,
+                dnsOnlyActive = dnsOnlyActive,
+                dnsOnlyProfileName = if (dnsOnlyActive) {
+                    PxlDnsProfiles.all(context).firstOrNull { it.id == PxlDnsProfiles.activeProfileId(context) }?.name
+                } else null,
             )
         }
 
@@ -146,8 +158,9 @@ class PxlConnectWidgetProvider : AppWidgetProvider() {
             snapshot: WidgetSnapshot,
         ): RemoteViews {
             val inactiveSubscription = snapshot.access != SubscriptionInfoStore.ConnectionAccess.ALLOWED
-            val active = !inactiveSubscription && snapshot.status == Status.Started
-            val switching = !inactiveSubscription && (snapshot.status == Status.Starting || snapshot.status == Status.Stopping)
+            val dnsOnly = snapshot.dnsOnlyActive && snapshot.status == Status.Started
+            val active = !inactiveSubscription && !dnsOnly && snapshot.status == Status.Started
+            val switching = !inactiveSubscription && !dnsOnly && (snapshot.status == Status.Starting || snapshot.status == Status.Stopping)
             val compact = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 180) < 180
             val style = PxlUiPreferences.WidgetColorStyle.forAndroidVersion(
                 PxlUiPreferences.readWidgetColorStyle(context), Build.VERSION.SDK_INT,
@@ -198,6 +211,7 @@ class PxlConnectWidgetProvider : AppWidgetProvider() {
                     R.id.widget_status,
                     context.getString(
                         when {
+                            dnsOnly -> R.string.pxlnet_widget_dns_only
                             inactiveSubscription -> R.string.pxlnet_widget_subscription_inactive
                             switching -> R.string.pxlnet_widget_switching
                             active -> R.string.pxlnet_widget_protected
@@ -207,7 +221,8 @@ class PxlConnectWidgetProvider : AppWidgetProvider() {
                 )
                 setTextViewText(
                     R.id.widget_server,
-                    if (inactiveSubscription) context.getString(R.string.pxlnet_widget_subscription_inactive)
+                    if (dnsOnly) snapshot.dnsOnlyProfileName ?: context.getString(R.string.pxlnet_dns_only)
+                    else if (inactiveSubscription) context.getString(R.string.pxlnet_widget_subscription_inactive)
                     else snapshot.serverName?.takeUnless { it.equals("AUTO", true) }
                         ?: snapshot.profileName
                         ?: context.getString(R.string.pxlnet_widget_no_subscription),
@@ -247,7 +262,7 @@ class PxlConnectWidgetProvider : AppWidgetProvider() {
                 // choose another available profile instead of leaving the tap with no response.
                 setOnClickPendingIntent(
                     R.id.widget_power,
-                    if (inactiveSubscription) openAppPendingIntent(context) else togglePendingIntent(context),
+                    if (inactiveSubscription || dnsOnly) openAppPendingIntent(context) else togglePendingIntent(context),
                 )
                 setOnClickPendingIntent(R.id.widget_root, openAppPendingIntent(context))
                 setOnClickPendingIntent(R.id.widget_expiry, renewPendingIntent(context))
@@ -283,4 +298,6 @@ private data class WidgetSnapshot(
     val serverName: String?,
     val daysLeft: Long?,
     val access: SubscriptionInfoStore.ConnectionAccess,
+    val dnsOnlyActive: Boolean,
+    val dnsOnlyProfileName: String?,
 )

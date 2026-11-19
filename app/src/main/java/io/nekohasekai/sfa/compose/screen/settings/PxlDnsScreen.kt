@@ -145,8 +145,6 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
     var deleteCandidate by remember { mutableStateOf<PxlDnsProfile?>(null) }
     var showVpnWarning by remember(confirmTileStart) { mutableStateOf(confirmTileStart) }
     var warningIsOwnVpn by remember { mutableStateOf(false) }
-    var switchWhenStopped by remember { mutableStateOf(false) }
-    var switchToVpnWhenStopped by remember { mutableStateOf(false) }
     var pendingPermissionMode by remember { mutableStateOf<PxlDnsTileMode?>(null) }
     var tileMode by remember(revision) { mutableStateOf(PxlDnsProfiles.tileMode(context)) }
     var startWithVpn by remember(revision) { mutableStateOf(PxlDnsProfiles.startWithVpn(context)) }
@@ -205,7 +203,9 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
                 if (serviceStatus == Status.Started) {
                     BoxService.setIntegratedDnsEnabled(true)
                 } else if (StartServiceCoordinator.preflight(context, serviceStatus) == StartServiceCoordinator.Decision.START) {
-                    StartServiceCoordinator.start(StartServiceCoordinator.Source.DNS_SCREEN, PxlDnsTileMode.DNS_AND_VPN)
+                    if (!StartServiceCoordinator.start(StartServiceCoordinator.Source.DNS_SCREEN, PxlDnsTileMode.DNS_AND_VPN)) {
+                        Toast.makeText(context, R.string.pxlnet_dns_requires_vpn, Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }
@@ -240,8 +240,14 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
         }
         if (mode == PxlDnsTileMode.DNS_AND_VPN &&
             serviceStatus == Status.Started && PxlDnsProfiles.activeMode(context) == PxlDnsTileMode.DNS_ONLY) {
-            switchToVpnWhenStopped = true
-            BoxService.stop()
+            scope.launch {
+                withContext(Dispatchers.IO) { Settings.rebuildServiceMode() }
+                if (Settings.serviceMode == ServiceMode.VPN) {
+                    StartServiceCoordinator.switchMode(StartServiceCoordinator.Source.DNS_SCREEN, mode)
+                } else {
+                    Toast.makeText(context, R.string.pxlnet_dns_requires_vpn, Toast.LENGTH_SHORT).show()
+                }
+            }
             return
         }
         if (mode == PxlDnsTileMode.DNS_ONLY && !confirmed) {
@@ -275,7 +281,9 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
                 BoxService.setIntegratedDnsEnabled(true)
             } else {
                 when (StartServiceCoordinator.preflight(context, serviceStatus)) {
-                    StartServiceCoordinator.Decision.START -> StartServiceCoordinator.start(StartServiceCoordinator.Source.DNS_SCREEN, mode)
+                    StartServiceCoordinator.Decision.START -> if (!StartServiceCoordinator.start(StartServiceCoordinator.Source.DNS_SCREEN, mode)) {
+                        Toast.makeText(context, R.string.pxlnet_dns_requires_vpn, Toast.LENGTH_SHORT).show()
+                    }
                     StartServiceCoordinator.Decision.OPEN_APP_FOR_VPN_PERMISSION -> {
                         pendingPermissionMode = mode
                         vpnPermission.launch(VpnService.prepare(context) ?: return@launch)
@@ -290,18 +298,6 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
         }
     }
 
-    LaunchedEffect(serviceStatus, switchWhenStopped) {
-        if (switchWhenStopped && serviceStatus == Status.Stopped) {
-            switchWhenStopped = false
-            requestStart(PxlDnsTileMode.DNS_ONLY, true)
-        }
-    }
-    LaunchedEffect(serviceStatus, switchToVpnWhenStopped) {
-        if (switchToVpnWhenStopped && serviceStatus == Status.Stopped) {
-            switchToVpnWhenStopped = false
-            requestStart(PxlDnsTileMode.DNS_AND_VPN)
-        }
-    }
     LaunchedEffect(tileStartMode, showIntroduction) {
         if (!showIntroduction) PxlDnsTileMode.entries.firstOrNull { it.name == tileStartMode }?.let(::requestStart)
     }
@@ -645,8 +641,7 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
             confirmButton = { TextButton(onClick = {
                 showVpnWarning = false
                 if (warningIsOwnVpn) {
-                    switchWhenStopped = true
-                    BoxService.stop()
+                    StartServiceCoordinator.switchMode(StartServiceCoordinator.Source.DNS_SCREEN, PxlDnsTileMode.DNS_ONLY)
                 } else requestStart(PxlDnsTileMode.DNS_ONLY, true)
             }) { Text(stringResource(R.string.pxlnet_dns_switch)) } },
             dismissButton = { TextButton(onClick = { showVpnWarning = false }) { Text(stringResource(R.string.pxlnet_dns_cancel)) } },

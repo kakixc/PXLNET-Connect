@@ -138,6 +138,7 @@ internal object StartServiceCoordinator {
 
     /** Starts only after [preflight] returned [Decision.START]. */
     fun start(source: Source, dnsMode: PxlDnsTileMode? = null, restoreMode: Boolean = false): Boolean {
+        if (dnsMode == PxlDnsTileMode.DNS_AND_VPN && Settings.serviceMode != ServiceMode.VPN) return false
         if (SubscriptionInfoStore.connectionAccess(Application.application, Settings.selectedProfile) != SubscriptionInfoStore.ConnectionAccess.ALLOWED) {
             Log.i(TAG, "start blocked: inactive selected subscription source=$source")
             return false
@@ -207,6 +208,11 @@ internal object StartServiceCoordinator {
 
     /** The target survives a Compose screen leaving while the old service stops. */
     fun switchMode(source: Source, target: PxlDnsTileMode): Boolean {
+        val context = Application.application
+        if (!PxlDnsProfiles.enabled(context) || PxlDnsProfiles.selected(context) == null) return false
+        if (target == PxlDnsTileMode.DNS_AND_VPN &&
+            (Settings.serviceMode != ServiceMode.VPN || Settings.selectedProfile == -1L ||
+                SubscriptionInfoStore.connectionAccess(context, Settings.selectedProfile) != SubscriptionInfoStore.ConnectionAccess.ALLOWED)) return false
         synchronized(lock) {
             if (lastKnownStatus != Status.Started || pendingStart != null || pendingTransition != null) return false
             pendingTransition = PendingTransition(source, target)

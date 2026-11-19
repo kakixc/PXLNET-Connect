@@ -98,15 +98,8 @@ fun PxlAppRoutingScreen(
         if (mode == next || modeChangeInProgress) return
         val packages = presetPackages[next].orEmpty()
         if (next in setOf(PxlRoutingPreset.Games, PxlRoutingPreset.Video, PxlRoutingPreset.Banks) && packages.isEmpty()) {
-            if (mode == PxlRoutingPreset.SelectedApps) {
-                Toast.makeText(context, R.string.pxlnet_preset_no_matches, Toast.LENGTH_LONG).show()
-                onManageApps()
-                return
-            }
-            applyMode(PxlRoutingPreset.SelectedApps) {
-                Toast.makeText(context, R.string.pxlnet_preset_no_matches, Toast.LENGTH_LONG).show()
-                onManageApps()
-            }
+            Toast.makeText(context, R.string.pxlnet_preset_no_matches, Toast.LENGTH_LONG).show()
+            onManageApps()
             return
         }
         val previous = PxlRoutingPresets.snapshot(context)
@@ -263,13 +256,7 @@ fun PxlAppRoutingScreen(
                             )
                         }
                         Button(
-                            onClick = {
-                                if (Settings.perAppProxyManagedMode) {
-                                    PxlRoutingPresets.copyPresetToManualSelection()
-                                    mode = PxlRoutingPreset.SelectedApps
-                                }
-                                onManageApps()
-                            },
+                            onClick = onManageApps,
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(16.dp),
                         ) {

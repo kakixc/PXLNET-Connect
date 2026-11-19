@@ -18,7 +18,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Campaign
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Link
@@ -60,6 +59,8 @@ import io.nekohasekai.sfa.compose.navigation.NewProfileArgs
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.utils.PxlLinks
 import io.nekohasekai.sfa.utils.SubscriptionInfoStore
+import java.text.DateFormat
+import java.util.Date
 
 @Composable
 fun PxlAccountScreen(
@@ -174,13 +175,6 @@ fun PxlAccountScreen(
                                     MaterialTheme.colorScheme.error
                                 },
                             )
-                            if (uiState.selectedProfileId > 0 && hasVerifiedAccount) {
-                                Text(
-                                    stringResource(R.string.pxlnet_subscription_synced),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
                         }
                     }
                     Row(
@@ -300,7 +294,7 @@ fun PxlAccountScreen(
                     hasLocalSubscription = uiState.selectedProfileId > 0,
                     serverCount = uiState.availableServerTags.count { !it.equals("AUTO", true) },
                     checking = uiState.ecosystemCheckPending,
-                    checked = uiState.ecosystemLastCheckedAt != null,
+                    checkedAt = uiState.ecosystemLastCheckedAt,
                     onRefresh = viewModel::refreshEcosystem,
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -347,7 +341,7 @@ private fun PxlPulsePanel(
     hasLocalSubscription: Boolean,
     serverCount: Int,
     checking: Boolean,
-    checked: Boolean,
+    checkedAt: Long?,
     onRefresh: () -> Unit,
 ) {
     val summary = when {
@@ -360,7 +354,7 @@ private fun PxlPulsePanel(
     }
     val statusIcon = when {
         serviceAvailable == false -> Icons.Default.CloudOff
-        serviceAvailable == true && serverCount > 0 -> Icons.Default.CheckCircle
+        serviceAvailable == true && serverCount > 0 -> Icons.Default.Public
         else -> Icons.Default.Public
     }
 
@@ -432,9 +426,9 @@ private fun PxlPulsePanel(
             Spacer(Modifier.size(8.dp))
             Text(stringResource(R.string.pxlnet_pulse_check_now))
         }
-        if (checked && !checking) {
+        if (checkedAt != null && !checking) {
             Text(
-                stringResource(R.string.pxlnet_pulse_checked_now),
+                stringResource(R.string.pxlnet_pulse_checked_at, DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(checkedAt))),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

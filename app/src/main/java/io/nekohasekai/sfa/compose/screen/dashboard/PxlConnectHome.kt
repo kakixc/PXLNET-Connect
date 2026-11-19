@@ -395,7 +395,7 @@ fun DashboardScreen(
     val connectionState = connectionPresentationState(
         serviceStatus = displayedServiceStatus,
         isSwitchingServer = uiState.switchingServerTag != null,
-        reachability = if (uiState.serverSwitchFailed) ConnectionReachability.Unreachable else reachability,
+        reachability = reachability,
     )
     val selectedProbe = serverProbeResults[selectedProbeTag]
     val pickerShowingServerProbes = pickerProbeRequested || latencySource == PxlLatencySource.VPN_SERVER ||
@@ -632,7 +632,8 @@ fun DashboardScreen(
                     loading = pickerShowingServerProbes &&
                         (probe == ServerProbeDisplay.Loading || autoLoading),
                     hint = when {
-                        unavailable -> stringResource(R.string.pxlnet_server_unavailable)
+                        missingFromSession -> stringResource(R.string.pxlnet_server_not_loaded)
+                        probe == ServerProbeDisplay.Unavailable -> stringResource(R.string.pxlnet_server_probe_failed_try)
                         autoBest -> stringResource(R.string.pxlnet_latency_best_found)
                         else -> null
                     },
@@ -688,13 +689,10 @@ fun DashboardScreen(
                     accountActive = uiState.telegramSubscriptionActive,
                     accountExpiry = formatPxlAccountExpiry(uiState.telegramSubscriptionExpiresAt),
                     updating = uiState.updatingProfileId != null || uiState.telegramLoginPending,
-                    onRefresh = {
-                        if (uiState.hasTelegramSession) {
-                            viewModel.refreshTelegramAccount()
-                        } else {
-                            uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }?.let(viewModel::updateProfile)
-                        }
-                    },
+                    onRefresh = if (uiState.hasTelegramSession) viewModel::refreshTelegramAccount
+                        else uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }
+                            ?.takeIf { it.typed.remoteURL.isNotBlank() }
+                            ?.let { profile -> { viewModel.updateProfile(profile) } },
                 )
             }
         }
@@ -1075,7 +1073,7 @@ private fun AccessStrip(
     accountActive: Boolean,
     accountExpiry: String?,
     updating: Boolean,
-    onRefresh: () -> Unit,
+    onRefresh: (() -> Unit)?,
 ) {
     val accessSummary = when {
         hasAccountSession && !accountVerified -> stringResource(R.string.pxlnet_account_status_unknown)
@@ -1125,7 +1123,7 @@ private fun AccessStrip(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (profileName != null || hasAccountSession) {
+            if (onRefresh != null) {
                 IconButton(onClick = onRefresh, enabled = !updating) {
                     if (updating) {
                         PxlShapeLoadingIndicator()

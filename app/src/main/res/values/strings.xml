@@ -113,11 +113,11 @@
     <string name="pxlnet_ecosystem_title">PXLNET ecosystem</string>
     <string name="pxlnet_ecosystem_description">Account, access, news, service status and support in one place</string>
     <string name="pxlnet_pulse_title">PXL Pulse</string>
-    <string name="pxlnet_pulse_ready">Account, subscription and servers are ready</string>
-    <string name="pxlnet_pulse_guest_ready">Subscription link and servers are ready</string>
+    <string name="pxlnet_pulse_ready">Account and subscription checked · server reachability not tested</string>
+    <string name="pxlnet_pulse_guest_ready">Subscription loaded · server reachability not tested</string>
     <string name="pxlnet_pulse_checking">Checking the account and refreshing the subscription…</string>
     <string name="pxlnet_pulse_offline">The account service is temporarily unavailable</string>
-    <string name="pxlnet_pulse_no_servers">No available servers were found in the subscription</string>
+    <string name="pxlnet_pulse_no_servers">No server entries were found in the subscription</string>
     <string name="pxlnet_pulse_renew">Your access needs to be renewed</string>
     <string name="pxlnet_pulse_account">Account</string>
     <string name="pxlnet_pulse_access">Access</string>
@@ -128,7 +128,7 @@
     <string name="pxlnet_pulse_by_link">By link</string>
     <string name="pxlnet_pulse_inactive">Inactive</string>
     <string name="pxlnet_pulse_check_now">Check now</string>
-    <string name="pxlnet_pulse_checked_now">Checked just now</string>
+    <string name="pxlnet_pulse_checked_at">Checked at %1$s</string>
     <string name="pxlnet_mascot_setting_title">Pix mascot</string>
     <string name="pxlnet_mascot_setting_description">Show the connection assistant on the home screen</string>
     <string name="pxlnet_mascot_animations_title">Pix animations</string>
@@ -170,6 +170,7 @@
     <string name="pxlnet_widget_protected">Protected</string>
     <string name="pxlnet_widget_switching">Switching…</string>
     <string name="pxlnet_widget_off">VPN off</string>
+    <string name="pxlnet_widget_dns_only">DNS on · VPN off</string>
     <string name="pxlnet_widget_subscription_inactive">Subscription inactive</string>
     <string name="pxlnet_widget_no_subscription">Add subscription</string>
     <string name="pxlnet_widget_open_account">Open account</string>
@@ -222,6 +223,8 @@
     <string name="pxlnet_check_website_delay">Check website through VPN</string>
     <string name="pxlnet_measurement_unavailable">Measurement unavailable</string>
     <string name="pxlnet_server_unavailable">Unavailable</string>
+    <string name="pxlnet_server_not_loaded">Not loaded in this session</string>
+    <string name="pxlnet_server_probe_failed_try">Check failed · tap to try</string>
     <string name="pxlnet_connection_heading">CONNECTION</string>
     <string name="pxlnet_selected_server_label">Selected server · tap to change</string>
     <string name="pxlnet_country_germany">Germany</string>
@@ -257,7 +260,7 @@
     <string name="pxlnet_measure_ping">Measure ping</string>
     <string name="pxlnet_protected_delay">Protected · %1$d ms</string>
     <string name="pxlnet_checking_internet">Checking internet…</string>
-    <string name="pxlnet_vpn_no_access">VPN is running, but internet is unavailable</string>
+    <string name="pxlnet_vpn_no_access">VPN is running · connection check failed</string>
     <string name="pxlnet_connecting">Connecting…</string>
     <string name="pxlnet_disconnecting">Disconnecting…</string>
     <string name="pxlnet_connect">Connect</string>
@@ -359,7 +362,7 @@
     <string name="pxlnet_subscription_refresh_now">Refresh now</string>
     <string name="pxlnet_subscription_refresh_success">Subscriptions refreshed</string>
     <string name="pxlnet_subscription_refresh_failed">Some subscriptions could not be refreshed. Existing profiles were kept.</string>
-    <string name="pxlnet_subscription_refresh_empty">No subscriptions have auto-refresh enabled</string>
+    <string name="pxlnet_subscription_refresh_empty">No subscription links to update</string>
     <string name="pxlnet_settings_always_on_title">Always-on VPN and traffic blocking</string>
     <string name="pxlnet_settings_always_on_summary">Android system protection after a restart or tunnel drop</string>
     <string name="pxlnet_settings_guard_summary">Switches to a backup server when the selected one is unavailable</string>

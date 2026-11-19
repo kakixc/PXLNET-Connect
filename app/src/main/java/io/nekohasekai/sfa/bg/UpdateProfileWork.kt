@@ -39,7 +39,7 @@ class UpdateProfileWork {
         private suspend fun reconfigureUpdater0() {
             val remoteProfiles =
                 ProfileManager.list()
-                    .filter { it.typed.type == TypedProfile.Type.Remote && it.typed.autoUpdate }
+                    .filter { it.typed.type == TypedProfile.Type.Remote && it.typed.remoteURL.isNotBlank() && it.typed.autoUpdate }
             if (remoteProfiles.isEmpty()) {
                 WorkManager.getInstance(Application.application).cancelUniqueWork(WORK_NAME)
                 return
@@ -70,7 +70,7 @@ class UpdateProfileWork {
             var selectedProfileUpdated = false
             val remoteProfiles =
                 ProfileManager.list()
-                    .filter { it.typed.type == TypedProfile.Type.Remote && it.typed.autoUpdate }
+                    .filter { it.typed.type == TypedProfile.Type.Remote && it.typed.remoteURL.isNotBlank() && (force || it.typed.autoUpdate) }
             if (remoteProfiles.isEmpty()) return true
             var success = true
             val selectedProfile = Settings.selectedProfile

@@ -94,7 +94,7 @@ class PxlXhttpRuntimePreparerTest {
     }
 
     @Test
-    fun xhttpOnlyLegacyProfileSelectsItsOnlyUsableServerAndNeverInventsAuto() {
+    fun xhttpOnlyLegacyProfileKeepsManualSelectionAndOffersAuto() {
         val base = PxlSubscriptionConverter.convert(link).config
         withConfig(base) { config ->
             val response = HTTPClient.Result(link, null, null, null, xhttpLinks = listOf(link))
@@ -105,7 +105,11 @@ class PxlXhttpRuntimePreparerTest {
             val plan = requireNotNull(PxlXhttpRuntimePreparer.prepare(config, 19001))
             val selection = PxlSubscriptionConverter.serverSelection(plan.augmentedSingboxJson)
             assertEquals(tag, selection.selectedTag)
-            assertEquals(false, "AUTO" in selection.tags)
+            assertTrue("AUTO" in selection.tags)
+            val auto = Json.parseToJsonElement(plan.augmentedSingboxJson).jsonObject
+                .getValue("outbounds").jsonArray.map { it.jsonObject }
+                .single { it.getValue("tag").jsonPrimitive.content == "AUTO" }
+            assertEquals(listOf(tag), auto.getValue("outbounds").jsonArray.map { it.jsonPrimitive.content })
         }
     }
 

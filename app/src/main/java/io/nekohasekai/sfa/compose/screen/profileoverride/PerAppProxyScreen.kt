@@ -87,6 +87,7 @@ import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.ktx.clipboardText
+import io.nekohasekai.sfa.utils.PxlRoutingPresets
 import io.nekohasekai.sfa.vendor.PackageQueryManager
 import io.nekohasekai.sfa.vendor.PrivilegedAccessRequiredException
 import kotlinx.coroutines.Dispatchers
@@ -118,7 +119,7 @@ fun PerAppProxyScreen(
     val coroutineScope = rememberCoroutineScope()
     val notifyApplyChange = rememberApplyServiceChangeNotifier(serviceStatus)
 
-    var proxyMode by remember { mutableStateOf(Settings.perAppProxyMode) }
+    var proxyMode by remember { mutableStateOf(Settings.getEffectivePerAppProxyMode()) }
     var sortMode by remember { mutableStateOf(SortMode.NAME) }
     var sortReverse by remember { mutableStateOf(false) }
     var hideSystemApps by remember { mutableStateOf(false) }
@@ -172,6 +173,7 @@ fun PerAppProxyScreen(
     fun saveSelectedApplications(newUids: Set<Int>) {
         coroutineScope.launch {
             withContext(Dispatchers.IO) {
+                PxlRoutingPresets.copyPresetToManualSelection()
                 Settings.perAppProxyList = buildPackageList(newUids)
             }
             notifyApplyChange(UiEvent.ApplyServiceChange.Mode.Reload)
@@ -252,7 +254,7 @@ fun PerAppProxyScreen(
             withContext(Dispatchers.IO) {
                 try {
                     val mode =
-                        if (Settings.perAppProxyMode == Settings.PER_APP_PROXY_INCLUDE) {
+                        if (Settings.getEffectivePerAppProxyMode() == Settings.PER_APP_PROXY_INCLUDE) {
                             Settings.PER_APP_PROXY_INCLUDE
                         } else {
                             Settings.PER_APP_PROXY_EXCLUDE
@@ -265,7 +267,7 @@ fun PerAppProxyScreen(
                             val appInfo = packageInfo.applicationInfo ?: return@mapNotNull null
                             PackageCache(packageInfo, appInfo, packageManager)
                         }
-                    val selectedPackageNames = Settings.perAppProxyList.toMutableSet()
+                    val selectedPackageNames = Settings.getEffectivePerAppProxyList().toMutableSet()
                     val selectedUidSet =
                         packageCaches.mapNotNull { packageCache ->
                             if (selectedPackageNames.contains(packageCache.packageName)) {
@@ -331,12 +333,15 @@ fun PerAppProxyScreen(
                     hideOfflineApps = hideOfflineApps,
                     hideDisabledApps = hideDisabledApps,
                     onModeChange = { mode ->
-                        proxyMode = mode
-                        coroutineScope.launch {
-                            withContext(Dispatchers.IO) {
-                                Settings.perAppProxyMode = mode
+                        if (mode != proxyMode) {
+                            proxyMode = mode
+                            coroutineScope.launch {
+                                withContext(Dispatchers.IO) {
+                                    PxlRoutingPresets.copyPresetToManualSelection()
+                                    Settings.perAppProxyMode = mode
+                                }
+                                notifyApplyChange(UiEvent.ApplyServiceChange.Mode.Reload)
                             }
-                            notifyApplyChange(UiEvent.ApplyServiceChange.Mode.Reload)
                         }
                     },
                     onSortModeChange = { mode ->

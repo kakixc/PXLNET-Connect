@@ -129,7 +129,7 @@ fun SubscriptionSettingsScreen(navController: NavController) {
                     resultMessage = withContext(Dispatchers.IO) {
                         try {
                             val eligible = ProfileManager.list().any {
-                                it.typed.type == TypedProfile.Type.Remote && it.typed.autoUpdate
+                                it.typed.type == TypedProfile.Type.Remote && it.typed.remoteURL.isNotBlank()
                             }
                             when {
                                 !eligible -> R.string.pxlnet_subscription_refresh_empty

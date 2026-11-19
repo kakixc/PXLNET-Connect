@@ -59,7 +59,7 @@
     <string name="pxlnet_subscription_refresh_now">Обновить сейчас</string>
     <string name="pxlnet_subscription_refresh_success">Подписки обновлены</string>
     <string name="pxlnet_subscription_refresh_failed">Часть подписок не обновилась. Рабочие профили сохранены.</string>
-    <string name="pxlnet_subscription_refresh_empty">Нет подписок с включённым автообновлением</string>
+    <string name="pxlnet_subscription_refresh_empty">Нет ссылок подписок для обновления</string>
     <string name="pxlnet_settings_always_on_title">Always-on VPN и блокировка трафика</string>
     <string name="pxlnet_settings_always_on_summary">Системная защита Android при перезапуске и обрыве</string>
     <string name="pxlnet_settings_guard_summary">Переключает на запасной сервер, если выбранный недоступен</string>
@@ -935,11 +935,11 @@
     <string name="pxlnet_ecosystem_title">Экосистема PXLNET</string>
     <string name="pxlnet_ecosystem_description">Аккаунт, доступ, новости, состояние и поддержка в одном месте</string>
     <string name="pxlnet_pulse_title">PXL Pulse</string>
-    <string name="pxlnet_pulse_ready">Аккаунт, подписка и серверы в порядке</string>
-    <string name="pxlnet_pulse_guest_ready">Ссылка подписки и серверы готовы</string>
+    <string name="pxlnet_pulse_ready">Аккаунт и подписка проверены · доступность серверов не проверялась</string>
+    <string name="pxlnet_pulse_guest_ready">Подписка загружена · доступность серверов не проверялась</string>
     <string name="pxlnet_pulse_checking">Проверяем аккаунт и обновляем подписку…</string>
     <string name="pxlnet_pulse_offline">Сервис аккаунтов временно недоступен</string>
-    <string name="pxlnet_pulse_no_servers">В подписке пока нет доступных серверов</string>
+    <string name="pxlnet_pulse_no_servers">В подписке пока нет записей серверов</string>
     <string name="pxlnet_pulse_renew">Доступ нужно продлить</string>
     <string name="pxlnet_pulse_account">Аккаунт</string>
     <string name="pxlnet_pulse_access">Доступ</string>
@@ -950,7 +950,7 @@
     <string name="pxlnet_pulse_by_link">По ссылке</string>
     <string name="pxlnet_pulse_inactive">Неактивен</string>
     <string name="pxlnet_pulse_check_now">Проверить сейчас</string>
-    <string name="pxlnet_pulse_checked_now">Проверено только что</string>
+    <string name="pxlnet_pulse_checked_at">Проверено в %1$s</string>
     <string name="pxlnet_mascot_setting_title">Маскот Пикс</string>
     <string name="pxlnet_mascot_setting_description">Показывать помощника по подключению на главной</string>
     <string name="pxlnet_mascot_animations_title">Анимации Пикса</string>
@@ -994,6 +994,7 @@
     <string name="pxlnet_widget_protected">Защищено</string>
     <string name="pxlnet_widget_switching">Переключение…</string>
     <string name="pxlnet_widget_off">VPN выключен</string>
+    <string name="pxlnet_widget_dns_only">DNS работает · VPN выключен</string>
     <string name="pxlnet_widget_subscription_inactive">Подписка неактивна</string>
     <string name="pxlnet_widget_no_subscription">Добавьте подписку</string>
     <string name="pxlnet_widget_open_account">Открыть аккаунт</string>
@@ -1048,6 +1049,8 @@
     <string name="pxlnet_check_website_delay">Проверить сайт через VPN</string>
     <string name="pxlnet_measurement_unavailable">Измерение недоступно</string>
     <string name="pxlnet_server_unavailable">Недоступен</string>
+    <string name="pxlnet_server_not_loaded">Не загружен в текущую сессию</string>
+    <string name="pxlnet_server_probe_failed_try">Проверка не прошла · можно попробовать</string>
     <string name="pxlnet_connection_heading">ПОДКЛЮЧЕНИЕ</string>
     <string name="pxlnet_selected_server_label">Выбранный сервер · нажмите, чтобы сменить</string>
     <string name="pxlnet_country_germany">Германия</string>
@@ -1083,7 +1086,7 @@
     <string name="pxlnet_measure_ping">Измерить пинг</string>
     <string name="pxlnet_protected_delay">Защищено · %1$d мс</string>
     <string name="pxlnet_checking_internet">Проверяем интернет…</string>
-    <string name="pxlnet_vpn_no_access">VPN запущен, но интернет недоступен</string>
+    <string name="pxlnet_vpn_no_access">VPN запущен · проверка соединения не прошла</string>
     <string name="pxlnet_connecting">Подключаемся…</string>
     <string name="pxlnet_disconnecting">Отключаемся…</string>
     <string name="pxlnet_connect">Подключиться</string>
