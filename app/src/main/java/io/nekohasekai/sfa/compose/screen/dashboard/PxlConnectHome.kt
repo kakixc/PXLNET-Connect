@@ -454,6 +454,7 @@ fun DashboardScreen(
                 PxlLocalPreferences.finishOnboarding(context)
                 showOnboarding = false
             },
+            onDismiss = { showOnboarding = false },
         )
     }
 
@@ -814,12 +815,18 @@ fun DashboardScreen(
 
         if (!hasProfile) {
             item {
-                Text(
-                    stringResource(R.string.pxlnet_add_subscription_first),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                )
+                Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+                    Text(
+                        stringResource(R.string.pxlnet_add_subscription_first),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (PxlLocalPreferences.shouldShowOnboarding(context)) {
+                        TextButton(onClick = { showOnboarding = true }) {
+                            Text(stringResource(R.string.pxlnet_continue_setup))
+                        }
+                    }
+                }
             }
         }
 
@@ -1641,6 +1648,7 @@ private fun PxlOnboardingSheet(
     onAddLink: () -> Unit,
     onOpenVpnSettings: () -> Unit,
     onFinish: () -> Unit,
+    onDismiss: () -> Unit,
 ) {
     var step by remember { mutableIntStateOf(0) }
     var awaitingTelegramLogin by remember { mutableStateOf(false) }
@@ -1661,7 +1669,7 @@ private fun PxlOnboardingSheet(
         stringResource(R.string.pxlnet_onboarding_connect),
     )
     ModalBottomSheet(
-        onDismissRequest = onFinish,
+        onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
     ) {
         Column(

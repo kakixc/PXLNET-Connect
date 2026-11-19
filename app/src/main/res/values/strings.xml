@@ -61,6 +61,8 @@
     <string name="pxlnet_dns_disconnect">Disconnect DNS</string>
     <string name="pxlnet_dns_no_profile">Create a DNS profile first</string>
     <string name="pxlnet_dns_requires_vpn">Choose a VPN profile to use DNS + VPN</string>
+    <string name="pxlnet_dns_notification_permission_needed">Allow notifications in Android settings, then try connecting DNS again</string>
+    <string name="pxlnet_continue_setup">Continue setup</string>
     <string name="pxlnet_dns_other_vpn_warning">Another VPN may be active. DNS-only uses Android’s one VPN slot and may replace that connection. Continue?</string>
     <string name="pxlnet_dns_vpn_running_warning">PXLNET VPN is running. DNS-only would replace it. Use DNS + VPN to keep the connection, or confirm switching to DNS-only.</string>
     <string name="pxlnet_dns_switch">Switch to DNS-only</string>

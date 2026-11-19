@@ -139,6 +139,7 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
     var probeJob by remember { mutableStateOf<Job?>(null) }
     var probeBusy by remember { mutableStateOf(false) }
     var probeResult by remember { mutableStateOf<String?>(null) }
+    var probeAddress by remember { mutableStateOf<String?>(null) }
     var probeSuccess by remember { mutableStateOf(false) }
     var showIconPicker by remember { mutableStateOf(false) }
     var showAppPicker by remember { mutableStateOf(false) }
@@ -184,10 +185,11 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
         label = "dns-action-content-color",
     )
 
-    LaunchedEffect(selected?.id) {
+    LaunchedEffect(selected?.id, selected?.address) {
         probeJob?.cancel()
         probeBusy = false
         probeResult = null
+        probeAddress = null
     }
 
     fun startAfterPermission(mode: PxlDnsTileMode) {
@@ -197,26 +199,61 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
                     StartServiceCoordinator.DnsDecision.START -> if (StartServiceCoordinator.startDnsOnly(StartServiceCoordinator.Source.DNS_SCREEN)) {
                         (context as? MainActivity)?.reconnectServiceConnection()
                     }
-                    else -> Toast.makeText(context, R.string.pxlnet_dns_no_profile, Toast.LENGTH_SHORT).show()
+                    StartServiceCoordinator.DnsDecision.SELECT_PROFILE -> Toast.makeText(context, R.string.pxlnet_dns_no_profile, Toast.LENGTH_SHORT).show()
+                    StartServiceCoordinator.DnsDecision.OPEN_APP_FOR_NOTIFICATION_PERMISSION -> Toast.makeText(context, R.string.pxlnet_dns_notification_permission_needed, Toast.LENGTH_LONG).show()
+                    StartServiceCoordinator.DnsDecision.OPEN_APP_FOR_VPN_PERMISSION -> Toast.makeText(context, R.string.error_missing_vpn_permission, Toast.LENGTH_LONG).show()
+                    StartServiceCoordinator.DnsDecision.ALREADY_IN_PROGRESS -> Unit
                 }
             } else {
                 if (serviceStatus == Status.Started) {
                     BoxService.setIntegratedDnsEnabled(true)
-                } else if (StartServiceCoordinator.preflight(context, serviceStatus) == StartServiceCoordinator.Decision.START) {
-                    if (!StartServiceCoordinator.start(StartServiceCoordinator.Source.DNS_SCREEN, PxlDnsTileMode.DNS_AND_VPN)) {
-                        Toast.makeText(context, R.string.pxlnet_dns_requires_vpn, Toast.LENGTH_SHORT).show()
+                } else {
+                    when (StartServiceCoordinator.preflight(context, serviceStatus)) {
+                        StartServiceCoordinator.Decision.START -> if (!StartServiceCoordinator.start(StartServiceCoordinator.Source.DNS_SCREEN, PxlDnsTileMode.DNS_AND_VPN)) {
+                            Toast.makeText(context, R.string.pxlnet_dns_requires_vpn, Toast.LENGTH_SHORT).show()
+                        }
+                        StartServiceCoordinator.Decision.BLOCKED_BY_INACTIVE_SUBSCRIPTION -> Toast.makeText(context, R.string.pxlnet_subscription_connection_blocked_description, Toast.LENGTH_LONG).show()
+                        StartServiceCoordinator.Decision.OPEN_APP_FOR_NOTIFICATION_PERMISSION -> Toast.makeText(context, R.string.pxlnet_dns_notification_permission_needed, Toast.LENGTH_LONG).show()
+                        StartServiceCoordinator.Decision.OPEN_APP_FOR_VPN_PERMISSION -> Toast.makeText(context, R.string.error_missing_vpn_permission, Toast.LENGTH_LONG).show()
+                        StartServiceCoordinator.Decision.ALREADY_IN_PROGRESS -> Unit
                     }
                 }
             }
         }
     }
     val vpnPermission = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        pendingPermissionMode?.let(::startAfterPermission)
+        val mode = pendingPermissionMode
         pendingPermissionMode = null
+        if (mode != null) {
+            if (VpnService.prepare(context) == null) startAfterPermission(mode)
+            else Toast.makeText(context, R.string.error_missing_vpn_permission, Toast.LENGTH_LONG).show()
+        }
     }
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) pendingPermissionMode?.let(::startAfterPermission)
-        pendingPermissionMode = null
+        val mode = pendingPermissionMode
+        if (!granted) {
+            pendingPermissionMode = null
+            Toast.makeText(context, R.string.pxlnet_dns_notification_permission_needed, Toast.LENGTH_LONG).show()
+        } else if (mode != null) {
+            scope.launch {
+                val next = if (mode == PxlDnsTileMode.DNS_ONLY) {
+                    StartServiceCoordinator.preflightDnsOnly(context) == StartServiceCoordinator.DnsDecision.OPEN_APP_FOR_VPN_PERMISSION
+                } else {
+                    StartServiceCoordinator.preflight(context, serviceStatus) == StartServiceCoordinator.Decision.OPEN_APP_FOR_VPN_PERMISSION
+                }
+                if (next) {
+                    val permissionIntent = VpnService.prepare(context)
+                    if (permissionIntent != null) vpnPermission.launch(permissionIntent)
+                    else {
+                        pendingPermissionMode = null
+                        startAfterPermission(mode)
+                    }
+                } else {
+                    pendingPermissionMode = null
+                    startAfterPermission(mode)
+                }
+            }
+        }
     }
 
     fun requestStart(mode: PxlDnsTileMode, confirmed: Boolean = false) {
@@ -373,7 +410,7 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        probeResult?.let { result ->
+                        probeResult?.takeIf { probeAddress == selected?.address }?.let { result ->
                             Text(
                                 result,
                                 style = MaterialTheme.typography.bodySmall,
@@ -384,14 +421,16 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
                     if (selected != null) {
                         if (probeBusy) PxlShapeLoadingIndicator(size = 24.dp)
                         else IconButton(onClick = {
+                            val checkedAddress = selected.address
                             probeJob = scope.launch {
                                 probeBusy = true
                                 probeResult = null
                                 val result = withContext(Dispatchers.IO) {
-                                    runCatching { PxlDnsProbe.check(PxlDnsEndpoint.parse(selected.address)) }
+                                    runCatching { PxlDnsProbe.check(PxlDnsEndpoint.parse(checkedAddress)) }
                                 }
                                 if (isActive) {
                                     probeSuccess = result.isSuccess
+                                    probeAddress = checkedAddress
                                     probeResult = result.fold(
                                         onSuccess = { context.getString(R.string.pxlnet_dns_available_ms, it) },
                                         onFailure = { context.getString(R.string.pxlnet_dns_unavailable) },
@@ -675,7 +714,8 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
             onDismiss = { editing = null },
             onChooseIcon = { showIconPicker = true },
             onChooseApps = { showAppPicker = true },
-            onDelete = if (candidate.id.isNotBlank() && PxlDnsProfiles.activeMode(context) == null) {
+            onDelete = if (candidate.id.isNotBlank() &&
+                (PxlDnsProfiles.activeMode(context) == null || PxlDnsProfiles.activeProfileId(context) != candidate.id)) {
                 { editing = null; deleteCandidate = candidate }
             } else null,
             onSave = {
