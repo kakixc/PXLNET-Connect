@@ -11,6 +11,10 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.IconButton
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -61,6 +65,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -88,6 +93,9 @@ fun PxlAccountScreen(
     val hasVerifiedAccount = uiState.accountLastVerifiedAt != null
     val summaryRevision by SubscriptionInfoStore.summaryRevision.collectAsState()
     val selectedProfile = uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }
+    val profileFromAccount = remember(selectedProfile?.id, selectedProfile?.typed?.remoteURL, summaryRevision) {
+        selectedProfile?.let { SubscriptionInfoStore.hasAccountSource(context, it.id, it.typed.remoteURL) } == true
+    }
     val linkSummary = remember(uiState.selectedProfileId, summaryRevision) {
         SubscriptionInfoStore.summary(context, uiState.selectedProfileId)
     }
@@ -115,6 +123,7 @@ fun PxlAccountScreen(
         FocusAccount(
             uiState = uiState,
             profileSummary = linkSummary,
+            profileFromAccount = profileFromAccount,
             onImport = { onOpenNewProfile(NewProfileArgs()) },
             viewModel = viewModel,
         )
@@ -414,33 +423,47 @@ private fun PxlPulsePanel(
             }
         }
 
-        if (showMetrics) Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            PulseMetric(
-                label = stringResource(R.string.pxlnet_pulse_account),
-                value = stringResource(
+        if (showMetrics) {
+            val metrics = listOf(
+                stringResource(R.string.pxlnet_pulse_account) to stringResource(
                     if (isLoggedIn) R.string.pxlnet_pulse_connected else R.string.pxlnet_pulse_guest,
                 ),
-                modifier = Modifier.weight(1f),
-            )
-            PulseMetric(
-                label = stringResource(R.string.pxlnet_pulse_access),
-                value = stringResource(
+                stringResource(R.string.pxlnet_pulse_access) to stringResource(
                     when {
                         subscriptionActive -> R.string.pxlnet_pulse_active
                         hasLocalSubscription -> R.string.pxlnet_pulse_by_link
                         else -> R.string.pxlnet_pulse_inactive
                     },
                 ),
-                modifier = Modifier.weight(1f),
+                stringResource(R.string.pxlnet_pulse_servers) to serverCount.toString(),
             )
-            PulseMetric(
-                label = stringResource(R.string.pxlnet_pulse_servers),
-                value = serverCount.toString(),
-                modifier = Modifier.weight(1f),
-            )
+            val fontScale = LocalDensity.current.fontScale
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                if (maxWidth >= (114.dp * fontScale) * 3 + 16.dp) {
+                    Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        metrics.forEach { (label, value) ->
+                            PulseMetric(label, value, modifier = Modifier.weight(1f).fillMaxHeight())
+                        }
+                    }
+                } else {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+                        shape = RoundedCornerShape(16.dp),
+                    ) {
+                        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                            metrics.forEach { (label, value) ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    Text(label, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(value, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         OutlinedButton(
@@ -551,6 +574,7 @@ private fun formatAccountExpiry(value: String?): String? {
 private fun FocusAccount(
     uiState: DashboardUiState,
     profileSummary: String?,
+    profileFromAccount: Boolean,
     onImport: () -> Unit,
     viewModel: DashboardViewModel,
 ) {
@@ -577,7 +601,12 @@ private fun FocusAccount(
             }
             if (profile != null) {
                 val remote = profile.typed.type == TypedProfile.Type.Remote
-                Text(stringResource(R.string.focus_profile_source, stringResource(if (remote) R.string.focus_linked else R.string.focus_file)), style = MaterialTheme.typography.bodyMedium)
+                val source = when {
+                    remote && profileFromAccount -> R.string.focus_source_account
+                    remote -> R.string.focus_linked
+                    else -> R.string.focus_file
+                }
+                Text(stringResource(R.string.focus_profile_source, stringResource(source)), style = MaterialTheme.typography.bodyMedium)
                 profileSummary?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 if (remote && profile.typed.remoteURL.isNotBlank()) {
                     OutlinedButton(onClick = { viewModel.updateProfile(profile) }, enabled = uiState.updatingProfileId == null, modifier = Modifier.pxlPressMotion(uiState.updatingProfileId == null)) {

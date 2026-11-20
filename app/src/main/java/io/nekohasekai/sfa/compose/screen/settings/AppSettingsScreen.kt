@@ -149,7 +149,7 @@ fun AppSettingsScreen(
 ) {
     OverrideTopBar {
         TopAppBar(
-            title = { Text(stringResource(R.string.title_app_settings)) },
+            title = { Text(stringResource(R.string.focus_version_updates)) },
             navigationIcon = {
                 IconButton(onClick = { navController.navigateUp() }) {
                     Icon(

@@ -120,7 +120,7 @@ class SubscriptionInfoStoreTest {
     @Test
     fun clearingDeletedProfileRemovesEveryProfileBoundMetadataKeyBeforeIdReuse() {
         assertEquals(
-            listOf("42", "42_smart_status", "42_skipped_xhttp"),
+            listOf("42", "42_smart_status", "42_skipped_xhttp", "42_account_source"),
             SubscriptionInfoStore.profileMetadataKeys(42),
         )
         assertEquals(

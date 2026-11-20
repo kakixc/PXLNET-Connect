@@ -39,7 +39,6 @@ import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SettingsRemote
-import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Palette
 import io.nekohasekai.sfa.compose.component.pxlPressMotion
 import androidx.compose.material.icons.outlined.SupportAgent
@@ -80,7 +79,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.IconButton
 import io.nekohasekai.sfa.database.Settings as AppSettings
-import io.nekohasekai.sfa.compose.navigation.Screen
 import io.nekohasekai.sfa.utils.PxlUiPreferences
 import io.nekohasekai.sfa.utils.PxlRoutingPreferences
 import io.nekohasekai.sfa.R
@@ -424,9 +422,6 @@ fun SettingsScreen(navController: NavController, section: FocusSettingsSection? 
                     modifier = Modifier.clickable { navController.navigate("pxlnet/app_routing") },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 )
-                if (dnsEnabled) FocusSettingsLink(Icons.Outlined.Dns, R.string.focus_open_dns) {
-                    navController.navigate(Screen.Dns.route)
-                }
                 dnsFeatureEntry()
             }
 
@@ -507,16 +502,6 @@ fun SettingsScreen(navController: NavController, section: FocusSettingsSection? 
                 shape = RoundedCornerShape(24.dp),
             ) {
                 Column {
-                    ListItem(
-                        headlineContent = { Text(stringResource(R.string.title_app_settings)) },
-                        supportingContent = { Text(stringResource(R.string.pxlnet_app_settings_summary)) },
-                        leadingContent = { PxlSettingsIcon(Icons.Outlined.Info) },
-                        trailingContent = {
-                            if (hasUpdate) Badge(containerColor = MaterialTheme.colorScheme.primary)
-                        },
-                        modifier = Modifier.clickable { navController.navigate("settings/app") },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    )
                     ListItem(
                         headlineContent = { Text(stringResource(R.string.pxlnet_settings_developer_mode)) },
                         supportingContent = { Text(stringResource(R.string.pxlnet_settings_developer_mode_summary)) },
@@ -643,7 +628,9 @@ fun SettingsScreen(navController: NavController, section: FocusSettingsSection? 
                 }
             }
 
-            // About Section
+        }
+
+        if (section == null) {
             Text(
                 text = stringResource(R.string.about),
                 style = MaterialTheme.typography.labelLarge,
@@ -663,6 +650,16 @@ fun SettingsScreen(navController: NavController, section: FocusSettingsSection? 
                 shape = RoundedCornerShape(24.dp),
             ) {
                 Column {
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.focus_version_updates)) },
+                        supportingContent = { Text(stringResource(R.string.pxlnet_app_settings_summary)) },
+                        leadingContent = { PxlSettingsIcon(Icons.Outlined.Info) },
+                        trailingContent = {
+                            if (hasUpdate) Badge(containerColor = MaterialTheme.colorScheme.primary)
+                        },
+                        modifier = Modifier.clickable { navController.navigate("settings/app") },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    )
                     ListItem(
                         headlineContent = {
                             Text(

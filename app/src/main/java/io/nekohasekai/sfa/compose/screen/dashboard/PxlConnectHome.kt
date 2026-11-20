@@ -1631,9 +1631,9 @@ private fun ConnectionControl(
         animationSpec = spring(dampingRatio = 0.78f, stiffness = 650f),
         label = "connect-press",
     )
-    // A pressed M3E control becomes slightly more compact; keep the VPN action recognizably square.
-    val buttonScale = 1f - maxOf(pressMotion * 0.035f, tapMotion.value * 0.11f)
-    val buttonCorner = (52f - maxOf(pressMotion * 16f, tapMotion.value * 8f)).dp
+    val buttonMotion = maxOf(pressMotion, tapMotion.value).coerceAtLeast(0f)
+    val buttonScale = 1f - buttonMotion * 0.08f
+    val buttonCorner = (52f - buttonMotion * 23f).dp
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
@@ -1659,8 +1659,8 @@ private fun ConnectionControl(
             Button(
                 onClick = {
                     if (motionEnabled) clickScope.launch {
-                        tapMotion.snapTo(0.22f)
-                        tapMotion.animateTo(0f, spring(dampingRatio = 0.82f, stiffness = 850f))
+                        tapMotion.snapTo(maxOf(buttonMotion, 0.75f))
+                        tapMotion.animateTo(0f, spring(dampingRatio = 0.68f, stiffness = 360f))
                     }
                     onClick()
                 },

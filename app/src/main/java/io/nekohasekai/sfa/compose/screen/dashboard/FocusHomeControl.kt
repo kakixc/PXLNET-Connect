@@ -2,12 +2,14 @@ package io.nekohasekai.sfa.compose.screen.dashboard
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.ui.graphics.Color
@@ -22,6 +24,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -29,6 +33,7 @@ import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.component.ConnectLoadingIndicator
 import io.nekohasekai.sfa.compose.component.pxlPressMotion
 import io.nekohasekai.sfa.constant.Status
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun FocusHomeControl(
@@ -163,23 +168,42 @@ private fun FocusConnectButton(
     val enabled = !moving && !requestPending
     val interactions = remember { MutableInteractionSource() }
     val pressed by interactions.collectIsPressedAsState()
-    val radius by animateDpAsState(
-        targetValue = when {
-            pressed && enabled -> 24.dp
-            moving || requestPending -> 26.dp
-            running -> 30.dp
-            else -> 34.dp
-        },
+    val context = LocalContext.current
+    val motionEnabled = android.provider.Settings.Global.getFloat(
+        context.contentResolver,
+        android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+        1f,
+    ) > 0f
+    val scope = rememberCoroutineScope()
+    val tapMotion = remember { Animatable(0f) }
+    val holdMotion by animateFloatAsState(
+        targetValue = if (motionEnabled && pressed && enabled) 1f else 0f,
         animationSpec = if (pressed && enabled) spring(dampingRatio = 1f, stiffness = 800f)
-            else spring(dampingRatio = 0.88f, stiffness = 420f),
-        label = "vpn-button-corners",
+            else spring(dampingRatio = 0.72f, stiffness = 400f),
+        label = "vpn-button-press",
     )
+    val motion = maxOf(holdMotion, tapMotion.value).coerceAtLeast(0f)
+    val restingRadius = when {
+        moving || requestPending -> 26f
+        running -> 30f
+        else -> 34f
+    }
     Button(
-        onClick = onConnect,
+        onClick = {
+            if (motionEnabled) scope.launch {
+                tapMotion.snapTo(maxOf(motion, 0.75f))
+                tapMotion.animateTo(0f, spring(dampingRatio = 0.68f, stiffness = 360f))
+            }
+            onConnect()
+        },
         enabled = enabled,
         interactionSource = interactions,
-        shape = RoundedCornerShape(radius),
-        modifier = Modifier.fillMaxWidth().heightIn(min = if (pinned) 64.dp else 68.dp),
+        shape = RoundedCornerShape((restingRadius - 15f * motion).dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = if (pinned) 64.dp else 68.dp)
+            .graphicsLayer {
+                scaleX = 1f - 0.045f * motion
+                scaleY = 1f - 0.09f * motion
+            },
     ) {
         if (moving || requestPending) ConnectLoadingIndicator(Modifier.size(28.dp), LocalContentColor.current)
         else Icon(Icons.Default.PowerSettingsNew, contentDescription = null, modifier = Modifier.size(28.dp))

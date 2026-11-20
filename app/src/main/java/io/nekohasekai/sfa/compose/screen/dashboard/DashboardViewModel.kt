@@ -793,6 +793,7 @@ class DashboardViewModel :
             ProfileManager.update(profile)
             if (selectAccountProfile) Settings.selectedProfile = profile.id
         }
+        SubscriptionInfoStore.recordAccountSource(Application.application, profile.id, url)
         SubscriptionInfoStore.save(Application.application, profile.id, response.subscriptionUserInfo)
         SubscriptionInfoStore.saveSmartStatus(Application.application, profile.id, response.subscriptionStatus)
         SubscriptionInfoStore.saveSkippedXhttp(Application.application, profile.id, conversion.skippedXhttpCount)
