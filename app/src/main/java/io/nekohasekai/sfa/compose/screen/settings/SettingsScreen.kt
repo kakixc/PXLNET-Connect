@@ -73,6 +73,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.navigation.NavController
+import io.nekohasekai.sfa.database.Settings as AppSettings
+import io.nekohasekai.sfa.compose.navigation.Screen
+import io.nekohasekai.sfa.utils.PxlUiPreferences
+import io.nekohasekai.sfa.utils.PxlRoutingPreferences
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.bg.BoxService
 import io.nekohasekai.sfa.bg.PxlDnsTileService
@@ -103,6 +107,8 @@ fun SettingsScreen(navController: NavController) {
         )
     }
 
+    val theme by PxlUiPreferences.interfaceTheme.collectAsState()
+    val focus = theme == PxlUiPreferences.InterfaceTheme.FOCUS
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
@@ -223,6 +229,49 @@ fun SettingsScreen(navController: NavController) {
         )
     }
 
+    val subscriptionEntry: @Composable () -> Unit = {
+        ListItem(
+            headlineContent = { Text(stringResource(R.string.pxlnet_settings_subscriptions)) },
+            supportingContent = { Text(stringResource(R.string.pxlnet_settings_subscriptions_summary)) },
+            leadingContent = {
+                PxlSettingsIcon(Icons.Outlined.Sync)
+            },
+            modifier = Modifier.clickable { navController.navigate("settings/subscriptions") },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        )
+    }
+    val dnsFeatureEntry: @Composable () -> Unit = {
+        ListItem(
+            headlineContent = { Text(stringResource(R.string.pxlnet_dns_title)) },
+            supportingContent = { Text(stringResource(R.string.pxlnet_dns_feature_hint)) },
+            leadingContent = { PxlSettingsIcon(Icons.Outlined.Public) },
+            trailingContent = {
+                Switch(checked = dnsEnabled, onCheckedChange = ::changeDnsEnabled)
+            },
+            modifier = Modifier.clickable { changeDnsEnabled(!dnsEnabled) },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        )
+    }
+    val remindersEntry: @Composable () -> Unit = {
+        ListItem(
+            headlineContent = { Text(stringResource(R.string.pxlnet_subscription_reminders_title)) },
+            supportingContent = { Text(stringResource(R.string.pxlnet_subscription_reminders_description)) },
+            leadingContent = {
+                PxlSettingsIcon(Icons.Outlined.NotificationsActive)
+            },
+            trailingContent = {
+                Switch(
+                    checked = subscriptionRemindersEnabled,
+                    onCheckedChange = { PxlSubscriptionReminderSettings.setEnabled(context, it) },
+                )
+            },
+            modifier = Modifier.clickable {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                PxlSubscriptionReminderSettings.setEnabled(context, !subscriptionRemindersEnabled)
+            },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        )
+    }
     Column(
         modifier =
         Modifier
@@ -231,7 +280,7 @@ fun SettingsScreen(navController: NavController) {
             .verticalScroll(rememberScrollState())
             .padding(top = topBarInset + 8.dp, bottom = floatingNavInset + 8.dp),
     ) {
-        Card(
+        if (!focus) Card(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
@@ -261,15 +310,7 @@ fun SettingsScreen(navController: NavController) {
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         ) {
             Column {
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.pxlnet_settings_subscriptions)) },
-                supportingContent = { Text(stringResource(R.string.pxlnet_settings_subscriptions_summary)) },
-                leadingContent = {
-                    PxlSettingsIcon(Icons.Outlined.Sync)
-                },
-                modifier = Modifier.clickable { navController.navigate("settings/subscriptions") },
-                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-            )
+            if (!focus) subscriptionEntry()
             ListItem(
                 headlineContent = { Text(stringResource(R.string.pxlnet_settings_always_on_title)) },
                 supportingContent = { Text(stringResource(R.string.pxlnet_settings_always_on_summary)) },
@@ -307,16 +348,7 @@ fun SettingsScreen(navController: NavController) {
                 },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             )
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.pxlnet_dns_title)) },
-                supportingContent = { Text(stringResource(R.string.pxlnet_dns_feature_hint)) },
-                leadingContent = { PxlSettingsIcon(Icons.Outlined.Public) },
-                trailingContent = {
-                    Switch(checked = dnsEnabled, onCheckedChange = ::changeDnsEnabled)
-                },
-                modifier = Modifier.clickable { changeDnsEnabled(!dnsEnabled) },
-                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-            )
+            if (!focus) dnsFeatureEntry()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !batteryOptimizationIgnored) {
                 ListItem(
                     headlineContent = { Text(stringResource(R.string.request_background_permission)) },
@@ -343,8 +375,22 @@ fun SettingsScreen(navController: NavController) {
             }
         }
 
+        if (focus) {
+            FocusSettingsGroup(R.string.pxlnet_settings_subscriptions) {
+                subscriptionEntry()
+                remindersEntry()
+            }
+            FocusSettingsGroup(R.string.pxlnet_settings_appearance) {
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.focus_theme)) },
+                    supportingContent = { Text(stringResource(R.string.focus_focus)) },
+                    modifier = Modifier.clickable { navController.navigate("settings/app/appearance") },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                )
+            }
+        }
         Text(
-            text = stringResource(R.string.pxlnet_settings_routing),
+            text = stringResource(if (focus) R.string.focus_traffic else R.string.pxlnet_settings_routing),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(horizontal = 32.dp, vertical = 8.dp),
@@ -356,17 +402,34 @@ fun SettingsScreen(navController: NavController) {
         ) {
             ListItem(
                 headlineContent = { Text(stringResource(R.string.pxlnet_settings_app_rules)) },
-                supportingContent = { Text(stringResource(R.string.pxlnet_settings_app_rules_summary)) },
+                supportingContent = {
+                    Text(if (!focus) stringResource(R.string.pxlnet_settings_app_rules_summary) else when {
+                        AppSettings.perAppProxyEnabled -> stringResource(
+                            if (AppSettings.getEffectivePerAppProxyMode() == AppSettings.PER_APP_PROXY_INCLUDE) R.string.focus_route_include else R.string.focus_route_exclude,
+                            AppSettings.getEffectivePerAppProxyList().size,
+                        )
+                        PxlRoutingPreferences.isSmartRouting(context) -> stringResource(R.string.pxlnet_routing_preview_smart)
+                        else -> stringResource(R.string.pxlnet_routing_preview_full)
+                    })
+                },
                 leadingContent = {
                     PxlSettingsIcon(Icons.Outlined.Tune)
                 },
                 modifier = Modifier.clickable { navController.navigate("pxlnet/app_routing") },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             )
+            if (focus) {
+                if (dnsEnabled) ListItem(
+                    headlineContent = { Text(stringResource(R.string.focus_open_dns)) },
+                    modifier = Modifier.clickable { navController.navigate(Screen.Dns.route) },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                )
+                dnsFeatureEntry()
+            }
         }
 
         Text(
-            text = stringResource(R.string.pxlnet_settings_help),
+            text = stringResource(if (focus) R.string.focus_help else R.string.pxlnet_settings_help),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(horizontal = 32.dp, vertical = 8.dp),
@@ -409,6 +472,11 @@ fun SettingsScreen(navController: NavController) {
                 modifier = Modifier.clickable { navController.navigate("settings/log") },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             )
+            if (focus) ListItem(
+                headlineContent = { Text(stringResource(R.string.network_quality)) },
+                modifier = Modifier.clickable { navController.navigate("tools/network_quality") },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
         }
 
         // App settings contain appearance, updates and advanced preferences.
@@ -424,34 +492,22 @@ fun SettingsScreen(navController: NavController) {
             shape = RoundedCornerShape(24.dp),
         ) {
             Column {
-                Text(
+                if (focus) ListItem(
+                    headlineContent = { Text(stringResource(R.string.title_app_settings)) },
+                    supportingContent = { Text(stringResource(R.string.pxlnet_app_settings_summary)) },
+                    modifier = Modifier.clickable { navController.navigate("settings/app") },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                )
+                if (!focus) Text(
                     text = stringResource(R.string.pxlnet_settings_updates),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                 )
 
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.pxlnet_subscription_reminders_title)) },
-                    supportingContent = { Text(stringResource(R.string.pxlnet_subscription_reminders_description)) },
-                    leadingContent = {
-                        PxlSettingsIcon(Icons.Outlined.NotificationsActive)
-                    },
-                    trailingContent = {
-                        Switch(
-                            checked = subscriptionRemindersEnabled,
-                            onCheckedChange = { PxlSubscriptionReminderSettings.setEnabled(context, it) },
-                        )
-                    },
-                    modifier = Modifier.clickable {
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        PxlSubscriptionReminderSettings.setEnabled(context, !subscriptionRemindersEnabled)
-                    },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                )
-
+                if (!focus) remindersEntry()
                 Text(
-                    text = stringResource(R.string.pxlnet_settings_developer),
+                    text = stringResource(if (focus) R.string.focus_advanced else R.string.pxlnet_settings_developer),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -758,4 +814,20 @@ private fun PxlSettingsIcon(imageVector: ImageVector) {
             tint = MaterialTheme.colorScheme.onSecondaryContainer,
         )
     }
+}
+
+@Composable
+private fun FocusSettingsGroup(title: Int, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    Text(
+        stringResource(title),
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(horizontal = 32.dp, vertical = 8.dp),
+    )
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        content = content,
+    )
 }

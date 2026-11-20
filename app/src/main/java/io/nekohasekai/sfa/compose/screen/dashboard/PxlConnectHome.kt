@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa.compose.screen.dashboard
 
+import io.nekohasekai.sfa.utils.PxlUiPreferences
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
@@ -187,6 +188,16 @@ fun DashboardScreen(
     groupsViewModel: GroupsViewModel? = null,
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val interfaceTheme by PxlUiPreferences.interfaceTheme.collectAsState()
+    val focusAppearance by PxlUiPreferences.focusAppearance.collectAsState()
+    val focus = interfaceTheme == PxlUiPreferences.InterfaceTheme.FOCUS
+    var focusRequestPending by remember { mutableStateOf(false) }
+    LaunchedEffect(focusRequestPending, serviceStatus) {
+        if (focusRequestPending) {
+            if (serviceStatus == Status.Stopped) delay(750)
+            focusRequestPending = false
+        }
+    }
     val context = LocalContext.current
     val catEasterEgg = rememberPxlCatEasterEggState()
     val hapticFeedback = LocalHapticFeedback.current
@@ -202,6 +213,7 @@ fun DashboardScreen(
     var pickerProbeRequested by remember { mutableStateOf(false) }
     var showAvailableProfiles by remember { mutableStateOf(false) }
     var showOnboarding by remember { mutableStateOf(PxlLocalPreferences.shouldShowOnboarding(context)) }
+    var focusHelpRequested by remember { mutableStateOf(false) }
     var showAccountHelp by remember { mutableStateOf(false) }
     var showXhttpDetails by remember { mutableStateOf(false) }
     var showGuestBanner by remember {
@@ -367,7 +379,8 @@ fun DashboardScreen(
         }
     }
 
-    LaunchedEffect(serviceStatus, selector?.tag, selectedServer) {
+    var focusHealthRevision by remember { mutableIntStateOf(0) }
+    LaunchedEffect(serviceStatus, selector?.tag, selectedServer, focusHealthRevision) {
         healthCheckTimedOut = false
         if (serviceStatus == Status.Started && selector != null) {
             // Delay samples can briefly alternate between zero and positive as
@@ -426,7 +439,7 @@ fun DashboardScreen(
             subtitle = "",
             onTitleClick = { catEasterEgg.tap(context) },
             actions = {
-                IconButton(onClick = { showOnboarding = true }) {
+                IconButton(onClick = { if (focus) focusHelpRequested = true else showOnboarding = true }) {
                     Icon(Icons.Default.HelpOutline, contentDescription = stringResource(R.string.pxlnet_how_to_connect))
                 }
                 IconButton(onClick = { onOpenNewProfile(NewProfileArgs()) }) {
@@ -438,7 +451,19 @@ fun DashboardScreen(
 
     PxlCatEasterEggDialog(catEasterEgg)
 
-    if (showOnboarding) {
+    if (focus && focusHelpRequested) {
+        AlertDialog(
+            onDismissRequest = { focusHelpRequested = false },
+            title = { Text(stringResource(R.string.pxlnet_how_to_connect)) },
+            text = { Text(stringResource(R.string.focus_setup_help)) },
+            confirmButton = {
+                TextButton(onClick = { focusHelpRequested = false }) {
+                    Text(stringResource(R.string.ok))
+                }
+            },
+        )
+    }
+    if (showOnboarding && !focus) {
         PxlOnboardingSheet(
             smartRouting = uiState.smartRoutingEnabled,
             hasTelegramSession = uiState.hasTelegramSession,
@@ -577,6 +602,13 @@ fun DashboardScreen(
                     )
                 }
             }
+            if (focus && selectedItem != null) {
+                Text(
+                    stringResource(R.string.focus_selected, serverTitle(context, selectedItem.displayTag, selectedItem.type)),
+                    Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
             FilledTonalButton(
                 onClick = {
                     viewModel.serverProbeCache.clear()
@@ -589,7 +621,7 @@ fun DashboardScreen(
                 enabled = serviceStatus in setOf(Status.Started, Status.Stopped) && hasProfile && manualChoices.isNotEmpty(),
             ) {
                 Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text(stringResource(R.string.pxlnet_measure_all_servers), modifier = Modifier.padding(start = 8.dp))
+                Text(stringResource(if (focus) R.string.focus_probe else R.string.pxlnet_measure_all_servers), modifier = Modifier.padding(start = 8.dp))
             }
             Text(
                 stringResource(
@@ -636,6 +668,8 @@ fun DashboardScreen(
                         missingFromSession -> stringResource(R.string.pxlnet_server_not_loaded)
                         probe == ServerProbeDisplay.Unavailable -> stringResource(R.string.pxlnet_server_probe_failed_try)
                         autoBest -> stringResource(R.string.pxlnet_latency_best_found)
+                        focus && probe == null && (item.delay ?: 0) <= 0 ->
+                            stringResource(R.string.focus_unchecked)
                         else -> null
                     },
                 ) {
@@ -668,6 +702,21 @@ fun DashboardScreen(
         }
     }
 
+    val onMascotTap: () -> Unit = {
+        pixTapCount++
+        if (PxlLocalPreferences.isCosmosUnlocked(context)) {
+            if (pixTapCount >= 5) {
+                pixTapCount = 0
+                Toast.makeText(context, R.string.pxlnet_cosmos_already_unlocked, Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            if (pixTapCount >= 5) {
+                PxlLocalPreferences.unlockCosmos(context)
+                pixTapCount = 0
+                Toast.makeText(context, R.string.pxlnet_cosmos_unlocked, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
     val topBarInset = LocalPxlTopBarInset.current
     val floatingNavInset = LocalPxlFloatingNavInset.current
     LazyColumn(
@@ -678,7 +727,46 @@ fun DashboardScreen(
         contentPadding = PaddingValues(top = topBarInset + 16.dp, bottom = floatingNavInset + 32.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        if (hasProfile || uiState.hasTelegramSession) {
+        if (focus) {
+            item(key = "focus-connection") {
+                FocusHomeControl(
+                    hasProfile = hasProfile,
+                    dnsOnly = dnsOnlyActive,
+                    blocked = subscriptionInactive && serviceStatus == Status.Stopped,
+                    serviceStatus = serviceStatus,
+                    switching = uiState.switchingServerTag != null,
+                    requestPending = focusRequestPending,
+                    reachability = reachability,
+                    server = if (serviceStatus == Status.Started && selector?.selected == selectedServer &&
+                        serverRegion(selectedServer) == ServerRegion.AUTO
+                    ) {
+                        selectedVpnServerNode(groupsState.groups, selectedServer, extraNodeTags = uiState.xhttpServers.keys)
+                            ?.let { node ->
+                                stringResource(R.string.focus_auto_live, serverTitle(context, serverChoice(node, "").displayTag))
+                            } ?: serverTitle(context, selectedServer)
+                    } else selectedItem?.let { serverTitle(context, it.displayTag, it.type) }
+                        ?: selectedServer.takeIf { it.isNotBlank() }?.let { serverTitle(context, it) },
+                    onChooseServer = if (serverChoices.isNotEmpty()) ({ showServerPicker = true }) else null,
+                    onChooseProfile = if (uiState.profiles.size > 1) ({ showProfilePicker = true }) else null,
+                    onConnect = {
+                        focusRequestPending = true
+                        hapticFeedback.performPxlConfirmation()
+                        viewModel.toggleService()
+                    },
+                    onRetry = selector?.tag?.let { { focusHealthRevision++ } },
+                    onOpenDns = onOpenDns,
+                    onPaste = importFromClipboard,
+                    onImport = { onOpenNewProfile(NewProfileArgs()) },
+                    onLogin = if (!uiState.hasTelegramSession && !uiState.telegramLoginPending) viewModel::startTelegramLogin else null,
+                    mascot = if (focusAppearance.mascot) ({
+                        PxlCatCharacter(connectionState, mascotAnimationsEnabled, onMascotTap)
+                    }) else null,
+                )
+            }
+        }
+        if ((!focus || focusAppearance.details == PxlUiPreferences.FocusDetails.SUBSCRIPTION) &&
+            (hasProfile || uiState.hasTelegramSession)
+        ) {
             item {
                 AccessStrip(
                     profileName = uiState.selectedProfileName,
@@ -697,7 +785,7 @@ fun DashboardScreen(
                 )
             }
         }
-        if (uiState.profiles.size > 1) {
+        if (!focus && uiState.profiles.size > 1) {
             item {
                 val selectedProfile = uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }
                 Surface(
@@ -762,7 +850,7 @@ fun DashboardScreen(
                 )
             }
         }
-        if (dnsOnlyActive) item {
+        if (!focus && dnsOnlyActive) item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(24.dp),
@@ -776,7 +864,7 @@ fun DashboardScreen(
                 )
             }
         }
-        item {
+        if (!focus) item {
             ConnectionControl(
                 serviceStatus = displayedServiceStatus,
                 state = connectionState,
@@ -791,21 +879,7 @@ fun DashboardScreen(
                 animateMascot = mascotAnimationsEnabled,
                 showMascotTips = mascotTipsEnabled,
                 hasProfile = hasProfile,
-                onMascotTap = {
-                    pixTapCount++
-                    if (PxlLocalPreferences.isCosmosUnlocked(context)) {
-                        if (pixTapCount >= 5) {
-                            pixTapCount = 0
-                            Toast.makeText(context, R.string.pxlnet_cosmos_already_unlocked, Toast.LENGTH_SHORT).show()
-                        }
-                    } else {
-                        if (pixTapCount >= 5) {
-                            PxlLocalPreferences.unlockCosmos(context)
-                            pixTapCount = 0
-                            Toast.makeText(context, R.string.pxlnet_cosmos_unlocked, Toast.LENGTH_LONG).show()
-                        }
-                    }
-                },
+                onMascotTap = onMascotTap,
                 onClick = {
                     hapticFeedback.performPxlConfirmation()
                     if (subscriptionInactive) showAvailableProfiles = true else viewModel.toggleService()
@@ -813,7 +887,7 @@ fun DashboardScreen(
             )
         }
 
-        if (!hasProfile) {
+        if (!focus && !hasProfile) {
             item {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
                     Text(
@@ -830,7 +904,7 @@ fun DashboardScreen(
             }
         }
 
-        item {
+        if (!focus) item {
             ServerCard(
                 serverTag = selectedItem?.displayTag ?: selectedServer,
                 serverType = selectedItem?.type.orEmpty(),
@@ -898,7 +972,7 @@ fun DashboardScreen(
             }
         }
 
-        if (uiState.telegramAccountName == null && showGuestBanner) {
+        if (!focus && uiState.telegramAccountName == null && showGuestBanner) {
             item {
                 GuestAccountBanner(
                     onClose = { showGuestBanner = false },
@@ -907,7 +981,17 @@ fun DashboardScreen(
             }
         }
 
-        item {
+        if (focus && hasProfile && focusAppearance.details == PxlUiPreferences.FocusDetails.ROUTING) item {
+            FocusTrafficSummary(
+                smartRouting = uiState.smartRoutingEnabled,
+                appRules = Settings.perAppProxyEnabled,
+                dnsEnabled = PxlDnsProfiles.enabled(context),
+                dnsActive = serviceStatus == Status.Started && PxlDnsProfiles.activeMode(context) != null,
+                onRouting = onOpenAppRouting,
+                onDns = onOpenDns,
+            )
+        }
+        if (!focus) item {
             RoutingCard(
                 smartRouting = uiState.smartRoutingEnabled,
                 appRoutingEnabled = Settings.perAppProxyEnabled,
@@ -915,7 +999,7 @@ fun DashboardScreen(
             )
         }
 
-        item {
+        if (!focus) item {
             GuardCard(
                 guardEnabled = guardEnabled,
                 onGuardChanged = {
@@ -925,7 +1009,7 @@ fun DashboardScreen(
             )
         }
 
-        if (!hasProfile) {
+        if (!focus && !hasProfile) {
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -955,7 +1039,7 @@ fun DashboardScreen(
             }
         }
 
-        if (!quickTileAdded) {
+        if (!quickTileAdded && (!focus || hasProfile)) {
             item {
                 QuickTileCard(
                     onAdd = {

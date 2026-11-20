@@ -516,9 +516,16 @@ class MainActivity :
         val windowSizeClass = currentWindowAdaptiveInfo().windowSizeClass
         val useNavigationRail =
             windowSizeClass.isWidthAtLeastBreakpointCompat(WindowSizeClassCompat.WIDTH_DP_MEDIUM_LOWER_BOUND)
-        val floatingNavigation by PxlUiPreferences.floatingNavigation.collectAsState()
-        val navigationBlur by PxlUiPreferences.navigationBlur.collectAsState()
-        val floatingNavigationLabels by PxlUiPreferences.floatingNavigationLabels.collectAsState()
+        val classicFloatingNavigation by PxlUiPreferences.floatingNavigation.collectAsState()
+        val interfaceTheme by PxlUiPreferences.interfaceTheme.collectAsState()
+        val focusAppearance by PxlUiPreferences.focusAppearance.collectAsState()
+        val floatingNavigation = if (interfaceTheme == PxlUiPreferences.InterfaceTheme.FOCUS) {
+            focusAppearance.floating
+        } else classicFloatingNavigation
+        val classicNavigationBlur by PxlUiPreferences.navigationBlur.collectAsState()
+        val navigationBlur = interfaceTheme == PxlUiPreferences.InterfaceTheme.FOCUS || classicNavigationBlur
+        val classicNavigationLabels by PxlUiPreferences.floatingNavigationLabels.collectAsState()
+        val floatingNavigationLabels = interfaceTheme == PxlUiPreferences.InterfaceTheme.CLASSIC && classicNavigationLabels
         val hazeState = remember { HazeState() }
         var floatingNavHeightPx by remember { mutableIntStateOf(0) }
 

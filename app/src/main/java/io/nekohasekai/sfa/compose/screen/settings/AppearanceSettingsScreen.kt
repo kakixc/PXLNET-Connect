@@ -89,6 +89,7 @@ fun AppearanceSettingsScreen(navController: NavController) {
     }
 
     val context = LocalContext.current
+    val interfaceTheme by PxlUiPreferences.interfaceTheme.collectAsState()
     val floatingNavigation by PxlUiPreferences.floatingNavigation.collectAsState()
     val floatingLabels by PxlUiPreferences.floatingNavigationLabels.collectAsState()
     val navigationBlur by PxlUiPreferences.navigationBlur.collectAsState()
@@ -231,6 +232,86 @@ fun AppearanceSettingsScreen(navController: NavController) {
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
     ) {
+        InterfaceThemePicker(interfaceTheme) {
+            Text(
+                stringResource(R.string.pxlnet_settings_floating_navigation),
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(start = 16.dp, top = 24.dp, bottom = 8.dp),
+            )
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            ) {
+                AppearanceSwitchRow(
+                    title = stringResource(R.string.pxlnet_settings_floating_navigation),
+                    description = stringResource(R.string.pxlnet_settings_floating_navigation_summary),
+                    icon = Icons.Outlined.Settings,
+                    checked = floatingNavigation,
+                    onChange = { PxlUiPreferences.setFloatingNavigation(context, it) },
+                )
+                if (floatingNavigation) {
+                    AppearanceSwitchRow(
+                        title = stringResource(R.string.pxlnet_settings_floating_navigation_labels),
+                        description = stringResource(R.string.pxlnet_settings_floating_navigation_labels_summary),
+                        icon = Icons.Outlined.Settings,
+                        checked = floatingLabels,
+                        onChange = { PxlUiPreferences.setFloatingNavigationLabels(context, it) },
+                    )
+                }
+                AppearanceSwitchRow(
+                    title = stringResource(R.string.pxlnet_settings_navigation_blur),
+                    description = stringResource(
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && floatingNavigation) {
+                            R.string.pxlnet_settings_navigation_blur_summary
+                        } else {
+                            R.string.pxlnet_settings_navigation_blur_unavailable
+                        },
+                    ),
+                    icon = Icons.Outlined.Animation,
+                    checked = navigationBlur,
+                    enabled = floatingNavigation && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
+                    onChange = { PxlUiPreferences.setNavigationBlur(context, it) },
+                )
+            }
+
+            Text(
+                stringResource(R.string.pxlnet_mascot_setting_title),
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(start = 16.dp, top = 24.dp, bottom = 8.dp),
+            )
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            ) {
+                AppearanceSwitchRow(
+                    title = stringResource(R.string.pxlnet_mascot_setting_title),
+                    description = stringResource(R.string.pxlnet_mascot_setting_description),
+                    icon = Icons.Outlined.Pets,
+                    checked = mascotEnabled,
+                    onChange = PxlMascotSettings::setEnabled,
+                )
+                if (mascotEnabled) {
+                    AppearanceSwitchRow(
+                        title = stringResource(R.string.pxlnet_mascot_animations_title),
+                        description = stringResource(R.string.pxlnet_mascot_animations_description),
+                        icon = Icons.Outlined.Animation,
+                        checked = mascotAnimations,
+                        onChange = PxlMascotSettings::setAnimationsEnabled,
+                    )
+                    AppearanceSwitchRow(
+                        title = stringResource(R.string.pxlnet_mascot_tips_title),
+                        description = stringResource(R.string.pxlnet_mascot_tips_description),
+                        icon = Icons.Outlined.ChatBubbleOutline,
+                        checked = mascotTips,
+                        onChange = PxlMascotSettings::setTipsEnabled,
+                    )
+                }
+            }
+        }
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(24.dp),
@@ -358,84 +439,7 @@ fun AppearanceSettingsScreen(navController: NavController) {
             )
         }
 
-        Text(
-            stringResource(R.string.pxlnet_settings_floating_navigation),
-            color = MaterialTheme.colorScheme.primary,
-            style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.padding(start = 16.dp, top = 24.dp, bottom = 8.dp),
-        )
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        ) {
-            AppearanceSwitchRow(
-                title = stringResource(R.string.pxlnet_settings_floating_navigation),
-                description = stringResource(R.string.pxlnet_settings_floating_navigation_summary),
-                icon = Icons.Outlined.Settings,
-                checked = floatingNavigation,
-                onChange = { PxlUiPreferences.setFloatingNavigation(context, it) },
-            )
-            if (floatingNavigation) {
-                AppearanceSwitchRow(
-                    title = stringResource(R.string.pxlnet_settings_floating_navigation_labels),
-                    description = stringResource(R.string.pxlnet_settings_floating_navigation_labels_summary),
-                    icon = Icons.Outlined.Settings,
-                    checked = floatingLabels,
-                    onChange = { PxlUiPreferences.setFloatingNavigationLabels(context, it) },
-                )
-            }
-            AppearanceSwitchRow(
-                title = stringResource(R.string.pxlnet_settings_navigation_blur),
-                description = stringResource(
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && floatingNavigation) {
-                        R.string.pxlnet_settings_navigation_blur_summary
-                    } else {
-                        R.string.pxlnet_settings_navigation_blur_unavailable
-                    },
-                ),
-                icon = Icons.Outlined.Animation,
-                checked = navigationBlur,
-                enabled = floatingNavigation && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
-                onChange = { PxlUiPreferences.setNavigationBlur(context, it) },
-            )
-        }
 
-        Text(
-            stringResource(R.string.pxlnet_mascot_setting_title),
-            color = MaterialTheme.colorScheme.primary,
-            style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.padding(start = 16.dp, top = 24.dp, bottom = 8.dp),
-        )
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        ) {
-            AppearanceSwitchRow(
-                title = stringResource(R.string.pxlnet_mascot_setting_title),
-                description = stringResource(R.string.pxlnet_mascot_setting_description),
-                icon = Icons.Outlined.Pets,
-                checked = mascotEnabled,
-                onChange = PxlMascotSettings::setEnabled,
-            )
-            if (mascotEnabled) {
-                AppearanceSwitchRow(
-                    title = stringResource(R.string.pxlnet_mascot_animations_title),
-                    description = stringResource(R.string.pxlnet_mascot_animations_description),
-                    icon = Icons.Outlined.Animation,
-                    checked = mascotAnimations,
-                    onChange = PxlMascotSettings::setAnimationsEnabled,
-                )
-                AppearanceSwitchRow(
-                    title = stringResource(R.string.pxlnet_mascot_tips_title),
-                    description = stringResource(R.string.pxlnet_mascot_tips_description),
-                    icon = Icons.Outlined.ChatBubbleOutline,
-                    checked = mascotTips,
-                    onChange = PxlMascotSettings::setTipsEnabled,
-                )
-            }
-        }
     }
 }
 

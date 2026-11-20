@@ -11,6 +11,35 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /** Preferences for app appearance and the home widget, never VPN service or profiles. */
 object PxlUiPreferences {
+    enum class InterfaceTheme { CLASSIC, FOCUS }
+    enum class FocusDetails { ROUTING, SUBSCRIPTION, HIDDEN }
+
+    data class FocusAppearance(
+        val mascot: Boolean = true,
+        val details: FocusDetails = FocusDetails.ROUTING,
+        val floating: Boolean = true,
+    )
+
+    private val mutableInterfaceTheme = MutableStateFlow(InterfaceTheme.CLASSIC)
+    val interfaceTheme = mutableInterfaceTheme.asStateFlow()
+    private val mutableFocusAppearance = MutableStateFlow(FocusAppearance())
+    val focusAppearance = mutableFocusAppearance.asStateFlow()
+
+    fun setInterfaceTheme(context: Context, theme: InterfaceTheme) {
+        context.getSharedPreferences(fileName, Context.MODE_PRIVATE)
+            .edit().putString("interface_theme", theme.name).apply()
+        mutableInterfaceTheme.value = theme
+    }
+
+    fun setFocusAppearance(context: Context, appearance: FocusAppearance) {
+        context.getSharedPreferences(fileName, Context.MODE_PRIVATE).edit()
+            .putBoolean("focus_mascot", appearance.mascot)
+            .putString("focus_details", appearance.details.name)
+            .putBoolean("focus_floating", appearance.floating)
+            .apply()
+        mutableFocusAppearance.value = appearance
+    }
+
     enum class FontMode { PXLNET, SYSTEM, CUSTOM }
 
     data class FontSelection(val mode: FontMode, val customFileName: String? = null, val customLabel: String? = null)
@@ -61,6 +90,16 @@ object PxlUiPreferences {
 
     fun initialize(context: Context) {
         val preferences = context.applicationContext.getSharedPreferences(fileName, Context.MODE_PRIVATE)
+        mutableInterfaceTheme.value = InterfaceTheme.entries.firstOrNull {
+            it.name == preferences.getString("interface_theme", null)
+        } ?: InterfaceTheme.CLASSIC
+        mutableFocusAppearance.value = FocusAppearance(
+            mascot = preferences.getBoolean("focus_mascot", true),
+            details = FocusDetails.entries.firstOrNull {
+                it.name == preferences.getString("focus_details", null)
+            } ?: FocusDetails.ROUTING,
+            floating = preferences.getBoolean("focus_floating", true),
+        )
         mutableFloatingNavigation.value = preferences.getBoolean(floatingNavigationKey, true)
         mutableNavigationBlur.value = preferences.getBoolean(navigationBlurKey, true)
         mutableFloatingNavigationLabels.value = preferences.getBoolean(floatingNavigationLabelsKey, false)

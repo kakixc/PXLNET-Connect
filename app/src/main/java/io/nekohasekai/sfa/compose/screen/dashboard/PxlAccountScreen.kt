@@ -1,6 +1,16 @@
 package io.nekohasekai.sfa.compose.screen.dashboard
 
 import android.widget.Toast
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.IconButton
+import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import io.nekohasekai.sfa.database.TypedProfile
+import io.nekohasekai.sfa.utils.PxlUiPreferences
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -91,6 +101,16 @@ fun PxlAccountScreen(
 
     val topBarInset = LocalPxlTopBarInset.current
     val floatingNavInset = LocalPxlFloatingNavInset.current
+    val theme by PxlUiPreferences.interfaceTheme.collectAsState()
+    if (theme == PxlUiPreferences.InterfaceTheme.FOCUS) {
+        FocusAccount(
+            uiState = uiState,
+            profileSummary = linkSummary,
+            onImport = { onOpenNewProfile(NewProfileArgs()) },
+            viewModel = viewModel,
+        )
+        return
+    }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = topBarInset + 12.dp, bottom = floatingNavInset + 12.dp),
@@ -344,6 +364,7 @@ private fun PxlPulsePanel(
     checking: Boolean,
     checkedAt: Long?,
     onRefresh: () -> Unit,
+    showMetrics: Boolean = true,
 ) {
     val summary = when {
         checking -> stringResource(R.string.pxlnet_pulse_checking)
@@ -384,7 +405,7 @@ private fun PxlPulsePanel(
             }
         }
 
-        Row(
+        if (showMetrics) Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -515,4 +536,132 @@ private fun EcosystemRow(
 private fun formatAccountExpiry(value: String?): String? {
     val parts = value?.take(10)?.split('-') ?: return null
     return if (parts.size == 3) "${parts[2]}.${parts[1]}.${parts[0]}" else value
+}
+
+@Composable
+private fun FocusAccount(
+    uiState: DashboardUiState,
+    profileSummary: String?,
+    onImport: () -> Unit,
+    viewModel: DashboardViewModel,
+) {
+    val context = LocalContext.current
+    val profile = uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }
+    val signedIn = uiState.hasTelegramSession
+    val verified = uiState.accountLastVerifiedAt != null
+    var menuOpen by remember { mutableStateOf(false) }
+    var pulseExpanded by rememberSaveable { mutableStateOf(false) }
+    val inset = LocalPxlTopBarInset.current
+    val bottomInset = LocalPxlFloatingNavInset.current
+
+    val profileCard: @Composable () -> Unit = {
+        PxlAccountCard {
+            Text(stringResource(R.string.focus_current_profile), style = MaterialTheme.typography.labelLarge)
+            Text(profile?.name ?: stringResource(R.string.pxlnet_subscription_not_added), style = MaterialTheme.typography.titleMedium)
+            if (profile != null) {
+                val remote = profile.typed.type == TypedProfile.Type.Remote
+                Text(stringResource(if (remote) R.string.focus_linked else R.string.focus_file), style = MaterialTheme.typography.bodyMedium)
+                profileSummary?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                if (remote && profile.typed.remoteURL.isNotBlank()) {
+                    OutlinedButton(onClick = { viewModel.updateProfile(profile) }, enabled = uiState.updatingProfileId == null) {
+                        Text(stringResource(R.string.pxlnet_refresh))
+                    }
+                } else {
+                    OutlinedButton(onClick = { viewModel.editProfile(profile) }) {
+                        Text(stringResource(R.string.focus_edit_profile))
+                    }
+                }
+            } else {
+                Button(onClick = onImport) { Text(stringResource(R.string.pxlnet_add_existing_subscription)) }
+            }
+        }
+    }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = inset + 12.dp, bottom = bottomInset + 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (!signedIn) item { profileCard() }
+        item {
+            PxlAccountCard(compact = true) {
+                if (signedIn) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(uiState.telegramAccountName ?: uiState.telegramUsername ?: stringResource(R.string.focus_account),
+                                style = MaterialTheme.typography.titleLarge)
+                            Text(stringResource(R.string.pxlnet_signed_in_telegram), style = MaterialTheme.typography.bodySmall)
+                        }
+                        Box {
+                            IconButton(onClick = { menuOpen = true }) {
+                                Icon(Icons.Default.MoreVert, stringResource(R.string.focus_more))
+                            }
+                            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                DropdownMenuItem(text = { Text(stringResource(R.string.pxlnet_sign_out)) }, onClick = {
+                                    menuOpen = false
+                                    viewModel.logoutTelegram()
+                                })
+                            }
+                        }
+                    }
+                } else {
+                    Text(stringResource(R.string.pxlnet_login_description), style = MaterialTheme.typography.bodyMedium)
+                    TextButton(onClick = viewModel::startTelegramLogin, enabled = !uiState.telegramLoginPending) {
+                        Text(stringResource(if (uiState.telegramLoginPending) R.string.pxlnet_login_waiting else R.string.pxlnet_login_telegram))
+                    }
+                }
+            }
+        }
+        if (signedIn) {
+            item {
+                PxlAccountCard {
+                    Text(stringResource(R.string.focus_accounts), style = MaterialTheme.typography.labelLarge)
+                    Text(when {
+                        !verified -> stringResource(R.string.pxlnet_account_status_unknown)
+                        !uiState.telegramSubscriptionActive -> stringResource(R.string.pxlnet_subscription_inactive)
+                        else -> formatAccountExpiry(uiState.telegramSubscriptionExpiresAt)?.let {
+                            stringResource(R.string.pxlnet_subscription_active_until, it)
+                        } ?: stringResource(R.string.pxlnet_subscription_active)
+                    }, style = MaterialTheme.typography.titleLarge)
+                    if (uiState.accountServiceAvailable == false) Text(stringResource(R.string.focus_offline))
+                    if (verified) Button(onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) }) {
+                        Text(stringResource(if (uiState.telegramSubscriptionActive) R.string.focus_renew else R.string.pxlnet_buy_in_bot))
+                    }
+                    TextButton(onClick = viewModel::refreshTelegramAccount, enabled = !uiState.telegramLoginPending) {
+                        Text(stringResource(R.string.pxlnet_refresh))
+                    }
+                }
+            }
+            item { profileCard() }
+        }
+        item {
+            PxlAccountCard {
+                OutlinedButton(onClick = { pulseExpanded = !pulseExpanded }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.pxlnet_pulse_title), Modifier.weight(1f))
+                    Text(stringResource(if (pulseExpanded) R.string.focus_collapse else R.string.focus_expand))
+                }
+                if (pulseExpanded) {
+                    Text(stringResource(R.string.focus_nodes, uiState.availableServerTags.count { !it.equals("AUTO", true) }))
+                    PxlPulsePanel(
+                        serviceAvailable = uiState.accountServiceAvailable,
+                        isLoggedIn = signedIn,
+                        subscriptionActive = uiState.telegramSubscriptionActive,
+                        hasLocalSubscription = profile != null,
+                        serverCount = uiState.availableServerTags.count { !it.equals("AUTO", true) },
+                        checking = uiState.ecosystemCheckPending,
+                        checkedAt = uiState.ecosystemLastCheckedAt,
+                        onRefresh = viewModel::refreshEcosystem,
+                        showMetrics = false,
+                    )
+                }
+            }
+        }
+        item {
+            PxlAccountCard {
+                EcosystemRow(Icons.Default.SupportAgent, stringResource(R.string.pxlnet_support_title),
+                    stringResource(R.string.pxlnet_support_description), onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) })
+                EcosystemRow(Icons.Default.Campaign, stringResource(R.string.pxlnet_news_title),
+                    stringResource(R.string.pxlnet_news_description), onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_CHANNEL) })
+            }
+        }
+    }
 }

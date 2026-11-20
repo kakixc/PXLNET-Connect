@@ -93,6 +93,7 @@ android {
 
     buildTypes {
         debug {
+            applicationIdSuffix = ".focuslab"
             if (getProps("KEYSTORE_PASS").isNotEmpty()) {
                 signingConfig = signingConfigs.getByName("release")
             }
