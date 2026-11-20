@@ -246,7 +246,7 @@
     <string name="title_log">Логи</string>
     <string name="title_settings">Параметры</string>
     <string name="title_app_settings">Приложение</string>
-    <string name="pxlnet_app_settings_summary">Тема, акцентный цвет и первоначальная настройка</string>
+    <string name="pxlnet_app_settings_summary">Язык, обновления приложения и первоначальная настройка</string>
     <string name="title_new_profile">Новый профиль</string>
     <string name="title_edit_profile">Редактировать профиль</string>
     <string name="title_edit_configuration">Редактировать конфигурацию</string>

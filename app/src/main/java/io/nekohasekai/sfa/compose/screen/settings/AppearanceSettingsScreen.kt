@@ -76,7 +76,7 @@ import kotlin.math.roundToInt
 fun AppearanceSettingsScreen(navController: NavController, section: AppearanceSection = AppearanceSection.ALL) {
     val interfaceTheme by PxlUiPreferences.interfaceTheme.collectAsState()
     val title = when (section) {
-        AppearanceSection.ALL -> R.string.pxlnet_settings_appearance
+        AppearanceSection.ALL -> R.string.focus_personalization
         AppearanceSection.THEME -> R.string.focus_theme
         AppearanceSection.CUSTOMIZE -> interfaceTheme.customizeResource()
         AppearanceSection.SHARED -> R.string.focus_colors_font

@@ -83,4 +83,6 @@
     <string name="focus_trial_probe_failed">Проверка интернета не удалась</string>
     <string name="focus_trial_retry_connect">Повторить подключение</string>
     <string name="focus_apply_theme">Применить тему</string>
+    <string name="focus_personalization">Персонализация</string>
+    <string name="focus_advanced_summary">Параметры приложения и режим разработчика</string>
 </resources>

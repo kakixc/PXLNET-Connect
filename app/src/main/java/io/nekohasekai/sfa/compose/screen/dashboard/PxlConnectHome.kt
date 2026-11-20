@@ -106,7 +106,6 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
@@ -777,16 +776,23 @@ fun DashboardScreen(
     val topBarInset = LocalPxlTopBarInset.current
     val floatingNavInset = LocalPxlFloatingNavInset.current
     val pinnedControls = trial && (hasProfile || dnsOnlyActive)
-    val serverTopSpace = (LocalConfiguration.current.screenHeightDp.dp * 0.10f).coerceIn(24.dp, 80.dp)
-    val focusServerTitle = if (!focus) null else if (serviceStatus == Status.Started && selector?.selected == selectedServer &&
+    val liveServer = if (focus && serviceStatus == Status.Started && selector?.selected == selectedServer &&
         serverRegion(selectedServer) == ServerRegion.AUTO
     ) {
         selectedVpnServerNode(groupsState.groups, selectedServer, extraNodeTags = uiState.xhttpServers.keys)
-            ?.let { node ->
-                stringResource(R.string.focus_auto_live, serverTitle(context, serverChoice(node, "").displayTag))
-            } ?: serverTitle(context, selectedServer)
-    } else selectedItem?.let { serverTitle(context, it.displayTag, it.type) }
-        ?: selectedServer.takeIf { it.isNotBlank() }?.let { serverTitle(context, it) }
+            ?.let { serverChoice(it, "") }
+    } else null
+    val presentedServer = liveServer ?: selectedItem
+    val consoleProtocol = if (trial) presentedServer?.let { serverProtocol(it.displayTag, it.type) } else null
+    val serverName = if (focus) {
+        presentedServer?.let {
+            val title = serverTitle(context, it.displayTag, it.type)
+            consoleServerName(title, consoleProtocol.orEmpty())
+        } ?: selectedServer.takeIf { it.isNotBlank() }?.let { serverTitle(context, it) }
+    } else null
+    val focusServerTitle = if (liveServer != null && serverName != null) {
+        stringResource(R.string.focus_auto_live, serverName)
+    } else serverName
     val chooseServer: (() -> Unit)? = if (serverChoices.isNotEmpty()) ({ showServerPicker = true }) else null
     val focusConnect: () -> Unit = {
         if (trial && serviceStatus == Status.Stopped) trialFailedStart = false
@@ -813,6 +819,7 @@ fun DashboardScreen(
                         requestPending = focusRequestPending,
                         reachability = reachability,
                         server = focusServerTitle,
+                        serverProtocol = consoleProtocol,
                         onChooseServer = chooseServer,
                         onChooseProfile = if (uiState.profiles.size > 1) ({ showProfilePicker = true }) else null,
                         onConnect = focusConnect,
@@ -826,11 +833,6 @@ fun DashboardScreen(
                             PxlCatCharacter(connectionState, mascotAnimationsEnabled, onMascotTap, reachability)
                         }) else null,
                     )
-                }
-            }
-            if (pinnedControls && !dnsOnlyActive) item(key = "console-server") {
-                Box(Modifier.padding(top = serverTopSpace)) {
-                    FocusServerSelection(focusServerTitle, chooseServer)
                 }
             }
             if (pinnedControls && uiState.profiles.size > 1 && !dnsOnlyActive) item {
@@ -2198,6 +2200,18 @@ private fun serverTitle(context: Context, tag: String, type: String = ""): Strin
     ServerRegion.FINLAND -> cleanServerTag(tag).takeIf { it.contains('•') || it.contains('·') }
         ?: context.getString(R.string.pxlnet_country_finland)
     ServerRegion.OTHER -> cleanServerTag(tag)
+}
+
+private fun consoleServerName(title: String, protocol: String): String {
+    if (protocol.isBlank()) return title
+    val protocolParts = protocol.split(" · ")
+    val titleParts = title.split('\u2022', '\u00b7').map(String::trim)
+    if (titleParts.size <= protocolParts.size ||
+        !titleParts.takeLast(protocolParts.size).zip(protocolParts).all { (name, part) ->
+            name.equals(part, ignoreCase = true)
+        }
+    ) return title
+    return titleParts.dropLast(protocolParts.size).joinToString(" · ")
 }
 
 @Composable

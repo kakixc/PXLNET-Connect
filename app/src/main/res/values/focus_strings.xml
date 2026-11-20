@@ -83,4 +83,6 @@
     <string name="focus_trial_probe_failed">Internet check failed</string>
     <string name="focus_trial_retry_connect">Retry connection</string>
     <string name="focus_apply_theme">Apply theme</string>
+    <string name="focus_personalization">Personalization</string>
+    <string name="focus_advanced_summary">App settings and developer mode</string>
 </resources>

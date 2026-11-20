@@ -39,8 +39,8 @@ import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SettingsRemote
+import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Palette
-import androidx.compose.material.icons.outlined.TextFields
 import io.nekohasekai.sfa.compose.component.pxlPressMotion
 import androidx.compose.material.icons.outlined.SupportAgent
 import androidx.compose.material.icons.outlined.Tune
@@ -109,7 +109,7 @@ enum class FocusSettingsSection(val title: Int, val summary: Int) {
     ROUTING(R.string.focus_traffic, R.string.focus_routing_summary),
     SUBSCRIPTIONS(R.string.pxlnet_settings_subscriptions, R.string.focus_subscriptions_summary),
     HELP(R.string.focus_help, R.string.focus_help_summary),
-    ADVANCED(R.string.focus_advanced, R.string.pxlnet_app_settings_summary),
+    ADVANCED(R.string.focus_advanced, R.string.focus_advanced_summary),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -127,7 +127,6 @@ fun SettingsScreen(navController: NavController, section: FocusSettingsSection? 
     }
 
     val theme by PxlUiPreferences.interfaceTheme.collectAsState()
-    val focus = theme != PxlUiPreferences.InterfaceTheme.CLASSIC
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
@@ -299,34 +298,15 @@ fun SettingsScreen(navController: NavController, section: FocusSettingsSection? 
             .verticalScroll(rememberScrollState())
             .padding(top = topBarInset + 8.dp, bottom = floatingNavInset + 8.dp),
     ) {
-        if (focus && section == null) {
-            FocusSettingsGroup(R.string.pxlnet_settings_appearance) {
-                FocusSettingsLink(Icons.Outlined.Palette, R.string.focus_theme, stringResource(theme.titleResource())) {
-                    navController.navigate("settings/app/appearance/theme")
+        if (section == null) {
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            ) {
+                FocusSettingsLink(Icons.Outlined.Palette, R.string.focus_personalization, stringResource(theme.titleResource())) {
+                    navController.navigate("settings/app/appearance")
                 }
-                FocusSettingsLink(Icons.Outlined.Tune, theme.customizeResource()) { navController.navigate("settings/app/appearance/customize") }
-                FocusSettingsLink(Icons.Outlined.TextFields, R.string.focus_colors_font) { navController.navigate("settings/app/appearance/shared") }
-            }
-        }
-        if (!focus) Card(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        ) {
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.title_app_settings)) },
-                supportingContent = { Text(stringResource(R.string.pxlnet_app_settings_summary)) },
-                leadingContent = {
-                    PxlSettingsIcon(Icons.Outlined.Info)
-                },
-                trailingContent = {
-                    if (hasUpdate) Badge(containerColor = MaterialTheme.colorScheme.primary)
-                },
-                modifier = Modifier.clickable { navController.navigate("settings/app") },
-                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-            )
-            FocusSettingsLink(Icons.Outlined.Palette, R.string.pxlnet_settings_appearance) {
-                navController.navigate("settings/app/appearance")
             }
         }
         if (section == null || section == FocusSettingsSection.CONNECTION) {
@@ -342,7 +322,6 @@ fun SettingsScreen(navController: NavController, section: FocusSettingsSection? 
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
             ) {
                 Column {
-                if (!focus) subscriptionEntry()
                 ListItem(
                     headlineContent = { Text(stringResource(R.string.pxlnet_settings_always_on_title)) },
                     supportingContent = { Text(stringResource(R.string.pxlnet_settings_always_on_summary)) },
@@ -380,10 +359,9 @@ fun SettingsScreen(navController: NavController, section: FocusSettingsSection? 
                     },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 )
-                if (!focus) dnsFeatureEntry()
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !batteryOptimizationIgnored) {
                     ListItem(
-                        headlineContent = { Text(stringResource(if (focus) R.string.focus_background else R.string.request_background_permission)) },
+                        headlineContent = { Text(stringResource(R.string.focus_background)) },
                         supportingContent = {
                             Text(stringResource(R.string.pxlnet_battery_request_summary))
                         },
@@ -409,7 +387,7 @@ fun SettingsScreen(navController: NavController, section: FocusSettingsSection? 
 
         }
 
-        if (focus && (section == null || section == FocusSettingsSection.SUBSCRIPTIONS)) {
+        if (section == null || section == FocusSettingsSection.SUBSCRIPTIONS) {
             FocusSettingsGroup(R.string.pxlnet_settings_subscriptions) {
                 subscriptionEntry()
                 remindersEntry()
@@ -418,7 +396,7 @@ fun SettingsScreen(navController: NavController, section: FocusSettingsSection? 
 
         if (section == null || section == FocusSettingsSection.ROUTING) {
             Text(
-                text = stringResource(if (focus) R.string.focus_traffic else R.string.pxlnet_settings_routing),
+                text = stringResource(R.string.focus_traffic),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(horizontal = 32.dp, vertical = 8.dp),
@@ -431,7 +409,7 @@ fun SettingsScreen(navController: NavController, section: FocusSettingsSection? 
                 ListItem(
                     headlineContent = { Text(stringResource(R.string.pxlnet_settings_app_rules)) },
                     supportingContent = {
-                        Text(if (!focus) stringResource(R.string.pxlnet_settings_app_rules_summary) else when {
+                        Text(when {
                             AppSettings.perAppProxyEnabled -> stringResource(
                                 if (AppSettings.getEffectivePerAppProxyMode() == AppSettings.PER_APP_PROXY_INCLUDE) R.string.focus_route_include else R.string.focus_route_exclude,
                                 AppSettings.getEffectivePerAppProxyList().size,
@@ -446,21 +424,17 @@ fun SettingsScreen(navController: NavController, section: FocusSettingsSection? 
                     modifier = Modifier.clickable { navController.navigate("pxlnet/app_routing") },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 )
-                if (focus) {
-                    if (dnsEnabled) ListItem(
-                        headlineContent = { Text(stringResource(R.string.focus_open_dns)) },
-                        modifier = Modifier.clickable { navController.navigate(Screen.Dns.route) },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    )
-                    dnsFeatureEntry()
+                if (dnsEnabled) FocusSettingsLink(Icons.Outlined.Dns, R.string.focus_open_dns) {
+                    navController.navigate(Screen.Dns.route)
                 }
+                dnsFeatureEntry()
             }
 
         }
 
         if (section == null || section == FocusSettingsSection.HELP) {
             Text(
-                text = stringResource(if (focus) R.string.focus_help else R.string.pxlnet_settings_help),
+                text = stringResource(R.string.focus_help),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(horizontal = 32.dp, vertical = 8.dp),
@@ -503,25 +477,24 @@ fun SettingsScreen(navController: NavController, section: FocusSettingsSection? 
                     modifier = Modifier.clickable { navController.navigate("settings/log") },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 )
-                if (focus) ListItem(
-                    headlineContent = { Text(stringResource(R.string.network_quality)) },
-                    modifier = Modifier.clickable { navController.navigate("tools/network_quality") },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                )
             }
 
         }
 
-        if (!focus || section == FocusSettingsSection.ADVANCED) {
-            if (focus && section == null) {
-            FocusSettingsGroup(R.string.focus_advanced) {
-                FocusSettingsLink(Icons.Outlined.Code, R.string.title_app_settings, stringResource(R.string.pxlnet_app_settings_summary)) {
+        if (section == null) {
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            ) {
+                FocusSettingsLink(Icons.Outlined.Code, R.string.focus_advanced, stringResource(R.string.focus_advanced_summary)) {
                     navController.navigate("settings/focus/ADVANCED")
                 }
             }
         }
 
-        // App settings contain appearance, updates and advanced preferences.
+        // Technical preferences use the same destination in every theme.
+        if (section == FocusSettingsSection.ADVANCED) {
             Card(
                 modifier =
                 Modifier
@@ -534,27 +507,16 @@ fun SettingsScreen(navController: NavController, section: FocusSettingsSection? 
                 shape = RoundedCornerShape(24.dp),
             ) {
                 Column {
-                    if (focus) ListItem(
+                    ListItem(
                         headlineContent = { Text(stringResource(R.string.title_app_settings)) },
                         supportingContent = { Text(stringResource(R.string.pxlnet_app_settings_summary)) },
+                        leadingContent = { PxlSettingsIcon(Icons.Outlined.Info) },
+                        trailingContent = {
+                            if (hasUpdate) Badge(containerColor = MaterialTheme.colorScheme.primary)
+                        },
                         modifier = Modifier.clickable { navController.navigate("settings/app") },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     )
-                    if (!focus) Text(
-                        text = stringResource(R.string.pxlnet_settings_updates),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    )
-
-                    if (!focus) remindersEntry()
-                    Text(
-                        text = stringResource(if (focus) R.string.focus_advanced else R.string.pxlnet_settings_developer),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    )
-
                     ListItem(
                         headlineContent = { Text(stringResource(R.string.pxlnet_settings_developer_mode)) },
                         supportingContent = { Text(stringResource(R.string.pxlnet_settings_developer_mode_summary)) },

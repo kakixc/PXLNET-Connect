@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.component.ConnectLoadingIndicator
@@ -36,6 +37,7 @@ internal fun FocusHomeControl(
     requestPending: Boolean,
     reachability: ConnectionReachability,
     server: String?,
+    serverProtocol: String?,
     onChooseServer: (() -> Unit)?,
     onChooseProfile: (() -> Unit)?,
     onConnect: () -> Unit,
@@ -82,7 +84,7 @@ internal fun FocusHomeControl(
                         if (!pinnedControls && reachability == ConnectionReachability.Unreachable && onRetry != null) {
                             TextButton(onClick = onRetry, modifier = Modifier.pxlPressMotion()) { Text(stringResource(R.string.focus_retry)) }
                         }
-                }
+                    }
                 }
                 if (hasProfile && !dnsOnly && mascot != null) {
                     Box(Modifier.size(54.dp), contentAlignment = Alignment.Center) { mascot() }
@@ -107,22 +109,35 @@ internal fun FocusHomeControl(
                         Text(stringResource(R.string.pxlnet_choose_available_profile))
                     }
                 }
-                else -> Unit
+                else -> FocusServerSelection(server, onChooseServer, serverProtocol, embedded = true)
             }
         }
     }
 }
 
 @Composable
-internal fun FocusServerSelection(server: String?, onChooseServer: (() -> Unit)?) {
+private fun FocusServerSelection(
+    server: String?,
+    onChooseServer: (() -> Unit)?,
+    protocol: String? = null,
+    embedded: Boolean = false,
+) {
     Surface(
         modifier = Modifier.fillMaxWidth().pxlPressMotion(enabled = onChooseServer != null, pressedScale = 0.985f)
             .clickable(enabled = onChooseServer != null, role = Role.Button, onClick = { onChooseServer?.invoke() }),
         shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = if (embedded) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         ListItem(
-            headlineContent = { Text(server ?: stringResource(R.string.focus_no_node), style = MaterialTheme.typography.titleMedium) },
+            headlineContent = {
+                Text(
+                    server ?: stringResource(R.string.focus_no_node),
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = if (embedded) 2 else Int.MAX_VALUE,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            },
+            supportingContent = protocol?.takeIf(String::isNotBlank)?.let { { Text(it) } },
             overlineContent = { Text(stringResource(R.string.focus_server)) },
             leadingContent = { Icon(Icons.Default.Dns, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
             trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
@@ -145,31 +160,27 @@ private fun FocusConnectButton(
     val enabled = !moving && !requestPending
     val interactions = remember { MutableInteractionSource() }
     val pressed by interactions.collectIsPressedAsState()
-    val topRadius by animateDpAsState(
-        targetValue = if (pressed && enabled) 10.dp else if (pinned) 18.dp else 28.dp,
-        animationSpec = if (pressed && enabled) spring(dampingRatio = 1f, stiffness = 800f) else spring(dampingRatio = 0.88f, stiffness = 420f),
-        label = "vpn-button-top-corners",
-    )
-    val bottomRadius by animateDpAsState(
+    val radius by animateDpAsState(
         targetValue = when {
-            pressed && enabled -> 8.dp
-            running -> 12.dp
-            pinned -> 18.dp
-            else -> 28.dp
+            pressed && enabled -> 24.dp
+            moving || requestPending -> 26.dp
+            running -> 30.dp
+            else -> 34.dp
         },
-        animationSpec = if (pressed && enabled) spring(dampingRatio = 1f, stiffness = 800f) else spring(dampingRatio = 0.88f, stiffness = 420f),
-        label = "vpn-button-bottom-corners",
+        animationSpec = if (pressed && enabled) spring(dampingRatio = 1f, stiffness = 800f)
+            else spring(dampingRatio = 0.88f, stiffness = 420f),
+        label = "vpn-button-corners",
     )
     Button(
         onClick = onConnect,
         enabled = enabled,
         interactionSource = interactions,
-        shape = RoundedCornerShape(topStart = topRadius, topEnd = topRadius, bottomStart = bottomRadius, bottomEnd = bottomRadius),
-        modifier = Modifier.fillMaxWidth().heightIn(min = if (pinned) 56.dp else 68.dp),
+        shape = RoundedCornerShape(radius),
+        modifier = Modifier.fillMaxWidth().heightIn(min = if (pinned) 64.dp else 68.dp),
     ) {
-        if (moving || requestPending) ConnectLoadingIndicator(Modifier.size(24.dp), LocalContentColor.current)
-        else Icon(Icons.Default.PowerSettingsNew, contentDescription = null)
-        Spacer(Modifier.width(8.dp))
+        if (moving || requestPending) ConnectLoadingIndicator(Modifier.size(28.dp), LocalContentColor.current)
+        else Icon(Icons.Default.PowerSettingsNew, contentDescription = null, modifier = Modifier.size(28.dp))
+        Spacer(Modifier.width(10.dp))
         Text(stringResource(when {
             switching -> R.string.pxlnet_vpn_changing
             serviceStatus == Status.Stopping -> R.string.pxlnet_disconnecting
@@ -177,7 +188,7 @@ private fun FocusConnectButton(
             running -> R.string.focus_disconnect
             failedStart -> R.string.focus_trial_retry_connect
             else -> R.string.focus_connect
-        }))
+        }), style = MaterialTheme.typography.titleMedium)
     }
 }
 
