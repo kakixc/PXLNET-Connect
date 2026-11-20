@@ -78,8 +78,9 @@
     <string name="focus_subscriptions_summary">Обновление и напоминания</string>
     <string name="focus_help_summary">Проверка сети, журнал и отчёт поддержки</string>
     <string name="focus_background">Работа в фоне</string>
-    <string name="focus_trial">Пробная</string>
-    <string name="focus_trial_preview">Кнопка закреплена внизу</string>
+    <string name="focus_trial">Пульт</string>
+    <string name="focus_trial_preview">Сервер в центре, кнопка внизу</string>
     <string name="focus_trial_probe_failed">Проверка интернета не удалась</string>
     <string name="focus_trial_retry_connect">Повторить подключение</string>
+    <string name="focus_apply_theme">Применить тему</string>
 </resources>

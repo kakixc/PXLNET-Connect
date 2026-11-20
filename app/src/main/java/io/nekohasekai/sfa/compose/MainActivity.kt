@@ -151,6 +151,7 @@ import io.nekohasekai.sfa.compose.navigation.NewProfileArgs
 import io.nekohasekai.sfa.compose.navigation.ProfileRoutes
 import io.nekohasekai.sfa.compose.navigation.SFANavHost
 import io.nekohasekai.sfa.compose.navigation.Screen
+import io.nekohasekai.sfa.compose.navigation.openRootTab
 import io.nekohasekai.sfa.compose.navigation.bottomNavigationScreens
 import io.nekohasekai.sfa.compose.screen.configuration.ProfileImportHandler
 import io.nekohasekai.sfa.compose.screen.connections.ConnectionDetailsScreen
@@ -1526,14 +1527,7 @@ class MainActivity :
                                     label = { Text(stringResource(screen.titleRes)) },
                                     selected = selected,
                                     onClick = {
-                                        if (currentRoute == screen.route) return@NavigationRailItem
-                                        navController.navigate(screen.route) {
-                                            popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
-                                            }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
+                                        navController.openRootTab(screen)
                                     },
                                 )
                             }
@@ -1600,18 +1594,7 @@ class MainActivity :
                                             it.route == screen.route
                                         } == true,
                                         onClick = {
-                                            if (currentRoute == screen.route) return@NavigationBarItem
-                                            navController.navigate(screen.route) {
-                                                // Pop up to the start destination of the graph to
-                                                // avoid building up a large stack of destinations
-                                                popUpTo(navController.graph.findStartDestination().id) {
-                                                    saveState = true
-                                                }
-                                                // Avoid multiple copies of the same destination
-                                                launchSingleTop = true
-                                                // Restore state when reselecting a previously selected item
-                                                restoreState = true
-                                            }
+                                            navController.openRootTab(screen)
                                         },
                                     )
                                 }
@@ -1732,12 +1715,7 @@ class MainActivity :
                                                 else Color.Transparent,
                                             )
                                             .selectable(selected = selected, role = Role.Tab) {
-                                                if (currentRoute == screen.route) return@selectable
-                                                navController.navigate(screen.route) {
-                                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                                    launchSingleTop = true
-                                                    restoreState = true
-                                                }
+                                                navController.openRootTab(screen)
                                             }
                                             .padding(horizontal = 4.dp, vertical = if (floatingNavigationLabels) 8.dp else 10.dp),
                                         horizontalAlignment = Alignment.CenterHorizontally,

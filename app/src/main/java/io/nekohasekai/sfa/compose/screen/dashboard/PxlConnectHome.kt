@@ -10,6 +10,9 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.keyframes
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
@@ -48,6 +51,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.ContentPaste
@@ -102,6 +106,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
@@ -232,7 +237,30 @@ fun DashboardScreen(
     var pendingDeleteProfileId by remember { mutableLongStateOf(-1L) }
     var pickerProbeRequested by remember { mutableStateOf(false) }
     var showAvailableProfiles by remember { mutableStateOf(false) }
-    var showOnboarding by remember { mutableStateOf(PxlLocalPreferences.shouldShowOnboarding(context)) }
+    var showOnboarding by rememberSaveable { mutableStateOf(false) }
+    var autoGuideHandled by rememberSaveable { mutableStateOf(false) }
+    var autoGuideShowing by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (PxlLocalPreferences.consumeOnboardingRequest(context)) {
+            autoGuideHandled = true
+            autoGuideShowing = false
+            showOnboarding = true
+        }
+    }
+    LaunchedEffect(uiState.profilesLoaded, uiState.profiles.isEmpty(), focus) {
+        if (uiState.profiles.isNotEmpty() && autoGuideShowing) {
+            autoGuideShowing = false
+            showOnboarding = false
+        }
+        if (uiState.profilesLoaded && !autoGuideHandled && !focus) {
+            autoGuideHandled = true
+            if (uiState.profiles.isEmpty() && PxlLocalPreferences.shouldShowOnboarding(context)) {
+                autoGuideShowing = true
+                showOnboarding = true
+                PxlLocalPreferences.finishOnboarding(context)
+            }
+        }
+    }
     var focusHelpRequested by remember { mutableStateOf(false) }
     var showAccountHelp by remember { mutableStateOf(false) }
     var showXhttpDetails by remember { mutableStateOf(false) }
@@ -460,6 +488,11 @@ fun DashboardScreen(
             subtitle = "",
             onTitleClick = { catEasterEgg.tap(context) },
             actions = {
+                if (focus && !uiState.hasTelegramSession) {
+                    IconButton(onClick = { showAccountHelp = true }, modifier = Modifier.pxlPressMotion()) {
+                        Icon(Icons.Default.AccountCircle, contentDescription = stringResource(R.string.pxlnet_login_telegram))
+                    }
+                }
                 IconButton(onClick = { if (focus) focusHelpRequested = true else showOnboarding = true }) {
                     Icon(Icons.Default.HelpOutline, contentDescription = stringResource(R.string.pxlnet_how_to_connect))
                 }
@@ -484,7 +517,7 @@ fun DashboardScreen(
             },
         )
     }
-    if (showOnboarding && !focus) {
+    if (showOnboarding) {
         PxlOnboardingSheet(
             smartRouting = uiState.smartRoutingEnabled,
             hasTelegramSession = uiState.hasTelegramSession,
@@ -500,7 +533,10 @@ fun DashboardScreen(
                 PxlLocalPreferences.finishOnboarding(context)
                 showOnboarding = false
             },
-            onDismiss = { showOnboarding = false },
+            onDismiss = {
+                autoGuideShowing = false
+                showOnboarding = false
+            },
         )
     }
 
@@ -741,6 +777,7 @@ fun DashboardScreen(
     val topBarInset = LocalPxlTopBarInset.current
     val floatingNavInset = LocalPxlFloatingNavInset.current
     val pinnedControls = trial && (hasProfile || dnsOnlyActive)
+    val serverTopSpace = (LocalConfiguration.current.screenHeightDp.dp * 0.10f).coerceIn(24.dp, 80.dp)
     val focusServerTitle = if (!focus) null else if (serviceStatus == Status.Started && selector?.selected == selectedServer &&
         serverRegion(selectedServer) == ServerRegion.AUTO
     ) {
@@ -789,6 +826,11 @@ fun DashboardScreen(
                             PxlCatCharacter(connectionState, mascotAnimationsEnabled, onMascotTap, reachability)
                         }) else null,
                     )
+                }
+            }
+            if (pinnedControls && !dnsOnlyActive) item(key = "console-server") {
+                Box(Modifier.padding(top = serverTopSpace)) {
+                    FocusServerSelection(focusServerTitle, chooseServer)
                 }
             }
             if (pinnedControls && uiState.profiles.size > 1 && !dnsOnlyActive) item {
@@ -927,10 +969,8 @@ fun DashboardScreen(
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        if (PxlLocalPreferences.shouldShowOnboarding(context)) {
-                            TextButton(onClick = { showOnboarding = true }) {
-                                Text(stringResource(R.string.pxlnet_continue_setup))
-                            }
+                        TextButton(onClick = { showOnboarding = true }) {
+                            Text(stringResource(R.string.pxlnet_continue_setup))
                         }
                     }
                 }
@@ -1122,8 +1162,6 @@ fun DashboardScreen(
         if (pinnedControls) {
             TrialConnectionFooter(
                 modifier = Modifier.padding(bottom = floatingNavInset),
-                server = focusServerTitle,
-                onChooseServer = chooseServer,
                 serviceStatus = serviceStatus,
                 switching = uiState.switchingServerTag != null,
                 requestPending = focusRequestPending,
@@ -1298,10 +1336,25 @@ private fun PxlCatCharacter(
 ) {
     var reactionCount by remember { mutableIntStateOf(0) }
     var reactionVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(reactionCount) {
+    val pawWave = remember { Animatable(0f) }
+    LaunchedEffect(reactionCount, animationsEnabled) {
         if (reactionCount > 0) {
             reactionVisible = true
-            delay(1100)
+            if (reactionCount % 3 == 2 && animationsEnabled) {
+                pawWave.snapTo(0f)
+                pawWave.animateTo(0f, keyframes {
+                    durationMillis = 1100
+                    0f at 0
+                    1f at 190
+                    0.58f at 340
+                    1f at 490
+                    0.58f at 640
+                    1f at 790
+                    0f at 1100
+                })
+            } else {
+                delay(1100)
+            }
             reactionVisible = false
         }
     }
@@ -1363,14 +1416,17 @@ private fun PxlCatCharacter(
         }
         drawPath(bodyPath, ink, style = Stroke(stroke, cap = StrokeCap.Round))
         if (waving) {
-            val lift = if (animationsEnabled) tail * 0.003f else 0f
-            drawLine(
-                ink,
-                androidx.compose.ui.geometry.Offset(size.width * 0.25f, size.height * 0.78f),
-                androidx.compose.ui.geometry.Offset(size.width * (0.09f + lift), size.height * 0.64f),
-                stroke * 2f,
-                StrokeCap.Round,
-            )
+            val lift = if (animationsEnabled) pawWave.value else 0.8f
+            val shoulder = androidx.compose.ui.geometry.Offset(size.width * 0.26f, size.height * 0.76f)
+            val paw = androidx.compose.ui.geometry.Offset(size.width * 0.12f, size.height * 0.79f)
+            rotate(90f * lift, pivot = shoulder) {
+                drawLine(ink, shoulder, paw, stroke * 2f, StrokeCap.Round)
+                drawOval(
+                    color = ink,
+                    topLeft = paw.copy(x = paw.x - stroke, y = paw.y - stroke * 1.1f),
+                    size = androidx.compose.ui.geometry.Size(stroke * 2.2f, stroke * 2.4f),
+                )
+            }
         }
         val headPath = Path().apply {
             moveTo(size.width * 0.19f, size.height * 0.29f)

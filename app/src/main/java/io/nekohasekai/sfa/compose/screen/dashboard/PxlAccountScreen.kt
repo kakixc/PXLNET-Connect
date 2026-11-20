@@ -1,11 +1,12 @@
 package io.nekohasekai.sfa.compose.screen.dashboard
 
 import android.widget.Toast
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.ListItem
 import androidx.compose.ui.semantics.Role
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.IconButton
@@ -564,23 +565,31 @@ private fun FocusAccount(
 
     val profileCard: @Composable () -> Unit = {
         PxlAccountCard {
-            Text(stringResource(R.string.focus_active_profile), style = MaterialTheme.typography.titleMedium)
-            Text(profile?.name ?: stringResource(R.string.pxlnet_subscription_not_added), style = MaterialTheme.typography.headlineSmall)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                FocusAccountIcon(Icons.Default.Description)
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.focus_active_profile), style = MaterialTheme.typography.labelLarge)
+                    Text(profile?.name ?: stringResource(R.string.pxlnet_subscription_not_added), style = MaterialTheme.typography.headlineSmall)
+                }
+            }
             if (profile != null) {
                 val remote = profile.typed.type == TypedProfile.Type.Remote
                 Text(stringResource(R.string.focus_profile_source, stringResource(if (remote) R.string.focus_linked else R.string.focus_file)), style = MaterialTheme.typography.bodyMedium)
                 profileSummary?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 if (remote && profile.typed.remoteURL.isNotBlank()) {
-                    OutlinedButton(onClick = { viewModel.updateProfile(profile) }, enabled = uiState.updatingProfileId == null) {
+                    OutlinedButton(onClick = { viewModel.updateProfile(profile) }, enabled = uiState.updatingProfileId == null, modifier = Modifier.pxlPressMotion(uiState.updatingProfileId == null)) {
                         Text(stringResource(R.string.pxlnet_refresh))
                     }
                 } else {
-                    OutlinedButton(onClick = { viewModel.editProfile(profile) }) {
+                    OutlinedButton(onClick = { viewModel.editProfile(profile) }, modifier = Modifier.pxlPressMotion()) {
                         Text(stringResource(R.string.focus_edit_profile))
                     }
                 }
             } else {
-                Button(onClick = onImport) { Text(stringResource(R.string.pxlnet_add_existing_subscription)) }
+                Button(onClick = onImport, modifier = Modifier.pxlPressMotion()) { Text(stringResource(R.string.pxlnet_add_existing_subscription)) }
             }
         }
     }
@@ -589,18 +598,18 @@ private fun FocusAccount(
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = inset + 12.dp, bottom = bottomInset + 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        if (!signedIn) item { profileCard() }
         item {
-            Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+            PxlAccountCard(compact = true) {
                 if (signedIn) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        FocusAccountIcon(Icons.Default.AccountCircle)
                         Column(Modifier.weight(1f)) {
                             Text(uiState.telegramAccountName ?: uiState.telegramUsername ?: stringResource(R.string.focus_account),
                                 style = MaterialTheme.typography.titleLarge)
                             Text(stringResource(R.string.pxlnet_signed_in_telegram), style = MaterialTheme.typography.bodySmall)
                         }
                         Box {
-                            IconButton(onClick = { menuOpen = true }) {
+                            IconButton(onClick = { menuOpen = true }, modifier = Modifier.pxlPressMotion()) {
                                 Icon(Icons.Default.MoreVert, stringResource(R.string.focus_more))
                             }
                             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
@@ -611,18 +620,7 @@ private fun FocusAccount(
                             }
                         }
                     }
-                } else {
-                    Text(stringResource(R.string.focus_guest_login), style = MaterialTheme.typography.bodyMedium)
-                    FilledTonalButton(onClick = viewModel::startTelegramLogin, enabled = !uiState.telegramLoginPending) {
-                        Text(stringResource(if (uiState.telegramLoginPending) R.string.pxlnet_login_waiting else R.string.pxlnet_login_telegram))
-                    }
-                }
-            }
-        }
-        if (signedIn) {
-            item {
-                PxlAccountCard {
-                    Text(stringResource(R.string.focus_accounts), style = MaterialTheme.typography.labelLarge)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Text(when {
                         !verified -> stringResource(R.string.pxlnet_account_status_unknown)
                         !uiState.telegramSubscriptionActive -> stringResource(R.string.pxlnet_subscription_inactive)
@@ -631,25 +629,44 @@ private fun FocusAccount(
                         } ?: stringResource(R.string.pxlnet_subscription_active)
                     }, style = MaterialTheme.typography.titleLarge)
                     if (uiState.accountServiceAvailable == false) Text(stringResource(R.string.focus_offline))
-                    if (verified) Button(onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) }) {
+                    if (verified) Button(onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) }, modifier = Modifier.pxlPressMotion()) {
                         Text(stringResource(if (uiState.telegramSubscriptionActive) R.string.focus_renew else R.string.pxlnet_buy_in_bot))
                     }
-                    TextButton(onClick = viewModel::refreshTelegramAccount, enabled = !uiState.telegramLoginPending) {
+                    TextButton(onClick = viewModel::refreshTelegramAccount, enabled = !uiState.telegramLoginPending, modifier = Modifier.pxlPressMotion(!uiState.telegramLoginPending)) {
                         Text(stringResource(R.string.pxlnet_refresh))
+                    }
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        FocusAccountIcon(Icons.Default.AccountCircle)
+                        Column(Modifier.weight(1f)) {
+                            Text(stringResource(R.string.focus_account), style = MaterialTheme.typography.titleMedium)
+                            Text(stringResource(R.string.focus_guest_login), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Button(
+                        onClick = viewModel::startTelegramLogin,
+                        enabled = !uiState.telegramLoginPending,
+                        modifier = Modifier.fillMaxWidth().pxlPressMotion(!uiState.telegramLoginPending),
+                    ) {
+                        Text(stringResource(if (uiState.telegramLoginPending) R.string.pxlnet_login_waiting else R.string.pxlnet_login_telegram))
                     }
                 }
             }
-            item { profileCard() }
         }
+        item { profileCard() }
         item {
-            Column {
+            PxlAccountCard(compact = true) {
                 ListItem(
                     headlineContent = { Text(stringResource(R.string.pxlnet_pulse_title)) },
                     supportingContent = {
                         Text(stringResource(if (uiState.accountServiceAvailable == false) R.string.focus_account_unavailable else R.string.focus_service_health))
                     },
-                    trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
-                    modifier = Modifier.clickable(role = Role.Button) { pulseExpanded = !pulseExpanded },
+                    leadingContent = { FocusAccountIcon(Icons.Default.Public) },
+                    colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                    trailingContent = {
+                        Icon(if (pulseExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, contentDescription = null)
+                    },
+                    modifier = Modifier.pxlPressMotion(pressedScale = 0.985f).clickable(role = Role.Button) { pulseExpanded = !pulseExpanded },
                 )
                 if (pulseExpanded) {
                     Text(stringResource(R.string.focus_nodes, uiState.availableServerTags.count { !it.equals("AUTO", true) }))
@@ -665,15 +682,27 @@ private fun FocusAccount(
                         showMetrics = false,
                     )
                 }
-            }
-        }
-        item {
-            Column(Modifier.padding(horizontal = 8.dp)) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 EcosystemRow(Icons.Default.SupportAgent, stringResource(R.string.pxlnet_support_title),
                     stringResource(R.string.pxlnet_support_description), onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) })
                 EcosystemRow(Icons.Default.Campaign, stringResource(R.string.pxlnet_news_title),
                     stringResource(R.string.pxlnet_news_description), onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_CHANNEL) })
             }
+        }
+    }
+}
+
+
+@Composable
+private fun FocusAccountIcon(icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        modifier = Modifier.size(44.dp),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
         }
     }
 }

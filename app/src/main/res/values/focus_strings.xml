@@ -78,8 +78,9 @@
     <string name="focus_subscriptions_summary">Refresh and reminders</string>
     <string name="focus_help_summary">Network check, log and support report</string>
     <string name="focus_background">Background operation</string>
-    <string name="focus_trial">Trial</string>
-    <string name="focus_trial_preview">Connect button at the bottom</string>
+    <string name="focus_trial">Console</string>
+    <string name="focus_trial_preview">Server in the main area, connect at the bottom</string>
     <string name="focus_trial_probe_failed">Internet check failed</string>
     <string name="focus_trial_retry_connect">Retry connection</string>
+    <string name="focus_apply_theme">Apply theme</string>
 </resources>

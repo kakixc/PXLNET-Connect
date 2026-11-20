@@ -39,6 +39,9 @@ import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SettingsRemote
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.TextFields
+import io.nekohasekai.sfa.compose.component.pxlPressMotion
 import androidx.compose.material.icons.outlined.SupportAgent
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
@@ -288,32 +291,6 @@ fun SettingsScreen(navController: NavController, section: FocusSettingsSection? 
             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         )
     }
-    if (focus && section == null) {
-        Column(
-            Modifier.fillMaxSize().padding(bottom = floatingNavInset)
-                .verticalScroll(rememberScrollState()).padding(top = topBarInset + 8.dp, bottom = 16.dp),
-        ) {
-            FocusSettingsGroup(R.string.pxlnet_settings_appearance) {
-                FocusSettingsLink(R.string.focus_theme, stringResource(theme.titleResource())) {
-                    navController.navigate("settings/app/appearance/theme")
-                }
-                FocusSettingsLink(theme.customizeResource()) { navController.navigate("settings/app/appearance/customize") }
-                FocusSettingsLink(R.string.focus_colors_font) { navController.navigate("settings/app/appearance/shared") }
-            }
-            FocusSettingsSection.entries.forEach { entry ->
-                val summary = when (entry) {
-                    FocusSettingsSection.CONNECTION -> stringResource(if (guardEnabled) R.string.focus_guard_on else R.string.focus_guard_off)
-                    FocusSettingsSection.ROUTING -> stringResource(if (dnsEnabled) R.string.focus_routing_dns_on else R.string.focus_routing_summary)
-                    else -> stringResource(entry.summary)
-                }
-                FocusSettingsLink(entry.title, summary, Modifier.padding(horizontal = 16.dp)) {
-                    navController.navigate("settings/focus/${entry.name}")
-                }
-            }
-        }
-        return
-    }
-
     Column(
         modifier =
         Modifier
@@ -322,6 +299,15 @@ fun SettingsScreen(navController: NavController, section: FocusSettingsSection? 
             .verticalScroll(rememberScrollState())
             .padding(top = topBarInset + 8.dp, bottom = floatingNavInset + 8.dp),
     ) {
+        if (focus && section == null) {
+            FocusSettingsGroup(R.string.pxlnet_settings_appearance) {
+                FocusSettingsLink(Icons.Outlined.Palette, R.string.focus_theme, stringResource(theme.titleResource())) {
+                    navController.navigate("settings/app/appearance/theme")
+                }
+                FocusSettingsLink(Icons.Outlined.Tune, theme.customizeResource()) { navController.navigate("settings/app/appearance/customize") }
+                FocusSettingsLink(Icons.Outlined.TextFields, R.string.focus_colors_font) { navController.navigate("settings/app/appearance/shared") }
+            }
+        }
         if (!focus) Card(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             shape = RoundedCornerShape(24.dp),
@@ -339,8 +325,11 @@ fun SettingsScreen(navController: NavController, section: FocusSettingsSection? 
                 modifier = Modifier.clickable { navController.navigate("settings/app") },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             )
+            FocusSettingsLink(Icons.Outlined.Palette, R.string.pxlnet_settings_appearance) {
+                navController.navigate("settings/app/appearance")
+            }
         }
-        if (!focus || section == FocusSettingsSection.CONNECTION) {
+        if (section == null || section == FocusSettingsSection.CONNECTION) {
             Text(
                 text = stringResource(R.string.pxlnet_settings_connection),
                 style = MaterialTheme.typography.labelLarge,
@@ -420,14 +409,14 @@ fun SettingsScreen(navController: NavController, section: FocusSettingsSection? 
 
         }
 
-        if (focus && section == FocusSettingsSection.SUBSCRIPTIONS) {
+        if (focus && (section == null || section == FocusSettingsSection.SUBSCRIPTIONS)) {
             FocusSettingsGroup(R.string.pxlnet_settings_subscriptions) {
                 subscriptionEntry()
                 remindersEntry()
             }
         }
 
-        if (!focus || section == FocusSettingsSection.ROUTING) {
+        if (section == null || section == FocusSettingsSection.ROUTING) {
             Text(
                 text = stringResource(if (focus) R.string.focus_traffic else R.string.pxlnet_settings_routing),
                 style = MaterialTheme.typography.labelLarge,
@@ -469,7 +458,7 @@ fun SettingsScreen(navController: NavController, section: FocusSettingsSection? 
 
         }
 
-        if (!focus || section == FocusSettingsSection.HELP) {
+        if (section == null || section == FocusSettingsSection.HELP) {
             Text(
                 text = stringResource(if (focus) R.string.focus_help else R.string.pxlnet_settings_help),
                 style = MaterialTheme.typography.labelLarge,
@@ -524,7 +513,15 @@ fun SettingsScreen(navController: NavController, section: FocusSettingsSection? 
         }
 
         if (!focus || section == FocusSettingsSection.ADVANCED) {
-            // App settings contain appearance, updates and advanced preferences.
+            if (focus && section == null) {
+            FocusSettingsGroup(R.string.focus_advanced) {
+                FocusSettingsLink(Icons.Outlined.Code, R.string.title_app_settings, stringResource(R.string.pxlnet_app_settings_summary)) {
+                    navController.navigate("settings/focus/ADVANCED")
+                }
+            }
+        }
+
+        // App settings contain appearance, updates and advanced preferences.
             Card(
                 modifier =
                 Modifier
@@ -880,12 +877,13 @@ private fun FocusSettingsGroup(title: Int, content: @Composable androidx.compose
 }
 
 @Composable
-private fun FocusSettingsLink(title: Int, summary: String? = null, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun FocusSettingsLink(icon: ImageVector, title: Int, summary: String? = null, onClick: () -> Unit) {
     ListItem(
         headlineContent = { Text(stringResource(title)) },
         supportingContent = summary?.let { { Text(it) } },
+        leadingContent = { PxlSettingsIcon(icon) },
         trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
-        modifier = modifier.clickable(onClick = onClick),
+        modifier = Modifier.pxlPressMotion(pressedScale = 0.985f).clickable(onClick = onClick),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
     )
 }

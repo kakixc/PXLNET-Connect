@@ -10,12 +10,14 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavDeepLink
 import androidx.navigation.NavGraphBuilder
@@ -155,30 +157,25 @@ fun SFANavHost(
     val context = LocalContext.current
     val predictiveBackEnabled = PxlUiPreferences.predictiveBack.collectAsState().value
     val backStackEntry = navController.currentBackStackEntryAsState().value
-    val animateTabs = android.provider.Settings.Global.getFloat(
-        context.contentResolver,
-        android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
-        1f,
-    ) > 0f
     val tabEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
         val from = rootTabRoutes.indexOf(initialState.destination.route)
         val to = rootTabRoutes.indexOf(targetState.destination.route)
-        if (animateTabs && from >= 0 && to >= 0 && from != to) {
+        if (from >= 0 && to >= 0 && from != to) {
             slideIntoContainer(
                 if (to > from) AnimatedContentTransitionScope.SlideDirection.Left
                 else AnimatedContentTransitionScope.SlideDirection.Right,
-                animationSpec = spring(dampingRatio = 0.92f, stiffness = Spring.StiffnessMedium),
+                animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
             )
         } else EnterTransition.None
     }
     val tabExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
         val from = rootTabRoutes.indexOf(initialState.destination.route)
         val to = rootTabRoutes.indexOf(targetState.destination.route)
-        if (animateTabs && from >= 0 && to >= 0 && from != to) {
+        if (from >= 0 && to >= 0 && from != to) {
             slideOutOfContainer(
                 if (to > from) AnimatedContentTransitionScope.SlideDirection.Left
                 else AnimatedContentTransitionScope.SlideDirection.Right,
-                animationSpec = spring(dampingRatio = 0.92f, stiffness = Spring.StiffnessMedium),
+                animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
             )
         } else ExitTransition.None
     }
@@ -199,7 +196,7 @@ fun SFANavHost(
                     showStatusBar = showStatusBar,
                     onOpenNewProfile = onOpenNewProfile,
                     onOpenAppRouting = { navController.navigate("pxlnet/app_routing") { launchSingleTop = true } },
-                    onOpenDns = { navController.navigate(Screen.Dns.route) },
+                    onOpenDns = { navController.openRootTab(Screen.Dns) },
                     viewModel = dashboardViewModel,
                     groupsViewModel = groupsViewModel,
                 )

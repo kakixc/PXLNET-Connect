@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 /** Preferences for app appearance and the home widget, never VPN service or profiles. */
 object PxlUiPreferences {
     enum class InterfaceTheme { CLASSIC, FOCUS, TRIAL;
-        val available: Boolean get() = this != TRIAL || BuildConfig.DEBUG
+        val available: Boolean get() = this != TRIAL || BuildConfig.FOCUS_LAB
     }
     enum class FocusDetails { ROUTING, SUBSCRIPTION, HIDDEN }
 
@@ -22,7 +22,7 @@ object PxlUiPreferences {
         val details: FocusDetails = FocusDetails.ROUTING,
         val floating: Boolean = true,
         val showSpeed: Boolean = true,
-        val showNavLabels: Boolean = true,
+        val showNavLabels: Boolean = false,
     )
 
     private val mutableInterfaceTheme = MutableStateFlow(InterfaceTheme.CLASSIC)
@@ -51,7 +51,7 @@ object PxlUiPreferences {
             .putString("focus_details", appearance.details.name)
             .putBoolean("focus_floating", appearance.floating)
             .putBoolean("focus_speed", appearance.showSpeed)
-            .putBoolean("focus_nav_labels", appearance.showNavLabels)
+            .putBoolean("focus_tab_labels", appearance.showNavLabels)
             .apply()
         mutableFocusAppearance.value = appearance
     }
@@ -116,7 +116,7 @@ object PxlUiPreferences {
             } ?: FocusDetails.ROUTING,
             floating = preferences.getBoolean("focus_floating", true),
             showSpeed = preferences.getBoolean("focus_speed", true),
-            showNavLabels = preferences.getBoolean("focus_nav_labels", true),
+            showNavLabels = preferences.getBoolean("focus_tab_labels", false),
         )
         mutableFloatingNavigation.value = preferences.getBoolean(floatingNavigationKey, true)
         mutableNavigationBlur.value = preferences.getBoolean(navigationBlurKey, true)

@@ -2,6 +2,12 @@ package io.nekohasekai.sfa.compose.screen.dashboard
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.ui.semantics.Role
@@ -16,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.compose.component.ConnectLoadingIndicator
 import io.nekohasekai.sfa.compose.component.pxlPressMotion
 import io.nekohasekai.sfa.constant.Status
 
@@ -73,7 +80,7 @@ internal fun FocusHomeControl(
                         }
                         if (result != null) Text(stringResource(result), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         if (!pinnedControls && reachability == ConnectionReachability.Unreachable && onRetry != null) {
-                            TextButton(onClick = onRetry) { Text(stringResource(R.string.focus_retry)) }
+                            TextButton(onClick = onRetry, modifier = Modifier.pxlPressMotion()) { Text(stringResource(R.string.focus_retry)) }
                         }
                 }
                 }
@@ -94,23 +101,7 @@ internal fun FocusHomeControl(
                     if (onLogin != null) TextButton(onClick = onLogin) { Text(stringResource(R.string.pxlnet_login_telegram)) }
                 }
                 !pinnedControls -> {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth().clickable(
-                            enabled = onChooseServer != null,
-                            role = Role.Button,
-                            onClick = { onChooseServer?.invoke() },
-                        ),
-                        shape = RoundedCornerShape(18.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    ) {
-                        ListItem(
-                            headlineContent = { Text(server ?: stringResource(R.string.focus_no_node)) },
-                            overlineContent = { Text(stringResource(R.string.focus_server)) },
-                            leadingContent = { Icon(Icons.Default.Dns, contentDescription = null) },
-                            trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
-                            colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
-                        )
-                    }
+                    FocusServerSelection(server, onChooseServer)
                     if (!blocked) FocusConnectButton(serviceStatus, switching, requestPending, onConnect)
                     if (onChooseProfile != null) TextButton(onClick = onChooseProfile) {
                         Text(stringResource(R.string.pxlnet_choose_available_profile))
@@ -119,6 +110,24 @@ internal fun FocusHomeControl(
                 else -> Unit
             }
         }
+    }
+}
+
+@Composable
+internal fun FocusServerSelection(server: String?, onChooseServer: (() -> Unit)?) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().pxlPressMotion(enabled = onChooseServer != null, pressedScale = 0.985f)
+            .clickable(enabled = onChooseServer != null, role = Role.Button, onClick = { onChooseServer?.invoke() }),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        ListItem(
+            headlineContent = { Text(server ?: stringResource(R.string.focus_no_node), style = MaterialTheme.typography.titleMedium) },
+            overlineContent = { Text(stringResource(R.string.focus_server)) },
+            leadingContent = { Icon(Icons.Default.Dns, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
+            colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+        )
     }
 }
 
@@ -134,16 +143,31 @@ private fun FocusConnectButton(
     val running = serviceStatus == Status.Started
     val moving = switching || serviceStatus == Status.Starting || serviceStatus == Status.Stopping
     val enabled = !moving && !requestPending
+    val interactions = remember { MutableInteractionSource() }
+    val pressed by interactions.collectIsPressedAsState()
+    val topRadius by animateDpAsState(
+        targetValue = if (pressed && enabled) 10.dp else if (pinned) 18.dp else 28.dp,
+        animationSpec = if (pressed && enabled) spring(dampingRatio = 1f, stiffness = 800f) else spring(dampingRatio = 0.88f, stiffness = 420f),
+        label = "vpn-button-top-corners",
+    )
+    val bottomRadius by animateDpAsState(
+        targetValue = when {
+            pressed && enabled -> 8.dp
+            running -> 12.dp
+            pinned -> 18.dp
+            else -> 28.dp
+        },
+        animationSpec = if (pressed && enabled) spring(dampingRatio = 1f, stiffness = 800f) else spring(dampingRatio = 0.88f, stiffness = 420f),
+        label = "vpn-button-bottom-corners",
+    )
     Button(
         onClick = onConnect,
         enabled = enabled,
-        shape = if (pinned) RoundedCornerShape(16.dp) else RoundedCornerShape(
-            topStart = 32.dp, topEnd = 32.dp,
-            bottomStart = if (running) 20.dp else 32.dp, bottomEnd = if (running) 20.dp else 32.dp,
-        ),
-        modifier = Modifier.fillMaxWidth().heightIn(min = if (pinned) 56.dp else 68.dp).pxlPressMotion(enabled = enabled),
+        interactionSource = interactions,
+        shape = RoundedCornerShape(topStart = topRadius, topEnd = topRadius, bottomStart = bottomRadius, bottomEnd = bottomRadius),
+        modifier = Modifier.fillMaxWidth().heightIn(min = if (pinned) 56.dp else 68.dp),
     ) {
-        if (moving || requestPending) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+        if (moving || requestPending) ConnectLoadingIndicator(Modifier.size(24.dp), LocalContentColor.current)
         else Icon(Icons.Default.PowerSettingsNew, contentDescription = null)
         Spacer(Modifier.width(8.dp))
         Text(stringResource(when {
@@ -160,8 +184,6 @@ private fun FocusConnectButton(
 @Composable
 internal fun TrialConnectionFooter(
     modifier: Modifier,
-    server: String?,
-    onChooseServer: (() -> Unit)?,
     serviceStatus: Status,
     switching: Boolean,
     requestPending: Boolean,
@@ -178,24 +200,6 @@ internal fun TrialConnectionFooter(
                     Text(stringResource(R.string.pxlnet_dns_title))
                 }
             } else {
-                Row(
-                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(
-                        enabled = onChooseServer != null,
-                        role = Role.Button,
-                        onClick = { onChooseServer?.invoke() },
-                    ).padding(horizontal = 8.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(stringResource(R.string.focus_server), style = MaterialTheme.typography.labelLarge)
-                    Text(
-                        server ?: stringResource(R.string.focus_no_node),
-                        Modifier.weight(1f),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.End,
-                        style = MaterialTheme.typography.titleSmall,
-                    )
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
-                }
                 if (!blocked) FocusConnectButton(serviceStatus, switching, requestPending, onConnect, pinned = true, failedStart = failedStart)
             }
         }
@@ -231,7 +235,7 @@ internal fun FocusTrafficSummary(
 
 @Composable
 private fun FocusShortcut(label: String, onClick: () -> Unit, modifier: Modifier) {
-    TextButton(onClick = onClick, modifier = modifier.heightIn(min = 48.dp)) {
+    TextButton(onClick = onClick, modifier = modifier.heightIn(min = 48.dp).pxlPressMotion()) {
         Text(label, Modifier.weight(1f))
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
     }

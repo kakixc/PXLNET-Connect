@@ -63,6 +63,7 @@ enum class CardWidth {
 data class DashboardUiState(
     val serviceStatus: Status = Status.Stopped,
     val profiles: List<Profile> = emptyList(),
+    val profilesLoaded: Boolean = false,
     val selectedProfileId: Long = -1L,
     val selectedProfileName: String? = null,
     val singleChoiceTargets: Map<String, String> = emptyMap(),
@@ -258,6 +259,7 @@ class DashboardViewModel :
                     updateState {
                         copy(
                             profiles = profiles,
+                            profilesLoaded = true,
                             selectedProfileId = selectedId,
                             selectedProfileName = selectedProfile?.name,
                             skippedXhttpCount = (SubscriptionInfoStore.skippedXhttp(Application.application, selectedId) -
