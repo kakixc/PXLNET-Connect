@@ -42,6 +42,7 @@ import io.nekohasekai.sfa.compose.screen.log.LogViewModel
 import io.nekohasekai.sfa.compose.screen.profile.EditProfileRoute
 import io.nekohasekai.sfa.compose.screen.profileoverride.PerAppProxyScreen
 import io.nekohasekai.sfa.compose.screen.settings.AppSettingsScreen
+import io.nekohasekai.sfa.compose.screen.settings.AppearanceSection
 import io.nekohasekai.sfa.compose.screen.settings.AppearanceSettingsScreen
 import io.nekohasekai.sfa.compose.screen.settings.CoreSettingsScreen
 import io.nekohasekai.sfa.compose.screen.settings.EditRemoteServerScreen
@@ -49,6 +50,7 @@ import io.nekohasekai.sfa.compose.screen.settings.FDroidMirrorScreen
 import io.nekohasekai.sfa.compose.screen.settings.ProfileOverrideScreen
 import io.nekohasekai.sfa.compose.screen.settings.RemoteControlScreen
 import io.nekohasekai.sfa.compose.screen.settings.ServiceSettingsScreen
+import io.nekohasekai.sfa.compose.screen.settings.FocusSettingsSection
 import io.nekohasekai.sfa.compose.screen.settings.SettingsScreen
 import io.nekohasekai.sfa.compose.screen.settings.SubscriptionSettingsScreen
 import io.nekohasekai.sfa.compose.screen.settings.PxlDnsScreen
@@ -748,6 +750,34 @@ fun SFANavHost(
             popExitTransition = slideOutToRight,
         ) {
             AppearanceSettingsScreen(navController = navController)
+        }
+
+        FocusSettingsSection.entries.forEach { section ->
+            composable(
+                route = "settings/focus/${section.name}",
+                enterTransition = slideInFromRight,
+                exitTransition = slideOutToLeft,
+                popEnterTransition = slideInFromLeft,
+                popExitTransition = slideOutToRight,
+            ) {
+                SettingsScreen(navController, section)
+            }
+        }
+
+        mapOf(
+            "theme" to AppearanceSection.THEME,
+            "customize" to AppearanceSection.CUSTOMIZE,
+            "shared" to AppearanceSection.SHARED,
+        ).forEach { (path, section) ->
+            composable(
+                route = "settings/app/appearance/$path",
+                enterTransition = slideInFromRight,
+                exitTransition = slideOutToLeft,
+                popEnterTransition = slideInFromLeft,
+                popExitTransition = slideOutToRight,
+            ) {
+                AppearanceSettingsScreen(navController, section)
+            }
         }
 
         composable(

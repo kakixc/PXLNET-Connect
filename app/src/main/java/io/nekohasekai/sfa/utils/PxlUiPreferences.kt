@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Typeface
 import android.net.Uri
 import android.provider.OpenableColumns
+import io.nekohasekai.sfa.BuildConfig
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,13 +12,17 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /** Preferences for app appearance and the home widget, never VPN service or profiles. */
 object PxlUiPreferences {
-    enum class InterfaceTheme { CLASSIC, FOCUS }
+    enum class InterfaceTheme { CLASSIC, FOCUS, TRIAL;
+        val available: Boolean get() = this != TRIAL || BuildConfig.DEBUG
+    }
     enum class FocusDetails { ROUTING, SUBSCRIPTION, HIDDEN }
 
     data class FocusAppearance(
         val mascot: Boolean = true,
         val details: FocusDetails = FocusDetails.ROUTING,
         val floating: Boolean = true,
+        val showSpeed: Boolean = true,
+        val showNavLabels: Boolean = true,
     )
 
     private val mutableInterfaceTheme = MutableStateFlow(InterfaceTheme.CLASSIC)
@@ -26,9 +31,18 @@ object PxlUiPreferences {
     val focusAppearance = mutableFocusAppearance.asStateFlow()
 
     fun setInterfaceTheme(context: Context, theme: InterfaceTheme) {
+        if (!theme.available) return
         context.getSharedPreferences(fileName, Context.MODE_PRIVATE)
             .edit().putString("interface_theme", theme.name).apply()
         mutableInterfaceTheme.value = theme
+    }
+
+    fun isFocusTileHidden(context: Context): Boolean =
+        context.getSharedPreferences(fileName, Context.MODE_PRIVATE).getBoolean("focus_tile_hidden", false)
+
+    fun hideFocusTile(context: Context) {
+        context.getSharedPreferences(fileName, Context.MODE_PRIVATE).edit()
+            .putBoolean("focus_tile_hidden", true).apply()
     }
 
     fun setFocusAppearance(context: Context, appearance: FocusAppearance) {
@@ -36,6 +50,8 @@ object PxlUiPreferences {
             .putBoolean("focus_mascot", appearance.mascot)
             .putString("focus_details", appearance.details.name)
             .putBoolean("focus_floating", appearance.floating)
+            .putBoolean("focus_speed", appearance.showSpeed)
+            .putBoolean("focus_nav_labels", appearance.showNavLabels)
             .apply()
         mutableFocusAppearance.value = appearance
     }
@@ -91,7 +107,7 @@ object PxlUiPreferences {
     fun initialize(context: Context) {
         val preferences = context.applicationContext.getSharedPreferences(fileName, Context.MODE_PRIVATE)
         mutableInterfaceTheme.value = InterfaceTheme.entries.firstOrNull {
-            it.name == preferences.getString("interface_theme", null)
+            it.available && it.name == preferences.getString("interface_theme", null)
         } ?: InterfaceTheme.CLASSIC
         mutableFocusAppearance.value = FocusAppearance(
             mascot = preferences.getBoolean("focus_mascot", true),
@@ -99,6 +115,8 @@ object PxlUiPreferences {
                 it.name == preferences.getString("focus_details", null)
             } ?: FocusDetails.ROUTING,
             floating = preferences.getBoolean("focus_floating", true),
+            showSpeed = preferences.getBoolean("focus_speed", true),
+            showNavLabels = preferences.getBoolean("focus_nav_labels", true),
         )
         mutableFloatingNavigation.value = preferences.getBoolean(floatingNavigationKey, true)
         mutableNavigationBlur.value = preferences.getBoolean(navigationBlurKey, true)

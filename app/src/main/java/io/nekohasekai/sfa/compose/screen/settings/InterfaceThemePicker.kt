@@ -18,48 +18,57 @@ import io.nekohasekai.sfa.utils.PxlUiPreferences
 import io.nekohasekai.sfa.utils.PxlUiPreferences.InterfaceTheme
 import io.nekohasekai.sfa.utils.PxlUiPreferences.FocusDetails
 
+enum class AppearanceSection { ALL, THEME, CUSTOMIZE, SHARED }
+
 @Composable
-internal fun InterfaceThemePicker(theme: InterfaceTheme, classicSettings: @Composable () -> Unit) {
+internal fun InterfaceThemePicker(theme: InterfaceTheme, section: AppearanceSection, classicSettings: @Composable () -> Unit) {
     val context = LocalContext.current
     val appearance by PxlUiPreferences.focusAppearance.collectAsState()
     var expanded by rememberSaveable(theme) { mutableStateOf(false) }
-    Text(stringResource(R.string.focus_theme), style = MaterialTheme.typography.titleMedium)
-    Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        InterfaceTheme.entries.forEach { option ->
-            val focus = option == InterfaceTheme.FOCUS
-            val selected = theme == option
-            Surface(
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(20.dp),
-                color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
-            ) {
-                Column(
-                    Modifier.selectable(selected, role = Role.RadioButton) {
-                        PxlUiPreferences.setInterfaceTheme(context, option)
-                    }.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+    if (section == AppearanceSection.ALL || section == AppearanceSection.THEME) {
+        Text(stringResource(R.string.focus_theme), style = MaterialTheme.typography.titleMedium)
+        Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            InterfaceTheme.entries.filter { it.available }.forEach { option ->
+                val focus = option != InterfaceTheme.CLASSIC
+                val trial = option == InterfaceTheme.TRIAL
+                val selected = theme == option
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
                 ) {
                     Column(
-                        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp)).padding(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
+                        Modifier.selectable(selected, role = Role.RadioButton) {
+                            PxlUiPreferences.setInterfaceTheme(context, option)
+                        }.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        Box(Modifier.fillMaxWidth(if (focus) .65f else .95f).height(5.dp).background(MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(3.dp)))
-                        if (focus) Box(Modifier.fillMaxWidth(.85f).height(8.dp).background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(4.dp)))
-                        Box(Modifier.width(if (focus) 60.dp else 32.dp).height(if (focus) 14.dp else 32.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(9.dp)))
-                        if (!focus) Box(Modifier.fillMaxWidth(.9f).height(9.dp).background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(4.dp)))
+                        Column(
+                            Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp)).padding(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Box(Modifier.fillMaxWidth(if (focus) .65f else .95f).height(5.dp).background(MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(3.dp)))
+                            if (focus && !trial) Box(Modifier.fillMaxWidth(.85f).height(8.dp).background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(4.dp)))
+                            if (trial) Box(Modifier.fillMaxWidth().height(14.dp))
+                            Box(Modifier.width(if (focus) 60.dp else 32.dp).height(if (focus) 14.dp else 32.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(9.dp)))
+                            if (trial) {
+                                Box(Modifier.fillMaxWidth().height(4.dp).background(MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(2.dp)))
+                            } else if (!focus) Box(Modifier.fillMaxWidth(.9f).height(9.dp).background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(4.dp)))
+                        }
+                        Text(stringResource(option.titleResource()), style = MaterialTheme.typography.titleSmall)
+                        Text(stringResource(if (trial) R.string.focus_trial_preview else if (focus) R.string.focus_focus_preview else R.string.focus_classic_preview), style = MaterialTheme.typography.bodySmall)
                     }
-                    Text(stringResource(if (focus) R.string.focus_focus else R.string.focus_classic), style = MaterialTheme.typography.titleSmall)
-                    Text(stringResource(if (focus) R.string.focus_focus_preview else R.string.focus_classic_preview), style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
     }
-    OutlinedButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth()) {
-        Text(stringResource(if (theme == InterfaceTheme.FOCUS) R.string.focus_custom_focus else R.string.focus_custom_classic))
+    if (section == AppearanceSection.ALL) OutlinedButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth()) {
+        Text(stringResource(theme.customizeResource()))
     }
-    if (expanded && theme == InterfaceTheme.CLASSIC) classicSettings()
-    if (expanded && theme == InterfaceTheme.FOCUS) {
+    val showCustomization = section == AppearanceSection.CUSTOMIZE || (section == AppearanceSection.ALL && expanded)
+    if (showCustomization && theme == InterfaceTheme.CLASSIC) classicSettings()
+    if (showCustomization && theme != InterfaceTheme.CLASSIC) {
         Column(Modifier.padding(vertical = 8.dp)) {
             FocusOptions(R.string.focus_home_layout, listOf(true to R.string.focus_mascot, false to R.string.focus_compact), appearance.mascot) {
                 PxlUiPreferences.setFocusAppearance(context, appearance.copy(mascot = it))
@@ -74,12 +83,28 @@ internal fun InterfaceThemePicker(theme: InterfaceTheme, classicSettings: @Compo
             FocusOptions(R.string.focus_navigation, listOf(true to R.string.focus_floating, false to R.string.focus_standard), appearance.floating) {
                 PxlUiPreferences.setFocusAppearance(context, appearance.copy(floating = it))
             }
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.focus_speed_option)) },
+                trailingContent = {
+                    Switch(checked = appearance.showSpeed, onCheckedChange = {
+                        PxlUiPreferences.setFocusAppearance(context, appearance.copy(showSpeed = it))
+                    })
+                },
+            )
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.focus_label_option)) },
+                trailingContent = {
+                    Switch(checked = appearance.showNavLabels, onCheckedChange = {
+                        PxlUiPreferences.setFocusAppearance(context, appearance.copy(showNavLabels = it))
+                    })
+                },
+            )
             TextButton(onClick = { PxlUiPreferences.setFocusAppearance(context, PxlUiPreferences.FocusAppearance()) }) {
                 Text(stringResource(R.string.focus_reset))
             }
         }
     }
-    Text(stringResource(R.string.focus_general), Modifier.padding(top = 16.dp, bottom = 8.dp), style = MaterialTheme.typography.titleMedium)
+    if (section == AppearanceSection.ALL) Text(stringResource(R.string.focus_general), Modifier.padding(top = 16.dp, bottom = 8.dp), style = MaterialTheme.typography.titleMedium)
 }
 
 @Composable
@@ -94,4 +119,16 @@ private fun <T> FocusOptions(title: Int, options: List<Pair<T, Int>>, current: T
             Text(stringResource(label))
         }
     }
+}
+
+
+internal fun InterfaceTheme.titleResource() = when (this) {
+    InterfaceTheme.CLASSIC -> R.string.focus_classic
+    InterfaceTheme.FOCUS -> R.string.focus_focus
+    InterfaceTheme.TRIAL -> R.string.focus_trial
+}
+
+internal fun InterfaceTheme.customizeResource() = when (this) {
+    InterfaceTheme.CLASSIC -> R.string.focus_custom_classic
+    InterfaceTheme.FOCUS, InterfaceTheme.TRIAL -> R.string.focus_custom_focus
 }

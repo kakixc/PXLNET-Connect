@@ -33,6 +33,7 @@ val LocalPxlTopBarStatusText = compositionLocalOf<String?> { null }
 fun PxlRootTopBar(
     title: String,
     subtitle: String = "PXLNET Connect · ${BuildConfig.VERSION_NAME}",
+    showServiceSubtitle: Boolean = true,
     glassContainerColor: Color = Color.Transparent,
     onTitleClick: (() -> Unit)? = null,
     navigationIcon: @Composable () -> Unit = {},
@@ -40,7 +41,7 @@ fun PxlRootTopBar(
 ) {
     val glassOverlay = LocalPxlTopBarOverlay.current
     val serviceStatus = LocalPxlTopBarServiceStatus.current
-    val displayedSubtitle = LocalPxlTopBarStatusText.current ?: when (serviceStatus) {
+    val displayedSubtitle = if (!showServiceSubtitle) subtitle else LocalPxlTopBarStatusText.current ?: when (serviceStatus) {
         Status.Starting -> stringResource(R.string.status_starting)
         Status.Started -> stringResource(R.string.status_started)
         Status.Stopping -> stringResource(R.string.status_stopping)

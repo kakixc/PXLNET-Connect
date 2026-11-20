@@ -519,13 +519,14 @@ class MainActivity :
         val classicFloatingNavigation by PxlUiPreferences.floatingNavigation.collectAsState()
         val interfaceTheme by PxlUiPreferences.interfaceTheme.collectAsState()
         val focusAppearance by PxlUiPreferences.focusAppearance.collectAsState()
-        val floatingNavigation = if (interfaceTheme == PxlUiPreferences.InterfaceTheme.FOCUS) {
+        val floatingNavigation = if (interfaceTheme != PxlUiPreferences.InterfaceTheme.CLASSIC) {
             focusAppearance.floating
         } else classicFloatingNavigation
         val classicNavigationBlur by PxlUiPreferences.navigationBlur.collectAsState()
-        val navigationBlur = interfaceTheme == PxlUiPreferences.InterfaceTheme.FOCUS || classicNavigationBlur
+        val navigationBlur = interfaceTheme != PxlUiPreferences.InterfaceTheme.CLASSIC || classicNavigationBlur
         val classicNavigationLabels by PxlUiPreferences.floatingNavigationLabels.collectAsState()
-        val floatingNavigationLabels = interfaceTheme == PxlUiPreferences.InterfaceTheme.CLASSIC && classicNavigationLabels
+        val focusInterface = interfaceTheme != PxlUiPreferences.InterfaceTheme.CLASSIC
+        val floatingNavigationLabels = if (focusInterface) focusAppearance.showNavLabels else classicNavigationLabels
         val hazeState = remember { HazeState() }
         var floatingNavHeightPx by remember { mutableIntStateOf(0) }
 
@@ -1566,21 +1567,27 @@ class MainActivity :
                                 tonalElevation = 0.dp,
                             ) {
                                 visibleBottomNavigationScreens.forEach { screen ->
+                                    val navTitle = stringResource(when {
+                                        focusInterface && screen == Screen.Dns -> R.string.focus_dns_nav
+                                        focusInterface && screen == Screen.Dashboard -> R.string.focus_home_nav
+                                        else -> screen.titleRes
+                                    })
+                                    val showLabel = !focusInterface || focusAppearance.showNavLabels
                                     NavigationBarItem(
                                         icon = {
                                             if (screen == Screen.Settings && hasUpdate) {
                                                 BadgedBox(badge = { Badge(containerColor = MaterialTheme.colorScheme.primary) }) {
-                                                    Icon(screen.icon, contentDescription = null)
+                                                    Icon(screen.icon, contentDescription = if (showLabel) null else navTitle)
                                                 }
                                             } else if (screen == Screen.Tools && toolsUnreadCount > 0) {
                                                 BadgedBox(badge = { Badge(containerColor = MaterialTheme.colorScheme.error) { Text("$toolsUnreadCount") } }) {
-                                                    Icon(screen.icon, contentDescription = null)
+                                                    Icon(screen.icon, contentDescription = if (showLabel) null else navTitle)
                                                 }
                                             } else {
-                                                Icon(screen.icon, contentDescription = null)
+                                                Icon(screen.icon, contentDescription = if (showLabel) null else navTitle)
                                             }
                                         },
-                                        label = { Text(stringResource(screen.titleRes)) },
+                                        label = if (showLabel) ({ Text(navTitle) }) else null,
                                         colors = NavigationBarItemDefaults.colors(
                                             selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                             selectedTextColor = MaterialTheme.colorScheme.onSurface,
@@ -1700,7 +1707,10 @@ class MainActivity :
                                             .width(tabWidth)
                                             .height(with(LocalDensity.current) { tabContentHeightPx.toDp() })
                                             .clip(RoundedCornerShape(30.dp))
-                                            .background(MaterialTheme.colorScheme.primaryContainer),
+                                            .background(
+                                                if (interfaceTheme == PxlUiPreferences.InterfaceTheme.TRIAL) MaterialTheme.colorScheme.secondaryContainer
+                                                else MaterialTheme.colorScheme.primaryContainer,
+                                            ),
                                     )
                                 }
                                 Row(
@@ -1750,7 +1760,9 @@ class MainActivity :
                                         }
                                         if (floatingNavigationLabels && visibleBottomNavigationScreens.size <= 4) {
                                             Text(
-                                                text = title,
+                                                text = if (focusInterface && screen == Screen.Dns) stringResource(R.string.focus_dns_nav)
+                                                    else if (focusInterface && screen == Screen.Dashboard) stringResource(R.string.focus_home_nav)
+                                                    else title,
                                                 style = MaterialTheme.typography.labelSmall,
                                                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                                                 color = iconTint,

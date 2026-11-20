@@ -73,10 +73,17 @@ import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppearanceSettingsScreen(navController: NavController) {
+fun AppearanceSettingsScreen(navController: NavController, section: AppearanceSection = AppearanceSection.ALL) {
+    val interfaceTheme by PxlUiPreferences.interfaceTheme.collectAsState()
+    val title = when (section) {
+        AppearanceSection.ALL -> R.string.pxlnet_settings_appearance
+        AppearanceSection.THEME -> R.string.focus_theme
+        AppearanceSection.CUSTOMIZE -> interfaceTheme.customizeResource()
+        AppearanceSection.SHARED -> R.string.focus_colors_font
+    }
     OverrideTopBar {
         TopAppBar(
-            title = { Text(stringResource(R.string.pxlnet_settings_appearance)) },
+            title = { Text(stringResource(title)) },
             navigationIcon = {
                 IconButton(onClick = { navController.navigateUp() }) {
                     Icon(
@@ -89,7 +96,6 @@ fun AppearanceSettingsScreen(navController: NavController) {
     }
 
     val context = LocalContext.current
-    val interfaceTheme by PxlUiPreferences.interfaceTheme.collectAsState()
     val floatingNavigation by PxlUiPreferences.floatingNavigation.collectAsState()
     val floatingLabels by PxlUiPreferences.floatingNavigationLabels.collectAsState()
     val navigationBlur by PxlUiPreferences.navigationBlur.collectAsState()
@@ -232,7 +238,7 @@ fun AppearanceSettingsScreen(navController: NavController) {
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
     ) {
-        InterfaceThemePicker(interfaceTheme) {
+        InterfaceThemePicker(interfaceTheme, section) {
             Text(
                 stringResource(R.string.pxlnet_settings_floating_navigation),
                 color = MaterialTheme.colorScheme.primary,
@@ -312,6 +318,7 @@ fun AppearanceSettingsScreen(navController: NavController) {
                 }
             }
         }
+        if (section == AppearanceSection.THEME || section == AppearanceSection.CUSTOMIZE) return@Column
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(24.dp),

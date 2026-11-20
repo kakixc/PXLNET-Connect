@@ -1,6 +1,10 @@
 package io.nekohasekai.sfa.compose.screen.dashboard
 
 import android.widget.Toast
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.ListItem
+import androidx.compose.ui.semantics.Role
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -91,18 +95,22 @@ fun PxlAccountScreen(
         uiState.telegramLoginError?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
     }
 
+    val theme by PxlUiPreferences.interfaceTheme.collectAsState()
+    val focus = theme != PxlUiPreferences.InterfaceTheme.CLASSIC
     OverrideTopBar {
         PxlRootTopBar(
             title = stringResource(R.string.pxlnet_account_title),
-            subtitle = stringResource(R.string.pxlnet_account_subtitle),
+            subtitle = if (!focus) stringResource(R.string.pxlnet_account_subtitle)
+                else if (!uiState.hasTelegramSession) stringResource(R.string.pxlnet_guest_mode)
+                else uiState.telegramAccountName ?: uiState.telegramUsername?.let { "@$it" } ?: stringResource(R.string.focus_account),
+            showServiceSubtitle = !focus,
             glassContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
         )
     }
 
     val topBarInset = LocalPxlTopBarInset.current
     val floatingNavInset = LocalPxlFloatingNavInset.current
-    val theme by PxlUiPreferences.interfaceTheme.collectAsState()
-    if (theme == PxlUiPreferences.InterfaceTheme.FOCUS) {
+    if (focus) {
         FocusAccount(
             uiState = uiState,
             profileSummary = linkSummary,
@@ -556,11 +564,11 @@ private fun FocusAccount(
 
     val profileCard: @Composable () -> Unit = {
         PxlAccountCard {
-            Text(stringResource(R.string.focus_current_profile), style = MaterialTheme.typography.labelLarge)
-            Text(profile?.name ?: stringResource(R.string.pxlnet_subscription_not_added), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.focus_active_profile), style = MaterialTheme.typography.titleMedium)
+            Text(profile?.name ?: stringResource(R.string.pxlnet_subscription_not_added), style = MaterialTheme.typography.headlineSmall)
             if (profile != null) {
                 val remote = profile.typed.type == TypedProfile.Type.Remote
-                Text(stringResource(if (remote) R.string.focus_linked else R.string.focus_file), style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.focus_profile_source, stringResource(if (remote) R.string.focus_linked else R.string.focus_file)), style = MaterialTheme.typography.bodyMedium)
                 profileSummary?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 if (remote && profile.typed.remoteURL.isNotBlank()) {
                     OutlinedButton(onClick = { viewModel.updateProfile(profile) }, enabled = uiState.updatingProfileId == null) {
@@ -583,7 +591,7 @@ private fun FocusAccount(
     ) {
         if (!signedIn) item { profileCard() }
         item {
-            PxlAccountCard(compact = true) {
+            Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
                 if (signedIn) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
@@ -604,8 +612,8 @@ private fun FocusAccount(
                         }
                     }
                 } else {
-                    Text(stringResource(R.string.pxlnet_login_description), style = MaterialTheme.typography.bodyMedium)
-                    TextButton(onClick = viewModel::startTelegramLogin, enabled = !uiState.telegramLoginPending) {
+                    Text(stringResource(R.string.focus_guest_login), style = MaterialTheme.typography.bodyMedium)
+                    FilledTonalButton(onClick = viewModel::startTelegramLogin, enabled = !uiState.telegramLoginPending) {
                         Text(stringResource(if (uiState.telegramLoginPending) R.string.pxlnet_login_waiting else R.string.pxlnet_login_telegram))
                     }
                 }
@@ -634,11 +642,15 @@ private fun FocusAccount(
             item { profileCard() }
         }
         item {
-            PxlAccountCard {
-                OutlinedButton(onClick = { pulseExpanded = !pulseExpanded }, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.pxlnet_pulse_title), Modifier.weight(1f))
-                    Text(stringResource(if (pulseExpanded) R.string.focus_collapse else R.string.focus_expand))
-                }
+            Column {
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.pxlnet_pulse_title)) },
+                    supportingContent = {
+                        Text(stringResource(if (uiState.accountServiceAvailable == false) R.string.focus_account_unavailable else R.string.focus_service_health))
+                    },
+                    trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
+                    modifier = Modifier.clickable(role = Role.Button) { pulseExpanded = !pulseExpanded },
+                )
                 if (pulseExpanded) {
                     Text(stringResource(R.string.focus_nodes, uiState.availableServerTags.count { !it.equals("AUTO", true) }))
                     PxlPulsePanel(
@@ -656,7 +668,7 @@ private fun FocusAccount(
             }
         }
         item {
-            PxlAccountCard {
+            Column(Modifier.padding(horizontal = 8.dp)) {
                 EcosystemRow(Icons.Default.SupportAgent, stringResource(R.string.pxlnet_support_title),
                     stringResource(R.string.pxlnet_support_description), onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) })
                 EcosystemRow(Icons.Default.Campaign, stringResource(R.string.pxlnet_news_title),
