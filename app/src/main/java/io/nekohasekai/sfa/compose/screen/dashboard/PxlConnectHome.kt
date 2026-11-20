@@ -1737,11 +1737,39 @@ private fun ConnectionControl(
 @Composable
 private fun QuickTileCard(onAdd: () -> Unit, onHide: (() -> Unit)? = null) {
     if (onHide != null) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            Text(stringResource(R.string.pxlnet_quick_tile_title), style = MaterialTheme.typography.titleSmall)
-            Row {
-                TextButton(onClick = onAdd) { Text(stringResource(R.string.pxlnet_add)) }
-                TextButton(onClick = onHide) { Text(stringResource(R.string.focus_hidden)) }
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Icon(Icons.Default.DashboardCustomize, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Column {
+                        Text(stringResource(R.string.focus_vpn_tile_title), style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            stringResource(R.string.pxlnet_quick_tile_description),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    FilledTonalButton(onClick = onAdd, modifier = Modifier.weight(2f).pxlPressMotion()) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.focus_vpn_tile_add))
+                    }
+                    TextButton(onClick = onHide, modifier = Modifier.weight(1f).pxlPressMotion()) {
+                        Text(stringResource(R.string.focus_hidden))
+                    }
+                }
             }
         }
         return

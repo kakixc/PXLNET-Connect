@@ -9,6 +9,9 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -226,28 +229,43 @@ internal fun FocusTrafficSummary(
     onRouting: () -> Unit,
     onDns: () -> Unit,
 ) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    ) {
         FocusShortcut(
-            label = stringResource(when {
+            title = stringResource(R.string.pxlnet_settings_routing),
+            summary = stringResource(when {
                 appRules -> R.string.focus_route_apps
                 smartRouting -> R.string.focus_route_smart
                 else -> R.string.focus_route_all
             }),
+            icon = Icons.Default.Tune,
             onClick = onRouting,
-            modifier = Modifier.weight(1f),
         )
-        if (dnsEnabled) FocusShortcut(
-            label = stringResource(if (dnsActive) R.string.focus_dns_short_on else R.string.focus_dns_short_off),
-            onClick = onDns,
-            modifier = Modifier.weight(1f),
-        )
+        if (dnsEnabled) {
+            HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+            FocusShortcut(
+                title = stringResource(R.string.pxlnet_dns_title),
+                summary = stringResource(if (dnsActive) R.string.pxlnet_tile_on else R.string.pxlnet_tile_off),
+                icon = Icons.Default.Dns,
+                onClick = onDns,
+            )
+        }
     }
 }
 
 @Composable
-private fun FocusShortcut(label: String, onClick: () -> Unit, modifier: Modifier) {
-    TextButton(onClick = onClick, modifier = modifier.heightIn(min = 48.dp).pxlPressMotion()) {
-        Text(label, Modifier.weight(1f))
-        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
-    }
+private fun FocusShortcut(title: String, summary: String, icon: ImageVector, onClick: () -> Unit) {
+    ListItem(
+        headlineContent = { Text(title, style = MaterialTheme.typography.titleMedium) },
+        supportingContent = { Text(summary) },
+        leadingContent = { Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+        trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
+        modifier = Modifier.fillMaxWidth()
+            .pxlPressMotion(pressedScale = 0.985f)
+            .clickable(role = Role.Button, onClick = onClick),
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+    )
 }

@@ -54,11 +54,9 @@
     <string name="focus_auto_live">AUTO · now %1$s</string>
     <string name="focus_probe_success">Internet access confirmed</string>
     <string name="focus_server">Server</string>
-    <string name="focus_route_apps">Route · App rules</string>
-    <string name="focus_route_smart">Route · Smart</string>
-    <string name="focus_route_all">Route · All traffic</string>
-    <string name="focus_dns_short_on">DNS · On</string>
-    <string name="focus_dns_short_off">DNS · Off</string>
+    <string name="focus_route_apps">App rules</string>
+    <string name="focus_route_smart">Smart Routing</string>
+    <string name="focus_route_all">All traffic through VPN</string>
     <string name="focus_active_profile">Active profile</string>
     <string name="focus_profile_source">Source: %1$s</string>
     <string name="focus_guest_login">Sign in to see when your PXLNET subscription ends and renew it.</string>
@@ -85,4 +83,6 @@
     <string name="focus_apply_theme">Apply theme</string>
     <string name="focus_personalization">Personalization</string>
     <string name="focus_advanced_summary">App settings and developer mode</string>
+    <string name="focus_vpn_tile_title">VPN tile in Quick Settings</string>
+    <string name="focus_vpn_tile_add">Add tile</string>
 </resources>
