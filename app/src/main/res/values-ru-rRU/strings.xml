@@ -956,7 +956,7 @@
     <string name="pxlnet_pulse_access">Доступ</string>
     <string name="pxlnet_pulse_servers">Серверы</string>
     <string name="pxlnet_pulse_guest">Гость</string>
-    <string name="pxlnet_pulse_connected">Подключён</string>
+    <string name="pxlnet_pulse_connected">Вошёл</string>
     <string name="pxlnet_pulse_active">Активен</string>
     <string name="pxlnet_pulse_by_link">По ссылке</string>
     <string name="pxlnet_pulse_inactive">Неактивен</string>

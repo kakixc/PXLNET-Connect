@@ -134,7 +134,7 @@
     <string name="pxlnet_pulse_access">Access</string>
     <string name="pxlnet_pulse_servers">Servers</string>
     <string name="pxlnet_pulse_guest">Guest</string>
-    <string name="pxlnet_pulse_connected">Connected</string>
+    <string name="pxlnet_pulse_connected">Signed in</string>
     <string name="pxlnet_pulse_active">Active</string>
     <string name="pxlnet_pulse_by_link">By link</string>
     <string name="pxlnet_pulse_inactive">Inactive</string>

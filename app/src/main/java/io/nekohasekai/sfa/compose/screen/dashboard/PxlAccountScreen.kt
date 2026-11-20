@@ -85,6 +85,7 @@ fun PxlAccountScreen(
         PxlRootTopBar(
             title = stringResource(R.string.pxlnet_account_title),
             subtitle = stringResource(R.string.pxlnet_account_subtitle),
+            glassContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
         )
     }
 

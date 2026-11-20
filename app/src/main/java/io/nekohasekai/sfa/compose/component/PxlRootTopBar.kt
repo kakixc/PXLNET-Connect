@@ -33,6 +33,7 @@ val LocalPxlTopBarStatusText = compositionLocalOf<String?> { null }
 fun PxlRootTopBar(
     title: String,
     subtitle: String = "PXLNET Connect · ${BuildConfig.VERSION_NAME}",
+    glassContainerColor: Color = Color.Transparent,
     onTitleClick: (() -> Unit)? = null,
     navigationIcon: @Composable () -> Unit = {},
     actions: @Composable () -> Unit = {},
@@ -73,8 +74,8 @@ fun PxlRootTopBar(
         navigationIcon = navigationIcon,
         actions = { actions() },
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = if (glassOverlay) Color.Transparent else MaterialTheme.colorScheme.surface,
-            scrolledContainerColor = if (glassOverlay) Color.Transparent else MaterialTheme.colorScheme.surface,
+            containerColor = if (glassOverlay) glassContainerColor else MaterialTheme.colorScheme.surface,
+            scrolledContainerColor = if (glassOverlay) glassContainerColor else MaterialTheme.colorScheme.surface,
         ),
     )
 }
