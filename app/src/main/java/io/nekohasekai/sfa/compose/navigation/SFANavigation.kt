@@ -666,14 +666,14 @@ fun SFANavHost(
         composable(
             route = Screen.Settings.route,
             exitTransition = {
-                if (targetState.destination.route?.startsWith("settings/") == true) {
+                if (isNestedScreenRoute(targetState.destination.route)) {
                     slideOutToLeft()
                 } else {
                     tabExit()
                 }
             },
             popEnterTransition = {
-                if (initialState.destination.route?.startsWith("settings/") == true) {
+                if (isNestedScreenRoute(initialState.destination.route)) {
                     slideInFromLeft()
                 } else {
                     tabEnter()
