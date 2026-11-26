@@ -5,6 +5,9 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.JsonObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.io.IOException
@@ -32,7 +35,61 @@ class PxlAuthClient(
         val username: String,
         val subscriptionActive: Boolean,
         val subscriptionExpiresAt: String?,
+        val hasSubscription: Boolean?,
+        val verifiedEmail: String?,
+        val hasTelegramIdentity: Boolean,
     )
+
+    data class EmailChallenge(val id: String, val expiresAt: Long)
+
+    class ApiError(
+        val status: Int,
+        val code: String?,
+        val retryAfterSeconds: Long?,
+    ) : IllegalStateException("PXLNET API: HTTP $status")
+
+    fun startEmail(email: String): EmailChallenge {
+        val root = emailRequest("start", setOf(202), buildJsonObject { put("email", email) })
+        check(root["status"]?.jsonPrimitive?.content == "code_sent")
+        val id = requireNotNull(root["challenge_id"]?.jsonPrimitive?.contentOrNull)
+        check(id.isNotBlank())
+        return EmailChallenge(id, root.getValue("expires_at").jsonPrimitive.content.toLong())
+    }
+
+    fun verifyEmail(email: String, challengeId: String, code: String): String {
+        val root = emailRequest("verify", setOf(200), buildJsonObject {
+            put("email", email)
+            put("challenge_id", challengeId)
+            put("code", code)
+        })
+        check(root["status"]?.jsonPrimitive?.content == "authenticated")
+        check(!root["pxl_user_id"]?.jsonPrimitive?.contentOrNull.isNullOrBlank())
+        return requireNotNull(root["access_token"]?.jsonPrimitive?.contentOrNull)
+            .also { check(it.isNotBlank()) }
+    }
+
+    // An ambiguous network failure may have already issued a code or consumed it.
+    private fun emailRequest(action: String, statuses: Set<Int>, body: JsonObject) =
+        requestAt(baseUrl, "POST", "/api/v1/auth/email/$action", null, statuses, body).jsonObject
+
+    fun linkTelegram(accessToken: String, code: String, persistReplacement: (String) -> Unit): String {
+        val result = requestAt(
+            baseUrl, "POST", "/api/v1/identities/telegram/link/confirm", accessToken,
+            setOf(200), buildJsonObject { put("code", code) },
+        ).jsonObject
+        return when (result["status"]?.jsonPrimitive?.contentOrNull) {
+            "linked", "already_linked" -> accessToken
+            "merged" -> {
+                check(!result["pxl_user_id"]?.jsonPrimitive?.contentOrNull.isNullOrBlank())
+                check(result["token_type"]?.jsonPrimitive?.contentOrNull.equals("Bearer", ignoreCase = true))
+                val replacement = requireNotNull(result["access_token"]?.jsonPrimitive?.contentOrNull)
+                check(replacement.isNotBlank() && replacement != accessToken)
+                persistReplacement(replacement)
+                replacement
+            }
+            else -> error("Unexpected Telegram link response")
+        }
+    }
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -69,10 +126,14 @@ class PxlAuthClient(
     fun account(accessToken: String): Account {
         val root = request("GET", "/api/v1/me", accessToken).jsonObject
         return Account(
-            displayName = root["full_name"]?.jsonPrimitive?.content.orEmpty(),
-            username = root["username"]?.jsonPrimitive?.content.orEmpty(),
+            displayName = root["full_name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            username = root["username"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             subscriptionActive = root["subscription_active"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: false,
             subscriptionExpiresAt = root["subscription_expires_at"]?.jsonPrimitive?.contentOrNull,
+            hasSubscription = root["has_subscription"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull(),
+            verifiedEmail = root["email"]?.jsonPrimitive?.contentOrNull
+                ?.takeIf { root["email_verified"]?.jsonPrimitive?.content == "true" },
+            hasTelegramIdentity = root["telegram_id"]?.jsonPrimitive?.contentOrNull != null,
         )
     }
 
@@ -105,26 +166,38 @@ class PxlAuthClient(
         path: String,
         bearerToken: String?,
         acceptedStatuses: Set<Int>,
+        payload: JsonObject? = null,
     ) = (URL(endpoint + path).openConnection() as HttpURLConnection).run {
         requestMethod = method
+        instanceFollowRedirects = false
         connectTimeout = 10_000
         readTimeout = 10_000
         setRequestProperty("Accept", "application/json")
         setRequestProperty("User-Agent", userAgent)
         bearerToken?.let { setRequestProperty("Authorization", "Bearer $it") }
-        if (method == "POST") {
-            doOutput = true
-            setFixedLengthStreamingMode(0)
-        }
         try {
+            if (method == "POST") {
+                val bytes = payload?.toString()?.toByteArray(Charsets.UTF_8) ?: ByteArray(0)
+                doOutput = true
+                setFixedLengthStreamingMode(bytes.size)
+                if (payload != null) {
+                    setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                    outputStream.use { it.write(bytes) }
+                }
+            }
             val status = responseCode
             val body = (if (status in acceptedStatuses) inputStream else errorStream)
                 ?.bufferedReader(Charsets.UTF_8)
                 ?.use { it.readText() }
                 .orEmpty()
             if (status !in acceptedStatuses) {
-                if (status in 500..599) throw ApiUnavailableException(status)
-                throw IllegalStateException("PXLNET API: HTTP $status")
+                if (payload == null && status in 500..599) throw ApiUnavailableException(status)
+                val code = runCatching {
+                    json.parseToJsonElement(body).jsonObject["error"]?.jsonPrimitive?.contentOrNull
+                }.getOrNull()
+                val retryAfter = getHeaderField("Retry-After")?.trim()
+                    ?.toLongOrNull()?.takeIf { it >= 0 }
+                throw ApiError(status, code, retryAfter)
             }
             if (body.isBlank()) json.parseToJsonElement("{}") else json.parseToJsonElement(body)
         } finally {
