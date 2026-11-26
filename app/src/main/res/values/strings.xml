@@ -244,7 +244,6 @@
     <string name="pxlnet_first_setup_offline">No saved profile yet. Add a subscription link or sign in when the account service is available.</string>
     <string name="pxlnet_restart_onboarding">Run initial setup again</string>
     <string name="pxlnet_restart_onboarding_summary">Shows the guide again without deleting your profile or account.</string>
-    <string name="pxlnet_onboarding_telegram_optional">Telegram is optional. If it is unavailable, add a subscription link directly.</string>
     <string name="pxlnet_connection_works">Connection is working</string>
     <string name="pxlnet_server_not_responding">The selected server is not responding</string>
     <string name="pxlnet_checking_availability">Checking availability…</string>
@@ -285,7 +284,7 @@
     <string name="pxlnet_onboarding_permission">Allow VPN</string>
     <string name="pxlnet_onboarding_connect">Connect</string>
     <string name="pxlnet_onboarding_step">Step %1$d of %2$d</string>
-    <string name="pxlnet_onboarding_subscription_text">Sign in through @pxlnet_bot to sync access automatically, or continue as a guest with a subscription link.</string>
+    <string name="pxlnet_onboarding_subscription_text">Sign in to sync your subscription, or add a subscription link to continue as a guest.</string>
     <string name="pxlnet_onboarding_routing_text">Smart Routing keeps the local network and Russian resources direct. The full tunnel sends all internet traffic through VPN.</string>
     <string name="pxlnet_full_tunnel">Full tunnel</string>
     <string name="pxlnet_onboarding_permission_text">The first connection opens an Android system prompt. Allow PXLNET Connect to create a VPN connection.</string>

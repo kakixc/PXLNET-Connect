@@ -1070,7 +1070,6 @@
     <string name="pxlnet_first_setup_offline">Сохранённого профиля пока нет. Добавьте ссылку подписки или войдите, когда сервис аккаунта станет доступен.</string>
     <string name="pxlnet_restart_onboarding">Пройти первоначальную настройку снова</string>
     <string name="pxlnet_restart_onboarding_summary">Повторно покажет инструкцию, не удаляя профиль и аккаунт.</string>
-    <string name="pxlnet_onboarding_telegram_optional">Telegram необязателен. Если он недоступен, добавьте ссылку подписки напрямую.</string>
     <string name="pxlnet_connection_works">Подключение работает</string>
     <string name="pxlnet_server_not_responding">Выбранный сервер не отвечает</string>
     <string name="pxlnet_checking_availability">Проверяем доступность…</string>
@@ -1111,7 +1110,7 @@
     <string name="pxlnet_onboarding_permission">Разрешите VPN</string>
     <string name="pxlnet_onboarding_connect">Подключитесь</string>
     <string name="pxlnet_onboarding_step">Шаг %1$d из %2$d</string>
-    <string name="pxlnet_onboarding_subscription_text">Войдите через @pxlnet_bot для автоматической синхронизации или продолжите в гостевом режиме по ссылке.</string>
+    <string name="pxlnet_onboarding_subscription_text">Войдите, чтобы синхронизировать подписку, или добавьте ссылку подписки и продолжите в гостевом режиме.</string>
     <string name="pxlnet_onboarding_routing_text">Smart Routing оставляет локальную сеть и российские ресурсы напрямую. Полный туннель отправляет остальной трафик через VPN.</string>
     <string name="pxlnet_full_tunnel">Полный туннель</string>
     <string name="pxlnet_onboarding_permission_text">При первом подключении Android покажет системный запрос. Разрешите PXLNET Connect создать VPN-подключение.</string>

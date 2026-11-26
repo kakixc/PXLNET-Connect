@@ -586,10 +586,12 @@ fun DashboardScreen(
     if (showOnboarding) {
         PxlOnboardingSheet(
             smartRouting = uiState.smartRoutingEnabled,
-            hasTelegramSession = uiState.hasTelegramSession,
+            hasSession = uiState.hasTelegramSession,
             telegramLoginPending = uiState.telegramLoginPending,
+            accountBusy = uiState.telegramLoginPending || uiState.ecosystemCheckPending,
+            focus = focus,
+            viewModel = viewModel,
             onSmartRoutingChanged = viewModel::setSmartRouting,
-            onTelegramLogin = viewModel::startTelegramLogin,
             onImportClipboard = importFromClipboard,
             onAddLink = {
                 showOnboarding = false
@@ -2001,10 +2003,12 @@ private fun GuardCard(
 @Composable
 private fun PxlOnboardingSheet(
     smartRouting: Boolean,
-    hasTelegramSession: Boolean,
+    hasSession: Boolean,
     telegramLoginPending: Boolean,
+    accountBusy: Boolean,
+    focus: Boolean,
+    viewModel: DashboardViewModel,
     onSmartRoutingChanged: (Boolean) -> Unit,
-    onTelegramLogin: () -> Unit,
     onImportClipboard: () -> Unit,
     onAddLink: () -> Unit,
     onOpenVpnSettings: () -> Unit,
@@ -2012,15 +2016,13 @@ private fun PxlOnboardingSheet(
     onDismiss: () -> Unit,
 ) {
     var step by remember { mutableIntStateOf(0) }
-    var awaitingTelegramLogin by remember { mutableStateOf(false) }
-    var showTelegramSuccess by remember { mutableStateOf(false) }
-    LaunchedEffect(hasTelegramSession, awaitingTelegramLogin) {
-        if (awaitingTelegramLogin && hasTelegramSession) {
-            showTelegramSuccess = true
+    var awaitingLogin by remember { mutableStateOf(false) }
+    var showEmailLogin by remember { mutableStateOf(false) }
+    LaunchedEffect(hasSession, awaitingLogin) {
+        if (awaitingLogin && hasSession) {
             kotlinx.coroutines.delay(850)
             step = 1
-            awaitingTelegramLogin = false
-            showTelegramSuccess = false
+            awaitingLogin = false
         }
     }
     val titles = listOf(
@@ -2055,25 +2057,31 @@ private fun PxlOnboardingSheet(
                         stringResource(R.string.pxlnet_onboarding_subscription_text),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Text(
-                        stringResource(R.string.pxlnet_onboarding_telegram_optional),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (showTelegramSuccess || hasTelegramSession) {
+                    if (hasSession) {
                         Text(
                             stringResource(R.string.pxlnet_onboarding_telegram_success),
                             color = MaterialTheme.colorScheme.primary,
                             style = MaterialTheme.typography.titleMedium,
                         )
                     }
+                    val loginEnabled = !accountBusy && !hasSession
                     Button(
                         onClick = {
-                            awaitingTelegramLogin = true
-                            onTelegramLogin()
+                            awaitingLogin = true
+                            showEmailLogin = true
                         },
-                        enabled = !telegramLoginPending && !hasTelegramSession,
-                        modifier = Modifier.fillMaxWidth().pxlPressMotion(enabled = !telegramLoginPending && !hasTelegramSession),
+                        enabled = loginEnabled,
+                        modifier = Modifier.fillMaxWidth().pxlPressMotion(loginEnabled),
+                    ) {
+                        Text(stringResource(R.string.pxl_email_login))
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            awaitingLogin = true
+                            viewModel.startTelegramLogin()
+                        },
+                        enabled = loginEnabled,
+                        modifier = Modifier.fillMaxWidth().pxlPressMotion(loginEnabled),
                     ) {
                         Text(stringResource(if (telegramLoginPending) R.string.pxlnet_login_waiting_telegram else R.string.pxlnet_login_telegram))
                     }
@@ -2143,6 +2151,16 @@ private fun PxlOnboardingSheet(
             }
             Spacer(Modifier.height(16.dp))
         }
+    }
+    if (showEmailLogin) {
+        PxlEmailLoginDialog(
+            viewModel,
+            onDismiss = {
+                showEmailLogin = false
+                if (!hasSession) awaitingLogin = false
+            },
+            focus = focus,
+        )
     }
 }
 
