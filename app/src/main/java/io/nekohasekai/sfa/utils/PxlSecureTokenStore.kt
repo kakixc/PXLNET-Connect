@@ -15,20 +15,29 @@ object PxlSecureTokenStore {
     private const val PREFERENCES = "pxlnet_secure_auth"
     private const val CIPHERTEXT = "access_token"
     private const val IV = "access_token_iv"
+    private const val EMAIL_LOGIN = "email_login"
+
+    fun isEmailLogin(context: Context): Boolean =
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).getBoolean(EMAIL_LOGIN, false)
 
     fun hasStoredToken(context: Context): Boolean =
         !context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
             .getString(CIPHERTEXT, null).isNullOrBlank()
 
-    fun save(context: Context, token: String) {
+    fun save(context: Context, token: String, emailLogin: Boolean = false, durable: Boolean = false) {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
         val encrypted = cipher.doFinal(token.toByteArray(Charsets.UTF_8))
-        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+        val editor = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
             .edit()
             .putString(CIPHERTEXT, Base64.encodeToString(encrypted, Base64.NO_WRAP))
             .putString(IV, Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
-            .apply()
+            .putBoolean(EMAIL_LOGIN, emailLogin)
+        if (durable) {
+            check(editor.commit()) { "Could not persist the account session" }
+        } else {
+            editor.apply()
+        }
     }
 
     fun read(context: Context): String? = runCatching {

@@ -3,6 +3,8 @@ package io.nekohasekai.sfa.compose.screen.dashboard
 import android.widget.Toast
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -27,6 +29,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -34,6 +37,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,6 +46,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -58,9 +65,12 @@ import io.nekohasekai.sfa.compose.component.LocalPxlFloatingNavInset
 import io.nekohasekai.sfa.compose.navigation.NewProfileArgs
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.utils.PxlLinks
+import io.nekohasekai.sfa.utils.PxlAuthClient
 import io.nekohasekai.sfa.utils.SubscriptionInfoStore
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 @Composable
 fun PxlAccountScreen(
@@ -71,6 +81,72 @@ fun PxlAccountScreen(
     val context = LocalContext.current
     val hasSession = uiState.hasTelegramSession
     val hasVerifiedAccount = uiState.accountLastVerifiedAt != null
+    val showTelegramCodeAction = hasSession && uiState.signedInByEmail && hasVerifiedAccount &&
+        !uiState.hasTelegramIdentity
+    val telegramCodeEnabled = !uiState.telegramLoginPending && !uiState.ecosystemCheckPending
+    var showEmailLogin by remember { mutableStateOf(false) }
+    var showTelegramLink by remember { mutableStateOf(false) }
+    var showLinkHelp by remember { mutableStateOf(false) }
+    if (showEmailLogin) {
+        PxlEmailLoginDialog(
+            viewModel,
+            onDismiss = { showEmailLogin = false },
+            onSubscriptionHelp = { showLinkHelp = true },
+        )
+    }
+    if (showTelegramLink && hasSession && uiState.signedInByEmail) {
+        PxlTelegramLinkDialog(viewModel, onDismiss = { showTelegramLink = false })
+    }
+    if (showLinkHelp) {
+        val checkingLink = hasSession && uiState.accountHasSubscription == false
+        AlertDialog(
+            onDismissRequest = { showLinkHelp = false },
+            title = {
+                Text(stringResource(if (checkingLink) R.string.pxl_email_check_link else R.string.pxl_email_link_help))
+            },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    if (checkingLink) {
+                        Text(stringResource(R.string.pxl_email_check_link_bot))
+                        if (showTelegramCodeAction) {
+                            Text(stringResource(R.string.pxl_email_link_help_enter))
+                            TextButton(onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) }) {
+                                Text(stringResource(R.string.pxl_email_open_bot))
+                            }
+                        } else {
+                            Text(stringResource(R.string.pxl_email_check_link_refresh))
+                        }
+                    } else {
+                        Text(stringResource(R.string.pxl_email_link_help_before))
+                        Text(stringResource(R.string.pxl_email_link_help_after))
+                    }
+                }
+            },
+            confirmButton = {
+                if (checkingLink && showTelegramCodeAction) {
+                    TextButton(
+                        onClick = {
+                            showLinkHelp = false
+                            showTelegramLink = true
+                        },
+                        enabled = telegramCodeEnabled,
+                    ) { Text(stringResource(R.string.pxl_email_enter_telegram_code)) }
+                } else {
+                    TextButton(onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) }) {
+                        Text(stringResource(R.string.pxl_email_open_bot))
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLinkHelp = false }) {
+                    Text(stringResource(R.string.pxl_email_link_help_close))
+                }
+            },
+        )
+    }
     val summaryRevision by SubscriptionInfoStore.summaryRevision.collectAsState()
     val selectedProfile = uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }
     val linkSummary = remember(uiState.selectedProfileId, summaryRevision) {
@@ -117,6 +193,7 @@ fun PxlAccountScreen(
                         Text(
                             uiState.telegramAccountName
                                 ?: uiState.telegramUsername?.let { "@$it" }
+                                ?: uiState.verifiedEmail
                                 ?: stringResource(if (hasSession) R.string.pxlnet_account_title else R.string.pxlnet_guest_mode),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.SemiBold,
@@ -125,6 +202,7 @@ fun PxlAccountScreen(
                                 !hasSession -> R.string.pxlnet_guest_mode_description
                                 !hasVerifiedAccount -> R.string.pxlnet_account_not_verified
                                 uiState.accountServiceAvailable == false -> R.string.pxlnet_account_saved_data_offline
+                                uiState.signedInByEmail -> R.string.pxl_email_signed_in
                                 else -> R.string.pxlnet_signed_in_telegram
                             })
                         Surface(
@@ -161,6 +239,8 @@ fun PxlAccountScreen(
                             Text(
                                 if (!hasVerifiedAccount) {
                                     stringResource(R.string.pxlnet_account_status_unknown)
+                                } else if (uiState.accountHasSubscription == false) {
+                                    stringResource(R.string.pxl_email_no_subscription)
                                 } else if (uiState.telegramSubscriptionActive) {
                                     formatAccountExpiry(uiState.telegramSubscriptionExpiresAt)?.let {
                                         stringResource(R.string.pxlnet_subscription_active_until, it)
@@ -204,17 +284,87 @@ fun PxlAccountScreen(
                             }
                         }
                     }
+                    if (uiState.accountSubscriptionLoadFailed) {
+                        Text(
+                            stringResource(R.string.pxl_email_servers_failed),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        OutlinedButton(
+                            onClick = viewModel::refreshTelegramAccount,
+                            enabled = !uiState.telegramLoginPending,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(stringResource(R.string.pxl_email_retry_subscription)) }
+                    }
+                    val verifiedEmail = uiState.verifiedEmail
+                    if (verifiedEmail != null) {
+                        Text(
+                            stringResource(R.string.pxl_email_verified_address, verifiedEmail),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        if (uiState.hasTelegramIdentity) {
+                            Text(
+                                stringResource(R.string.pxl_email_both_methods),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    } else if (!uiState.signedInByEmail) {
+                        OutlinedButton(
+                            onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(stringResource(R.string.pxl_email_link)) }
+                        Text(
+                            stringResource(R.string.pxl_email_link_bot_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (hasVerifiedAccount && uiState.accountHasSubscription == false) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                stringResource(R.string.pxl_email_missing_subscription_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            if (showTelegramCodeAction) {
+                                OutlinedButton(
+                                    onClick = { showTelegramLink = true },
+                                    enabled = telegramCodeEnabled,
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) { Text(stringResource(R.string.pxl_email_enter_telegram_code)) }
+                            }
+                            TextButton(onClick = { showLinkHelp = true }) {
+                                Text(stringResource(R.string.pxl_email_check_link))
+                            }
+                        }
+                    }
+                    if (showTelegramCodeAction && uiState.accountHasSubscription != false) {
+                        OutlinedButton(
+                            onClick = { showTelegramLink = true },
+                            enabled = telegramCodeEnabled,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(stringResource(R.string.pxl_email_enter_telegram_code)) }
+                    }
                     TextButton(
                         onClick = viewModel::logoutTelegram,
+                        enabled = !uiState.telegramLoginPending && !uiState.ecosystemCheckPending,
                         modifier = Modifier.align(Alignment.End),
                     ) {
                         Text(stringResource(R.string.pxlnet_sign_out))
                     }
                 } else {
+                    val loginEnabled = !uiState.telegramLoginPending && !uiState.ecosystemCheckPending
                     Button(
+                        onClick = { showEmailLogin = true },
+                        enabled = loginEnabled,
+                        modifier = Modifier.fillMaxWidth().pxlPressMotion(enabled = loginEnabled),
+                        shape = RoundedCornerShape(18.dp),
+                    ) { Text(stringResource(R.string.pxl_email_login)) }
+                    OutlinedButton(
                         onClick = viewModel::startTelegramLogin,
-                        enabled = !uiState.telegramLoginPending,
-                        modifier = Modifier.fillMaxWidth().pxlPressMotion(enabled = !uiState.telegramLoginPending),
+                        enabled = loginEnabled,
+                        modifier = Modifier.fillMaxWidth().pxlPressMotion(enabled = loginEnabled),
                         shape = RoundedCornerShape(18.dp),
                     ) {
                         if (uiState.telegramLoginPending) {
@@ -225,7 +375,9 @@ fun PxlAccountScreen(
                             Text(stringResource(R.string.pxlnet_login_telegram))
                         }
                     }
-                    Text(stringResource(R.string.pxlnet_login_description), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = { showLinkHelp = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.pxl_email_link_help))
+                    }
                 }
             }
         }
@@ -259,7 +411,7 @@ fun PxlAccountScreen(
                         }
                     }
                 }
-                if (!hasSession || uiState.selectedProfileId <= 0) {
+                if (!hasSession || uiState.selectedProfileId <= 0 || uiState.accountHasSubscription == false) {
                     Button(
                         onClick = { onOpenNewProfile(NewProfileArgs()) },
                         modifier = Modifier.fillMaxWidth().pxlPressMotion(),
@@ -322,6 +474,71 @@ fun PxlAccountScreen(
             }
         }
     }
+}
+
+@Composable
+private fun PxlTelegramLinkDialog(viewModel: DashboardViewModel, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var code by remember { mutableStateOf("") }
+    var pending by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<Int?>(null) }
+    AlertDialog(
+        onDismissRequest = { if (!pending) onDismiss() },
+        title = { Text(stringResource(R.string.pxl_email_link_telegram)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = code,
+                    onValueChange = { code = it.take(100); error = null },
+                    enabled = !pending,
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.pxl_email_telegram_code)) },
+                    isError = error != null,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                error?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
+                Text(stringResource(R.string.pxl_email_telegram_code_hint))
+                TextButton(
+                    onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) },
+                    enabled = !pending,
+                ) { Text(stringResource(R.string.pxl_email_open_bot)) }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = code.isNotBlank() && !pending,
+                onClick = {
+                    pending = true
+                    error = null
+                    scope.launch {
+                        try {
+                            viewModel.linkTelegramToEmailAccount(code.trim())
+                            onDismiss()
+                        } catch (failure: CancellationException) {
+                            throw failure
+                        } catch (failure: PxlAuthClient.ApiError) {
+                            error = when (failure.code) {
+                                "account_conflict" -> R.string.pxl_email_telegram_conflict
+                                "invalid_or_expired_link" -> R.string.pxl_email_telegram_code_rejected
+                                else -> R.string.pxl_email_unavailable
+                            }
+                        } catch (_: Exception) {
+                            error = R.string.pxl_email_unavailable
+                        } finally {
+                            pending = false
+                        }
+                    }
+                },
+            ) {
+                if (pending) PxlShapeLoadingIndicator(size = 18.dp)
+                else Text(stringResource(R.string.pxl_email_link_submit))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !pending) { Text(stringResource(android.R.string.cancel)) }
+        },
+    )
 }
 
 @Composable
