@@ -1,6 +1,8 @@
 package io.nekohasekai.sfa.compose.navigation
 
 import androidx.annotation.StringRes
+import androidx.navigation.NavController
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.TextSnippet
 import androidx.compose.material.icons.filled.AccountCircle
@@ -72,3 +74,14 @@ val bottomNavigationScreens =
         Screen.Tools,
         Screen.Settings,
     )
+
+internal fun NavController.openRootTab(screen: Screen) {
+    if (currentDestination?.route == screen.route) return
+    // Return to the existing Home entry before trying to restore another saved tab.
+    if (screen == Screen.Dashboard && popBackStack(screen.route, inclusive = false)) return
+    navigate(screen.route) {
+        popUpTo(graph.findStartDestination().id) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
+    }
+}

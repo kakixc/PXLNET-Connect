@@ -6,7 +6,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.bg.StartServiceCoordinator
 import io.nekohasekai.sfa.bg.UpdateProfileWork
+import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Profile
 import io.nekohasekai.sfa.database.ProfileManager
 import io.nekohasekai.sfa.database.Settings
@@ -17,6 +19,10 @@ import io.nekohasekai.sfa.utils.PxlDiagnosticRedactor
 import io.nekohasekai.sfa.utils.PxlSubscriptionConverter
 import io.nekohasekai.sfa.utils.PxlXhttpSidecar
 import io.nekohasekai.sfa.utils.SubscriptionInfoStore
+import io.nekohasekai.sfa.utils.ProfileLinkKind
+import io.nekohasekai.sfa.utils.importedProfileName
+import io.nekohasekai.sfa.utils.profileLinkKind
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,6 +36,7 @@ import java.util.Date
 
 data class NewProfileUiState(
     val name: String = "PXLNET",
+    val importName: String? = null,
     val profileType: ProfileType = ProfileType.Remote,
     val profileSource: ProfileSource = ProfileSource.CreateNew,
     // Remote profile fields
@@ -65,6 +72,10 @@ enum class ProfileSource {
 class NewProfileViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(NewProfileUiState())
     val uiState: StateFlow<NewProfileUiState> = _uiState.asStateFlow()
+
+    fun initializeSimpleImport(name: String?, link: String?) {
+        _uiState.update { it.copy(name = "", importName = name, remoteUrl = link.orEmpty()) }
+    }
 
     fun initializeFromQRImport(name: String?, url: String?) {
         if (name != null && url != null) {
@@ -144,8 +155,9 @@ class NewProfileViewModel(application: Application) : AndroidViewModel(applicati
         _uiState.update { it.copy(errorMessage = null) }
     }
 
-    fun validateAndCreateProfile(): Boolean {
+    fun validateAndCreateProfile(simpleImport: Boolean = false): Boolean {
         val state = _uiState.value
+        if (state.isSaving || state.isSuccess) return false
         val context = getApplication<Application>()
 
         // Clear previous errors
@@ -160,25 +172,34 @@ class NewProfileViewModel(application: Application) : AndroidViewModel(applicati
         var hasError = false
 
         // Validate name
-        if (state.name.isBlank()) {
+        if (!simpleImport && state.name.isBlank()) {
             _uiState.update { it.copy(nameError = context.getString(R.string.profile_input_required)) }
             hasError = true
         }
 
-        // Validate based on profile type
-        when (state.profileType) {
-            ProfileType.Local -> {
-                if (state.profileSource == ProfileSource.Import && state.importUri == null && state.qrsData == null) {
-                    _uiState.update { it.copy(importError = context.getString(R.string.profile_input_required)) }
-                    hasError = true
+        val linkKind = if (simpleImport) profileLinkKind(state.remoteUrl) else null
+        if (simpleImport) {
+            if (linkKind == null) {
+                _uiState.update { it.copy(remoteUrlError = context.getString(R.string.focus_import_invalid_link)) }
+                hasError = true
+            }
+        } else {
+            // Validate based on profile type
+            when (state.profileType) {
+                ProfileType.Local -> {
+                    if (state.profileSource == ProfileSource.Import && state.importUri == null && state.qrsData == null) {
+                        _uiState.update { it.copy(importError = context.getString(R.string.profile_input_required)) }
+                        hasError = true
+                    }
+                }
+                ProfileType.Remote -> {
+                    if (state.remoteUrl.trim().isBlank()) {
+                        _uiState.update { it.copy(remoteUrlError = context.getString(R.string.profile_input_required)) }
+                        hasError = true
+                    }
                 }
             }
-            ProfileType.Remote -> {
-                if (state.remoteUrl.trim().isBlank()) {
-                    _uiState.update { it.copy(remoteUrlError = context.getString(R.string.profile_input_required)) }
-                    hasError = true
-                }
-            }
+
         }
 
         if (hasError) {
@@ -186,21 +207,21 @@ class NewProfileViewModel(application: Application) : AndroidViewModel(applicati
         }
 
         // If validation passes, create the profile
-        createProfile()
+        createProfile(state, linkKind)
         return true
     }
 
-    private fun createProfile() {
+    private fun createProfile(state: NewProfileUiState, linkKind: ProfileLinkKind?) {
+        _uiState.update { it.copy(isSaving = true, errorMessage = null) }
         viewModelScope.launch {
-            val state = _uiState.value
-            _uiState.update { it.copy(isSaving = true, errorMessage = null) }
 
             try {
                 val profile =
                     withContext(Dispatchers.IO) {
-                        when (state.profileType) {
-                            ProfileType.Local -> createLocalProfile(state)
-                            ProfileType.Remote -> createRemoteProfile(state)
+                        when {
+                            linkKind != null -> createLinkedProfile(state, linkKind)
+                            state.profileType == ProfileType.Local -> createLocalProfile(state)
+                            else -> createLinkedProfile(state, null)
                         }
                     }
 
@@ -211,6 +232,8 @@ class NewProfileViewModel(application: Application) : AndroidViewModel(applicati
                         createdProfile = profile,
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
@@ -278,54 +301,51 @@ class NewProfileViewModel(application: Application) : AndroidViewModel(applicati
         return profile
     }
 
-    private suspend fun createRemoteProfile(state: NewProfileUiState): Profile {
+    private suspend fun createLinkedProfile(state: NewProfileUiState, linkKind: ProfileLinkKind?): Profile {
         val context = getApplication<Application>()
-        val remoteUrl = state.remoteUrl.trim()
-        val typedProfile =
-            TypedProfile().apply {
-                type = TypedProfile.Type.Remote
-                remoteURL = remoteUrl
-                autoUpdate = state.autoUpdate
-                autoUpdateInterval = Settings.subscriptionUpdateIntervalMinutes
-                lastUpdated = Date()
-            }
-
-        val profile =
-            Profile(name = state.name, typed = typedProfile).apply {
-                userOrder = ProfileManager.nextOrder()
-            }
+        val link = state.remoteUrl.trim()
+        val remote = linkKind != ProfileLinkKind.Server
+        val response = if (remote) {
+            HTTPClient().use { it.get(link) }
+        } else {
+            HTTPClient.withLegacyXhttpLinks(
+                HTTPClient.Result(content = link, subscriptionUserInfo = null, subscriptionStatus = null, subscriptionFormat = null),
+            )
+        }
+        val conversion = PxlSubscriptionConverter.convert(
+            response.content,
+            PxlRoutingPreferences.isSmartRouting(context),
+            response.subscriptionStatus,
+            response.subscriptionFormat,
+            response.omittedXhttpCount,
+        )
+        Libbox.checkConfig(conversion.config)
 
         val fileID = ProfileManager.nextFileID()
         val configDirectory = File(context.filesDir, "configs").also { it.mkdirs() }
         val configFile = File(configDirectory, "$fileID.json")
-        typedProfile.path = configFile.path
-
-        // Fetch initial config - this MUST succeed for remote profiles
-        val response = HTTPClient().use { it.get(remoteUrl) }
-        val conversion =
-            PxlSubscriptionConverter.convert(
-                response.content,
-                PxlRoutingPreferences.isSmartRouting(context),
-                response.subscriptionStatus,
-                response.subscriptionFormat,
-                response.omittedXhttpCount,
-            )
-        Libbox.checkConfig(conversion.config)
-        val configContent = conversion.config
-
-        check(PxlXhttpSidecar.replaceConfig(configFile, configContent, response)) { "Cannot save XHTTP profile snapshot" }
-
-        // Create profile in database and select it
-        ProfileManager.create(profile, andSelect = true)
+        val typedProfile = TypedProfile().apply {
+            type = if (remote) TypedProfile.Type.Remote else TypedProfile.Type.Local
+            path = configFile.path
+            if (remote) {
+                remoteURL = link
+                autoUpdate = state.autoUpdate
+                autoUpdateInterval = Settings.subscriptionUpdateIntervalMinutes
+                lastUpdated = Date()
+            }
+        }
+        val name = if (linkKind == null) state.name else importedProfileName(
+            state.name, response.profileTitle, state.importName, link,
+            context.getString(if (remote) R.string.pxlnet_subscription_title else R.string.focus_server),
+        )
+        val profile = Profile(name = name, typed = typedProfile).apply { userOrder = ProfileManager.nextOrder() }
+        check(PxlXhttpSidecar.replaceConfig(configFile, conversion.config, response)) { "Cannot save XHTTP profile snapshot" }
+        val selectProfile = linkKind == null || Settings.selectedProfile <= 0 || StartServiceCoordinator.currentStatus() == Status.Stopped
+        ProfileManager.create(profile, andSelect = selectProfile)
         SubscriptionInfoStore.save(context, profile.id, response.subscriptionUserInfo)
         SubscriptionInfoStore.saveSmartStatus(context, profile.id, response.subscriptionStatus)
         SubscriptionInfoStore.saveSkippedXhttp(context, profile.id, conversion.skippedXhttpCount)
-
-        // Reconfigure updater if auto-update is enabled
-        if (state.autoUpdate) {
-            UpdateProfileWork.reconfigureUpdater()
-        }
-
+        if (remote && state.autoUpdate) UpdateProfileWork.reconfigureUpdater()
         return profile
     }
 }

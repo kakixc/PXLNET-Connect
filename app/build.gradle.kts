@@ -93,11 +93,14 @@ android {
 
     buildTypes {
         debug {
+            buildConfigField("boolean", "FOCUS_LAB", "true")
+            applicationIdSuffix = ".focuslab"
             if (getProps("KEYSTORE_PASS").isNotEmpty()) {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
         release {
+            buildConfigField("boolean", "FOCUS_LAB", "true")
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("release")

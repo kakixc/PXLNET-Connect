@@ -150,7 +150,11 @@ import io.nekohasekai.sfa.compose.model.Connection
 import io.nekohasekai.sfa.compose.navigation.NewProfileArgs
 import io.nekohasekai.sfa.compose.navigation.ProfileRoutes
 import io.nekohasekai.sfa.compose.navigation.SFANavHost
+import io.nekohasekai.sfa.compose.navigation.PhonePageChrome
 import io.nekohasekai.sfa.compose.navigation.Screen
+import io.nekohasekai.sfa.compose.navigation.isNestedScreenRoute
+import io.nekohasekai.sfa.compose.navigation.phonePageChrome
+import io.nekohasekai.sfa.compose.navigation.openRootTab
 import io.nekohasekai.sfa.compose.navigation.bottomNavigationScreens
 import io.nekohasekai.sfa.compose.screen.configuration.ProfileImportHandler
 import io.nekohasekai.sfa.compose.screen.connections.ConnectionDetailsScreen
@@ -516,11 +520,20 @@ class MainActivity :
         val windowSizeClass = currentWindowAdaptiveInfo().windowSizeClass
         val useNavigationRail =
             windowSizeClass.isWidthAtLeastBreakpointCompat(WindowSizeClassCompat.WIDTH_DP_MEDIUM_LOWER_BOUND)
-        val floatingNavigation by PxlUiPreferences.floatingNavigation.collectAsState()
-        val navigationBlur by PxlUiPreferences.navigationBlur.collectAsState()
-        val floatingNavigationLabels by PxlUiPreferences.floatingNavigationLabels.collectAsState()
+        val classicFloatingNavigation by PxlUiPreferences.floatingNavigation.collectAsState()
+        val interfaceTheme by PxlUiPreferences.interfaceTheme.collectAsState()
+        val focusAppearance by PxlUiPreferences.focusAppearance.collectAsState()
+        val floatingNavigation = if (interfaceTheme != PxlUiPreferences.InterfaceTheme.CLASSIC) {
+            focusAppearance.floating
+        } else classicFloatingNavigation
+        val classicNavigationBlur by PxlUiPreferences.navigationBlur.collectAsState()
+        val navigationBlur = interfaceTheme != PxlUiPreferences.InterfaceTheme.CLASSIC || classicNavigationBlur
+        val classicNavigationLabels by PxlUiPreferences.floatingNavigationLabels.collectAsState()
+        val focusInterface = interfaceTheme != PxlUiPreferences.InterfaceTheme.CLASSIC
+        val floatingNavigationLabels = if (focusInterface) focusAppearance.showNavLabels else classicNavigationLabels
         val hazeState = remember { HazeState() }
         var floatingNavHeightPx by remember { mutableIntStateOf(0) }
+        var standardNavHeightPx by remember { mutableIntStateOf(0) }
 
         // Snackbar state
         val snackbarHostState = remember { SnackbarHostState() }
@@ -1021,22 +1034,10 @@ class MainActivity :
         val isLogRoute = currentRootRoute == Screen.Log.route
         val isDashboardRoute = currentRootRoute == Screen.Dashboard.route
 
-        // Keep the outgoing screen's chrome geometry until its transition finishes.
-        // Otherwise Home changes its top/bottom insets before the App routing slide starts,
-        // which makes the still-visible Home list jump under the user's finger.
+        // Keep shared status controls tied to the outgoing page while it is visible.
         val chromeRoute = outgoingRoute ?: currentRoute
-        val isSubScreen = chromeRoute?.startsWith("settings/") == true ||
-            chromeRoute?.startsWith("dns/") == true ||
-            chromeRoute == "pxlnet/app_routing" ||
-            chromeRoute?.startsWith("tools/") == true ||
-            chromeRoute?.startsWith("connections/detail") == true ||
-            chromeRoute?.startsWith("profile/") == true
-        val currentIsSubScreen = currentRoute?.startsWith("settings/") == true ||
-            currentRoute?.startsWith("dns/") == true ||
-            currentRoute == "pxlnet/app_routing" ||
-            currentRoute?.startsWith("tools/") == true ||
-            currentRoute?.startsWith("connections/detail") == true ||
-            currentRoute?.startsWith("profile/") == true
+        val isSubScreen = isNestedScreenRoute(chromeRoute)
+        val currentIsSubScreen = isNestedScreenRoute(currentRoute)
         // Get LogViewModel instance if we're on the Log screen
         val logViewModel: LogViewModel? =
             if (isLogRoute) {
@@ -1216,16 +1217,39 @@ class MainActivity :
             topBarOverride?.invoke()
         }
 
+        val density = LocalDensity.current
+        val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        val statusBarInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+        val floatingNavInset = (if (floatingNavHeightPx > 0) with(density) { floatingNavHeightPx.toDp() } else 76.dp) +
+            navigationBarInset + 24.dp
+        val standardNavInset = if (standardNavHeightPx > 0) with(density) { standardNavHeightPx.toDp() }
+            else 80.dp + navigationBarInset
+
         val destinationChrome: @Composable (NavBackStackEntry, @Composable () -> Unit) -> Unit = { entry, page ->
             if (useNavigationRail) {
                 page()
             } else {
-                val rootGlass = floatingNavigation && navigationBlur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                    entry.destination.route in setOf(Screen.Dashboard.route, Screen.Dns.route, Screen.Account.route, Screen.Settings.route)
+                val route = entry.destination.route
+                val chrome = phonePageChrome(route, floatingNavigation)
+                val hasFloatingOverlay = chrome == PhonePageChrome.FloatingOverlay
+                val rootGlass = hasFloatingOverlay && navigationBlur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
                 var topBarHeightPx by remember(entry) { mutableIntStateOf(0) }
                 val topInset = if (rootGlass) {
-                    if (topBarHeightPx > 0) with(LocalDensity.current) { topBarHeightPx.toDp() } else 88.dp
+                    if (topBarHeightPx > 0) with(density) { topBarHeightPx.toDp() } else 64.dp + statusBarInset
                 } else 0.dp
+                val pageBottomInset = when (chrome) {
+                    PhonePageChrome.FloatingOverlay -> 0.dp
+                    PhonePageChrome.FloatingNavigation -> floatingNavInset
+                    PhonePageChrome.StandardNavigation -> standardNavInset
+                    PhonePageChrome.Nested -> navigationBarInset
+                }
+                val rootServiceStatus = if (hasFloatingOverlay && route != Screen.Dashboard.route) {
+                    currentServiceStatus
+                } else Status.Stopped
+                val remoteText = if (hasFloatingOverlay && route != Screen.Dashboard.route && isRemote) {
+                    if (remoteConnected) remoteServer?.displayName ?: stringResource(R.string.remote_connected)
+                    else stringResource(R.string.remote_connecting)
+                } else null
                 val destinationTopBar = topBarState.value.lastOrNull { it.owner === entry }?.content
                 val glassSurface = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)
                 val canBlur = floatingNavigation && navigationBlur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
@@ -1233,9 +1257,12 @@ class MainActivity :
                 CompositionLocalProvider(
                     LocalPxlTopBarOverlay provides rootGlass,
                     LocalPxlTopBarInset provides topInset,
+                    LocalPxlFloatingNavInset provides if (hasFloatingOverlay) floatingNavInset else 0.dp,
+                    LocalPxlTopBarServiceStatus provides rootServiceStatus,
+                    LocalPxlTopBarStatusText provides remoteText,
                 ) {
                     if (rootGlass) {
-                        Box(Modifier.fillMaxSize()) {
+                        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                             Box(Modifier.fillMaxSize().hazeSource(hazeState)) { page() }
                             destinationTopBar?.let { bar ->
                                 Box(
@@ -1253,7 +1280,12 @@ class MainActivity :
                             }
                         }
                     } else {
-                        Column(Modifier.fillMaxSize()) {
+                        Column(
+                            Modifier.fillMaxSize()
+                                .background(MaterialTheme.colorScheme.background)
+                                .windowInsetsPadding(WindowInsets.statusBars)
+                                .padding(bottom = pageBottomInset),
+                        ) {
                             destinationTopBar?.invoke()
                             Box(
                                 Modifier.weight(1f).fillMaxWidth().then(
@@ -1462,34 +1494,9 @@ class MainActivity :
             }
         }
 
-        val glassChrome = !useNavigationRail && floatingNavigation && navigationBlur &&
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !isSubScreen &&
-            currentRootRoute in setOf(Screen.Dashboard.route, Screen.Dns.route, Screen.Account.route, Screen.Settings.route)
-        val floatingRoot = !useNavigationRail && floatingNavigation && !isSubScreen &&
-            currentRootRoute in setOf(Screen.Dashboard.route, Screen.Dns.route, Screen.Account.route, Screen.Settings.route)
-        // Match the inset to the panel's visibility on the incoming route. During a
-        // pop transition isSubScreen still describes the outgoing settings page.
-        // Keep the root page's bottom inset while either root page is still visible
-        // during a push/pop. Dropping it at the start of the App routing transition
-        // clamps Home's LazyColumn scroll offset and visibly jerks the page.
-        val floatingPanelVisible = !useNavigationRail && floatingNavigation &&
-            (!currentIsSubScreen || !isSubScreen)
-        val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-        val floatingNavInset = if (floatingPanelVisible) {
-            (if (floatingNavHeightPx > 0) with(LocalDensity.current) { floatingNavHeightPx.toDp() } else 76.dp) +
-                navigationBarInset + 24.dp
-        } else 0.dp
-
         CompositionLocalProvider(
             LocalTopBarController provides topBarController,
-            LocalPxlTopBarOverlay provides glassChrome,
-            LocalPxlTopBarInset provides 0.dp,
-            LocalPxlFloatingNavInset provides floatingNavInset,
-            LocalPxlTopBarServiceStatus provides if (floatingPanelVisible && !isDashboardRoute) currentServiceStatus else Status.Stopped,
-            LocalPxlTopBarStatusText provides if (floatingPanelVisible && !isDashboardRoute && isRemote) {
-                if (remoteConnected) remoteServer?.displayName ?: stringResource(R.string.remote_connected)
-                else stringResource(R.string.remote_connecting)
-            } else null,
+            LocalPxlFloatingNavInset provides if (!useNavigationRail && floatingNavigation && !isSubScreen) floatingNavInset else 0.dp,
         ) {
             if (useNavigationRail) {
                 Row(modifier = Modifier.fillMaxSize()) {
@@ -1518,14 +1525,7 @@ class MainActivity :
                                     label = { Text(stringResource(screen.titleRes)) },
                                     selected = selected,
                                     onClick = {
-                                        if (currentRoute == screen.route) return@NavigationRailItem
-                                        navController.navigate(screen.route) {
-                                            popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
-                                            }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
+                                        navController.openRootTab(screen)
                                     },
                                 )
                             }
@@ -1542,38 +1542,45 @@ class MainActivity :
                 }
             } else {
                 Scaffold(
-                    // A stable owner for the system top inset keeps every destination's
-                    // app bar aligned during both forward and predictive-back transitions.
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background)
-                        .then(if (glassChrome) Modifier else Modifier.windowInsetsPadding(WindowInsets.statusBars)),
+                    modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
                     snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
                     topBar = {},
                     bottomBar = {
-                        if (!isSubScreen && !floatingNavigation) {
+                        AnimatedVisibility(
+                            visible = !currentIsSubScreen && !floatingNavigation,
+                            enter = fadeIn(animationSpec = tween(180)),
+                            exit = fadeOut(animationSpec = tween(120)),
+                            label = "standard-navigation",
+                        ) {
                             val hasUpdate by UpdateState.hasUpdate
                             NavigationBar(
+                                modifier = Modifier.onSizeChanged { standardNavHeightPx = it.height },
                                 containerColor = MaterialTheme.colorScheme.surface,
                                 contentColor = MaterialTheme.colorScheme.onSurface,
                                 tonalElevation = 0.dp,
                             ) {
                                 visibleBottomNavigationScreens.forEach { screen ->
+                                    val navTitle = stringResource(when {
+                                        focusInterface && screen == Screen.Dns -> R.string.focus_dns_nav
+                                        focusInterface && screen == Screen.Dashboard -> R.string.focus_home_nav
+                                        else -> screen.titleRes
+                                    })
+                                    val showLabel = !focusInterface || focusAppearance.showNavLabels
                                     NavigationBarItem(
                                         icon = {
                                             if (screen == Screen.Settings && hasUpdate) {
                                                 BadgedBox(badge = { Badge(containerColor = MaterialTheme.colorScheme.primary) }) {
-                                                    Icon(screen.icon, contentDescription = null)
+                                                    Icon(screen.icon, contentDescription = if (showLabel) null else navTitle)
                                                 }
                                             } else if (screen == Screen.Tools && toolsUnreadCount > 0) {
                                                 BadgedBox(badge = { Badge(containerColor = MaterialTheme.colorScheme.error) { Text("$toolsUnreadCount") } }) {
-                                                    Icon(screen.icon, contentDescription = null)
+                                                    Icon(screen.icon, contentDescription = if (showLabel) null else navTitle)
                                                 }
                                             } else {
-                                                Icon(screen.icon, contentDescription = null)
+                                                Icon(screen.icon, contentDescription = if (showLabel) null else navTitle)
                                             }
                                         },
-                                        label = { Text(stringResource(screen.titleRes)) },
+                                        label = if (showLabel) ({ Text(navTitle) }) else null,
                                         colors = NavigationBarItemDefaults.colors(
                                             selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                             selectedTextColor = MaterialTheme.colorScheme.onSurface,
@@ -1586,18 +1593,7 @@ class MainActivity :
                                             it.route == screen.route
                                         } == true,
                                         onClick = {
-                                            if (currentRoute == screen.route) return@NavigationBarItem
-                                            navController.navigate(screen.route) {
-                                                // Pop up to the start destination of the graph to
-                                                // avoid building up a large stack of destinations
-                                                popUpTo(navController.graph.findStartDestination().id) {
-                                                    saveState = true
-                                                }
-                                                // Avoid multiple copies of the same destination
-                                                launchSingleTop = true
-                                                // Restore state when reselecting a previously selected item
-                                                restoreState = true
-                                            }
+                                            navController.openRootTab(screen)
                                         },
                                     )
                                 }
@@ -1606,21 +1602,15 @@ class MainActivity :
                     },
                 ) { paddingValues ->
                     Box(modifier = Modifier.fillMaxSize()) {
-                        Box(modifier = Modifier.fillMaxSize()) {
-                            val contentPadding = if (!isSubScreen && floatingNavigation) {
-                                val layoutDirection = LocalLayoutDirection.current
-                                val navHeight = with(LocalDensity.current) { floatingNavHeightPx.toDp() }
-                                PaddingValues(
-                                    start = paddingValues.calculateStartPadding(layoutDirection),
-                                    top = if (glassChrome) 0.dp else paddingValues.calculateTopPadding(),
-                                    end = paddingValues.calculateEndPadding(layoutDirection),
-                                    bottom = if (floatingRoot) 0.dp else navHeight + navigationBarInset + 24.dp,
-                                )
-                            } else {
-                                paddingValues
-                            }
-                            scaffoldContent(contentPadding)
-                        }
+                        // The NavHost keeps its viewport throughout the transition.
+                        // Each destination applies its own vertical insets while it moves.
+                        val layoutDirection = LocalLayoutDirection.current
+                        scaffoldContent(
+                            PaddingValues(
+                                start = paddingValues.calculateStartPadding(layoutDirection),
+                                end = paddingValues.calculateEndPadding(layoutDirection),
+                            ),
+                        )
                         // The system gesture bar is transparent. Keep its app-drawn
                         // backdrop stable while destinations with different surfaces
                         // slide past it; otherwise it flashes between two tones.
@@ -1715,12 +1705,7 @@ class MainActivity :
                                                 else Color.Transparent,
                                             )
                                             .selectable(selected = selected, role = Role.Tab) {
-                                                if (currentRoute == screen.route) return@selectable
-                                                navController.navigate(screen.route) {
-                                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                                    launchSingleTop = true
-                                                    restoreState = true
-                                                }
+                                                navController.openRootTab(screen)
                                             }
                                             .padding(horizontal = 4.dp, vertical = if (floatingNavigationLabels) 8.dp else 10.dp),
                                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1743,7 +1728,9 @@ class MainActivity :
                                         }
                                         if (floatingNavigationLabels && visibleBottomNavigationScreens.size <= 4) {
                                             Text(
-                                                text = title,
+                                                text = if (focusInterface && screen == Screen.Dns) stringResource(R.string.focus_dns_nav)
+                                                    else if (focusInterface && screen == Screen.Dashboard) stringResource(R.string.focus_home_nav)
+                                                    else title,
                                                 style = MaterialTheme.typography.labelSmall,
                                                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                                                 color = iconTint,

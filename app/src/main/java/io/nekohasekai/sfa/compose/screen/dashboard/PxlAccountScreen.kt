@@ -1,6 +1,25 @@
 package io.nekohasekai.sfa.compose.screen.dashboard
 
 import android.widget.Toast
+import androidx.compose.material3.ListItem
+import androidx.compose.ui.semantics.Role
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.IconButton
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import io.nekohasekai.sfa.database.TypedProfile
+import io.nekohasekai.sfa.utils.PxlUiPreferences
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -47,12 +66,11 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -84,6 +102,8 @@ fun PxlAccountScreen(
     val showTelegramCodeAction = hasSession && uiState.signedInByEmail && hasVerifiedAccount &&
         !uiState.hasTelegramIdentity
     val telegramCodeEnabled = !uiState.telegramLoginPending && !uiState.ecosystemCheckPending
+    val theme by PxlUiPreferences.interfaceTheme.collectAsState()
+    val focus = theme != PxlUiPreferences.InterfaceTheme.CLASSIC
     var showEmailLogin by remember { mutableStateOf(false) }
     var showTelegramLink by remember { mutableStateOf(false) }
     var showLinkHelp by remember { mutableStateOf(false) }
@@ -92,6 +112,7 @@ fun PxlAccountScreen(
             viewModel,
             onDismiss = { showEmailLogin = false },
             onSubscriptionHelp = { showLinkHelp = true },
+            focus = focus,
         )
     }
     if (showTelegramLink && hasSession && uiState.signedInByEmail) {
@@ -149,6 +170,9 @@ fun PxlAccountScreen(
     }
     val summaryRevision by SubscriptionInfoStore.summaryRevision.collectAsState()
     val selectedProfile = uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }
+    val profileFromAccount = remember(selectedProfile?.id, selectedProfile?.typed?.remoteURL, summaryRevision) {
+        selectedProfile?.let { SubscriptionInfoStore.hasAccountSource(context, it.id, it.typed.remoteURL) } == true
+    }
     val linkSummary = remember(uiState.selectedProfileId, summaryRevision) {
         SubscriptionInfoStore.summary(context, uiState.selectedProfileId)
     }
@@ -160,13 +184,29 @@ fun PxlAccountScreen(
     OverrideTopBar {
         PxlRootTopBar(
             title = stringResource(R.string.pxlnet_account_title),
-            subtitle = stringResource(R.string.pxlnet_account_subtitle),
+            subtitle = if (!focus) stringResource(R.string.pxlnet_account_subtitle)
+                else if (!uiState.hasTelegramSession) stringResource(R.string.pxlnet_guest_mode)
+                else uiState.telegramAccountName ?: uiState.telegramUsername?.let { "@$it" } ?: stringResource(R.string.focus_account),
+            showServiceSubtitle = !focus,
             glassContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
         )
     }
 
     val topBarInset = LocalPxlTopBarInset.current
     val floatingNavInset = LocalPxlFloatingNavInset.current
+    if (focus) {
+        FocusAccount(
+            uiState = uiState,
+            profileSummary = linkSummary,
+            profileFromAccount = profileFromAccount,
+            onImport = { onOpenNewProfile(NewProfileArgs()) },
+            onEmailLogin = { showEmailLogin = true },
+            onTelegramLink = { showTelegramLink = true },
+            onLinkHelp = { showLinkHelp = true },
+            viewModel = viewModel,
+        )
+        return
+    }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = topBarInset + 12.dp, bottom = floatingNavInset + 12.dp),
@@ -284,68 +324,12 @@ fun PxlAccountScreen(
                             }
                         }
                     }
-                    if (uiState.accountSubscriptionLoadFailed) {
-                        Text(
-                            stringResource(R.string.pxl_email_servers_failed),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                        OutlinedButton(
-                            onClick = viewModel::refreshTelegramAccount,
-                            enabled = !uiState.telegramLoginPending,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text(stringResource(R.string.pxl_email_retry_subscription)) }
-                    }
-                    val verifiedEmail = uiState.verifiedEmail
-                    if (verifiedEmail != null) {
-                        Text(
-                            stringResource(R.string.pxl_email_verified_address, verifiedEmail),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        if (uiState.hasTelegramIdentity) {
-                            Text(
-                                stringResource(R.string.pxl_email_both_methods),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    } else if (!uiState.signedInByEmail) {
-                        OutlinedButton(
-                            onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text(stringResource(R.string.pxl_email_link)) }
-                        Text(
-                            stringResource(R.string.pxl_email_link_bot_hint),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    if (hasVerifiedAccount && uiState.accountHasSubscription == false) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Text(
-                                stringResource(R.string.pxl_email_missing_subscription_hint),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            if (showTelegramCodeAction) {
-                                OutlinedButton(
-                                    onClick = { showTelegramLink = true },
-                                    enabled = telegramCodeEnabled,
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) { Text(stringResource(R.string.pxl_email_enter_telegram_code)) }
-                            }
-                            TextButton(onClick = { showLinkHelp = true }) {
-                                Text(stringResource(R.string.pxl_email_check_link))
-                            }
-                        }
-                    }
-                    if (showTelegramCodeAction && uiState.accountHasSubscription != false) {
-                        OutlinedButton(
-                            onClick = { showTelegramLink = true },
-                            enabled = telegramCodeEnabled,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text(stringResource(R.string.pxl_email_enter_telegram_code)) }
-                    }
+                    AccountSubscriptionLoadError(uiState, viewModel::refreshTelegramAccount)
+                    AccountEmailDetails(
+                        uiState,
+                        onTelegramLink = { showTelegramLink = true },
+                        onLinkHelp = { showLinkHelp = true },
+                    )
                     TextButton(
                         onClick = viewModel::logoutTelegram,
                         enabled = !uiState.telegramLoginPending && !uiState.ecosystemCheckPending,
@@ -354,30 +338,12 @@ fun PxlAccountScreen(
                         Text(stringResource(R.string.pxlnet_sign_out))
                     }
                 } else {
-                    val loginEnabled = !uiState.telegramLoginPending && !uiState.ecosystemCheckPending
-                    Button(
-                        onClick = { showEmailLogin = true },
-                        enabled = loginEnabled,
-                        modifier = Modifier.fillMaxWidth().pxlPressMotion(enabled = loginEnabled),
-                        shape = RoundedCornerShape(18.dp),
-                    ) { Text(stringResource(R.string.pxl_email_login)) }
-                    OutlinedButton(
-                        onClick = viewModel::startTelegramLogin,
-                        enabled = loginEnabled,
-                        modifier = Modifier.fillMaxWidth().pxlPressMotion(enabled = loginEnabled),
-                        shape = RoundedCornerShape(18.dp),
-                    ) {
-                        if (uiState.telegramLoginPending) {
-                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                            Spacer(Modifier.size(8.dp))
-                            Text(stringResource(R.string.pxlnet_login_waiting))
-                        } else {
-                            Text(stringResource(R.string.pxlnet_login_telegram))
-                        }
-                    }
-                    TextButton(onClick = { showLinkHelp = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text(stringResource(R.string.pxl_email_link_help))
-                    }
+                    AccountSignInActions(
+                        uiState,
+                        onEmailLogin = { showEmailLogin = true },
+                        onTelegramLogin = viewModel::startTelegramLogin,
+                        onLinkHelp = { showLinkHelp = true },
+                    )
                 }
             }
         }
@@ -409,6 +375,11 @@ fun PxlAccountScreen(
                                 )
                             }
                         }
+                    }
+                }
+                selectedProfile?.let { profile ->
+                    TextButton(onClick = { viewModel.editProfile(profile) }, modifier = Modifier.pxlPressMotion()) {
+                        Text(stringResource(R.string.focus_edit_profile))
                     }
                 }
                 if (!hasSession || uiState.selectedProfileId <= 0 || uiState.accountHasSubscription == false) {
@@ -474,6 +445,104 @@ fun PxlAccountScreen(
             }
         }
     }
+}
+
+@Composable
+private fun AccountSignInActions(
+    uiState: DashboardUiState,
+    onEmailLogin: () -> Unit,
+    onTelegramLogin: () -> Unit,
+    onLinkHelp: () -> Unit,
+) {
+    val enabled = !uiState.telegramLoginPending && !uiState.ecosystemCheckPending
+    val shape = RoundedCornerShape(18.dp)
+    Button(
+        onClick = onEmailLogin,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth().pxlPressMotion(enabled),
+        shape = shape,
+    ) { Text(stringResource(R.string.pxl_email_login)) }
+    OutlinedButton(
+        onClick = onTelegramLogin,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth().pxlPressMotion(enabled),
+        shape = shape,
+    ) {
+        if (uiState.telegramLoginPending) {
+            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.size(8.dp))
+        }
+        Text(stringResource(if (uiState.telegramLoginPending) R.string.pxlnet_login_waiting else R.string.pxlnet_login_telegram))
+    }
+    TextButton(onClick = onLinkHelp, modifier = Modifier.fillMaxWidth()) {
+        Text(stringResource(R.string.pxl_email_link_help))
+    }
+}
+
+@Composable
+private fun AccountEmailDetails(
+    uiState: DashboardUiState,
+    onTelegramLink: () -> Unit,
+    onLinkHelp: () -> Unit,
+) {
+    val context = LocalContext.current
+    val email = uiState.verifiedEmail
+    if (email != null) {
+        Text(stringResource(R.string.pxl_email_verified_address, email), style = MaterialTheme.typography.bodyMedium)
+        if (uiState.hasTelegramIdentity) {
+            Text(
+                stringResource(R.string.pxl_email_both_methods),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    } else if (!uiState.signedInByEmail) {
+        OutlinedButton(
+            onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) },
+            modifier = Modifier.fillMaxWidth().pxlPressMotion(),
+        ) { Text(stringResource(R.string.pxl_email_link)) }
+        Text(
+            stringResource(R.string.pxl_email_link_bot_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    if (uiState.accountLastVerifiedAt == null) return
+    val missingSubscription = uiState.accountHasSubscription == false
+    if (missingSubscription) {
+        Text(
+            stringResource(R.string.pxl_email_missing_subscription_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    if (uiState.signedInByEmail && !uiState.hasTelegramIdentity) {
+        val enabled = !uiState.telegramLoginPending && !uiState.ecosystemCheckPending
+        OutlinedButton(
+            onClick = onTelegramLink,
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth().pxlPressMotion(enabled),
+        ) { Text(stringResource(R.string.pxl_email_enter_telegram_code)) }
+    }
+    if (missingSubscription) {
+        TextButton(onClick = onLinkHelp) { Text(stringResource(R.string.pxl_email_check_link)) }
+    }
+}
+
+@Composable
+private fun AccountSubscriptionLoadError(uiState: DashboardUiState, onRetry: () -> Unit) {
+    if (!uiState.accountSubscriptionLoadFailed) return
+    Text(
+        stringResource(R.string.pxl_email_servers_failed),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.error,
+    )
+    val enabled = !uiState.telegramLoginPending
+    OutlinedButton(
+        onClick = onRetry,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth().pxlPressMotion(enabled),
+    ) { Text(stringResource(R.string.pxl_email_retry_subscription)) }
 }
 
 @Composable
@@ -561,6 +630,7 @@ private fun PxlPulsePanel(
     checking: Boolean,
     checkedAt: Long?,
     onRefresh: () -> Unit,
+    showMetrics: Boolean = true,
 ) {
     val summary = when {
         checking -> stringResource(R.string.pxlnet_pulse_checking)
@@ -601,33 +671,47 @@ private fun PxlPulsePanel(
             }
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            PulseMetric(
-                label = stringResource(R.string.pxlnet_pulse_account),
-                value = stringResource(
+        if (showMetrics) {
+            val metrics = listOf(
+                stringResource(R.string.pxlnet_pulse_account) to stringResource(
                     if (isLoggedIn) R.string.pxlnet_pulse_connected else R.string.pxlnet_pulse_guest,
                 ),
-                modifier = Modifier.weight(1f),
-            )
-            PulseMetric(
-                label = stringResource(R.string.pxlnet_pulse_access),
-                value = stringResource(
+                stringResource(R.string.pxlnet_pulse_access) to stringResource(
                     when {
                         subscriptionActive -> R.string.pxlnet_pulse_active
                         hasLocalSubscription -> R.string.pxlnet_pulse_by_link
                         else -> R.string.pxlnet_pulse_inactive
                     },
                 ),
-                modifier = Modifier.weight(1f),
+                stringResource(R.string.pxlnet_pulse_servers) to serverCount.toString(),
             )
-            PulseMetric(
-                label = stringResource(R.string.pxlnet_pulse_servers),
-                value = serverCount.toString(),
-                modifier = Modifier.weight(1f),
-            )
+            val fontScale = LocalDensity.current.fontScale
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                if (maxWidth >= (114.dp * fontScale) * 3 + 16.dp) {
+                    Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        metrics.forEach { (label, value) ->
+                            PulseMetric(label, value, modifier = Modifier.weight(1f).fillMaxHeight())
+                        }
+                    }
+                } else {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+                        shape = RoundedCornerShape(16.dp),
+                    ) {
+                        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                            metrics.forEach { (label, value) ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    Text(label, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(value, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         OutlinedButton(
@@ -732,4 +816,192 @@ private fun EcosystemRow(
 private fun formatAccountExpiry(value: String?): String? {
     val parts = value?.take(10)?.split('-') ?: return null
     return if (parts.size == 3) "${parts[2]}.${parts[1]}.${parts[0]}" else value
+}
+
+@Composable
+private fun FocusAccount(
+    uiState: DashboardUiState,
+    profileSummary: String?,
+    profileFromAccount: Boolean,
+    onImport: () -> Unit,
+    onEmailLogin: () -> Unit,
+    onTelegramLink: () -> Unit,
+    onLinkHelp: () -> Unit,
+    viewModel: DashboardViewModel,
+) {
+    val context = LocalContext.current
+    val profile = uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }
+    val signedIn = uiState.hasTelegramSession
+    val verified = uiState.accountLastVerifiedAt != null
+    var menuOpen by remember { mutableStateOf(false) }
+    var pulseExpanded by rememberSaveable { mutableStateOf(false) }
+    val inset = LocalPxlTopBarInset.current
+    val bottomInset = LocalPxlFloatingNavInset.current
+
+    val profileCard: @Composable () -> Unit = {
+        PxlAccountCard {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                FocusAccountIcon(Icons.Default.Description)
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.focus_active_profile), style = MaterialTheme.typography.labelLarge)
+                    Text(profile?.name ?: stringResource(R.string.pxlnet_subscription_not_added), style = MaterialTheme.typography.headlineSmall)
+                }
+            }
+            if (profile != null) {
+                val remote = profile.typed.type == TypedProfile.Type.Remote
+                val source = when {
+                    remote && profileFromAccount -> R.string.focus_source_account
+                    remote -> R.string.focus_linked
+                    else -> R.string.focus_file
+                }
+                Text(stringResource(R.string.focus_profile_source, stringResource(source)), style = MaterialTheme.typography.bodyMedium)
+                profileSummary?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                if (remote && profile.typed.remoteURL.isNotBlank()) {
+                    OutlinedButton(onClick = { viewModel.updateProfile(profile) }, enabled = uiState.updatingProfileId == null, modifier = Modifier.pxlPressMotion(uiState.updatingProfileId == null)) {
+                        Text(stringResource(R.string.pxlnet_refresh))
+                    }
+                }
+                TextButton(onClick = { viewModel.editProfile(profile) }, modifier = Modifier.pxlPressMotion()) {
+                    Text(stringResource(R.string.focus_edit_profile))
+                }
+                if (!signedIn || uiState.accountHasSubscription == false) {
+                    OutlinedButton(onClick = onImport, modifier = Modifier.pxlPressMotion()) {
+                        Text(stringResource(R.string.pxlnet_add_existing_subscription))
+                    }
+                }
+            } else {
+                Button(onClick = onImport, modifier = Modifier.pxlPressMotion()) { Text(stringResource(R.string.pxlnet_add_existing_subscription)) }
+            }
+        }
+    }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = inset + 12.dp, bottom = bottomInset + 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            PxlAccountCard(compact = true) {
+                if (signedIn) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        FocusAccountIcon(Icons.Default.AccountCircle)
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                uiState.telegramAccountName
+                                    ?: uiState.telegramUsername?.let { "@$it" }
+                                    ?: stringResource(R.string.focus_account),
+                                style = MaterialTheme.typography.titleLarge,
+                            )
+                            Text(
+                                stringResource(when {
+                                    !verified -> R.string.pxlnet_account_not_verified
+                                    uiState.accountServiceAvailable == false -> R.string.pxlnet_account_saved_data_offline
+                                    uiState.signedInByEmail -> R.string.pxl_email_signed_in
+                                    else -> R.string.pxlnet_signed_in_telegram
+                                }),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        Box {
+                            IconButton(onClick = { menuOpen = true }, modifier = Modifier.pxlPressMotion()) {
+                                Icon(Icons.Default.MoreVert, stringResource(R.string.focus_more))
+                            }
+                            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.pxlnet_sign_out)) },
+                                    enabled = !uiState.telegramLoginPending && !uiState.ecosystemCheckPending,
+                                    onClick = {
+                                        menuOpen = false
+                                        viewModel.logoutTelegram()
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Text(when {
+                        !verified -> stringResource(R.string.pxlnet_account_status_unknown)
+                        uiState.accountHasSubscription == false -> stringResource(R.string.pxl_email_no_subscription)
+                        !uiState.telegramSubscriptionActive -> stringResource(R.string.pxlnet_subscription_inactive)
+                        else -> formatAccountExpiry(uiState.telegramSubscriptionExpiresAt)?.let {
+                            stringResource(R.string.pxlnet_subscription_active_until, it)
+                        } ?: stringResource(R.string.pxlnet_subscription_active)
+                    }, style = MaterialTheme.typography.titleLarge)
+                    if (uiState.accountServiceAvailable == false) Text(stringResource(R.string.focus_offline))
+                    if (verified) Button(onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) }, modifier = Modifier.pxlPressMotion()) {
+                        Text(stringResource(if (uiState.telegramSubscriptionActive) R.string.focus_renew else R.string.pxlnet_buy_in_bot))
+                    }
+                    if (!uiState.accountSubscriptionLoadFailed) {
+                        TextButton(onClick = viewModel::refreshTelegramAccount, enabled = !uiState.telegramLoginPending, modifier = Modifier.pxlPressMotion(!uiState.telegramLoginPending)) {
+                            Text(stringResource(R.string.pxlnet_refresh))
+                        }
+                    }
+                    AccountSubscriptionLoadError(uiState, viewModel::refreshTelegramAccount)
+                    AccountEmailDetails(uiState, onTelegramLink, onLinkHelp)
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        FocusAccountIcon(Icons.Default.AccountCircle)
+                        Column(Modifier.weight(1f)) {
+                            Text(stringResource(R.string.focus_account), style = MaterialTheme.typography.titleMedium)
+                            Text(stringResource(R.string.focus_guest_login), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    AccountSignInActions(uiState, onEmailLogin, viewModel::startTelegramLogin, onLinkHelp)
+                }
+            }
+        }
+        item { profileCard() }
+        item {
+            PxlAccountCard(compact = true) {
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.pxlnet_pulse_title)) },
+                    supportingContent = {
+                        Text(stringResource(if (uiState.accountServiceAvailable == false) R.string.focus_account_unavailable else R.string.focus_service_health))
+                    },
+                    leadingContent = { FocusAccountIcon(Icons.Default.Public) },
+                    colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                    trailingContent = {
+                        Icon(if (pulseExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, contentDescription = null)
+                    },
+                    modifier = Modifier.pxlPressMotion(pressedScale = 0.985f).clickable(role = Role.Button) { pulseExpanded = !pulseExpanded },
+                )
+                if (pulseExpanded) {
+                    Text(stringResource(R.string.focus_nodes, uiState.availableServerTags.count { !it.equals("AUTO", true) }))
+                    PxlPulsePanel(
+                        serviceAvailable = uiState.accountServiceAvailable,
+                        isLoggedIn = signedIn,
+                        subscriptionActive = uiState.telegramSubscriptionActive,
+                        hasLocalSubscription = profile != null,
+                        serverCount = uiState.availableServerTags.count { !it.equals("AUTO", true) },
+                        checking = uiState.ecosystemCheckPending,
+                        checkedAt = uiState.ecosystemLastCheckedAt,
+                        onRefresh = viewModel::refreshEcosystem,
+                        showMetrics = false,
+                    )
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                EcosystemRow(Icons.Default.SupportAgent, stringResource(R.string.pxlnet_support_title),
+                    stringResource(R.string.pxlnet_support_description), onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_BOT) })
+                EcosystemRow(Icons.Default.Campaign, stringResource(R.string.pxlnet_news_title),
+                    stringResource(R.string.pxlnet_news_description), onClick = { PxlLinks.open(context, PxlLinks.TELEGRAM_CHANNEL) })
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun FocusAccountIcon(icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        modifier = Modifier.size(44.dp),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
+        }
+    }
 }

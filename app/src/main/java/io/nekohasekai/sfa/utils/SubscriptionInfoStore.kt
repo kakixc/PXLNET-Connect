@@ -10,6 +10,7 @@ import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.widget.PxlConnectWidgetProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.security.MessageDigest
 import java.text.DateFormat
 import java.time.Instant
 import java.time.LocalDate
@@ -24,6 +25,7 @@ object SubscriptionInfoStore {
     private val _summaryRevision = MutableStateFlow(0)
     val summaryRevision = _summaryRevision.asStateFlow()
     private const val PREFERENCES = "pxlnet_subscription_info"
+    private const val ACCOUNT_SOURCE_SUFFIX = "_account_source"
     private const val ACCOUNT_EXPIRY = "account_expiry"
     private const val SKIPPED_XHTTP_SUFFIX = "_skipped_xhttp"
     private const val SMART_STATUS_SUFFIX = "_smart_status"
@@ -125,6 +127,7 @@ object SubscriptionInfoStore {
         profileId.toString(),
         "$profileId$SMART_STATUS_SUFFIX",
         "$profileId$SKIPPED_XHTTP_SUFFIX",
+        "$profileId$ACCOUNT_SOURCE_SUFFIX",
     )
 
     /** Clears metadata bound to a deleted profile ID before that ID can be reused. */
@@ -136,6 +139,24 @@ object SubscriptionInfoStore {
         _summaryRevision.value += 1
         PxlConnectWidgetProvider.updateAll(context)
     }
+
+    fun recordAccountSource(context: Context, profileId: Long, url: String) {
+        if (profileId <= 0 || url.isBlank()) return
+        val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+        val key = "$profileId$ACCOUNT_SOURCE_SUFFIX"
+        val fingerprint = accountSourceFingerprint(url)
+        if (preferences.getString(key, null) == fingerprint) return
+        preferences.edit().putString(key, fingerprint).apply()
+        _summaryRevision.value += 1
+    }
+
+    fun hasAccountSource(context: Context, profileId: Long, url: String): Boolean =
+        profileId > 0 && url.isNotBlank() &&
+            context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                .getString("$profileId$ACCOUNT_SOURCE_SUFFIX", null) == accountSourceFingerprint(url)
+
+    private fun accountSourceFingerprint(url: String): String =
+        MessageDigest.getInstance("SHA-256").digest(url.toByteArray()).joinToString("") { "%02x".format(it) }
 
     fun save(context: Context, profileId: Long, header: String?) {
         if (profileId <= 0) return

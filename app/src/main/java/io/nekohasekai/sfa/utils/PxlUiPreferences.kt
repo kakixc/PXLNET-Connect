@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Typeface
 import android.net.Uri
 import android.provider.OpenableColumns
+import io.nekohasekai.sfa.BuildConfig
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,6 +12,62 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /** Preferences for app appearance and the home widget, never VPN service or profiles. */
 object PxlUiPreferences {
+    enum class InterfaceTheme {
+        CLASSIC, FOCUS, TRIAL;
+
+        val available: Boolean get() = this != TRIAL || BuildConfig.FOCUS_LAB
+
+        companion object {
+            internal fun fromPersisted(
+                value: String?,
+                focusLab: Boolean = BuildConfig.FOCUS_LAB,
+                defaultToConsole: Boolean = BuildConfig.DEBUG,
+            ): InterfaceTheme =
+                entries.firstOrNull { it.name == value && (it != TRIAL || focusLab) }
+                    ?: if (focusLab && defaultToConsole) TRIAL else CLASSIC
+        }
+    }
+    enum class FocusDetails { ROUTING, SUBSCRIPTION, HIDDEN }
+
+    data class FocusAppearance(
+        val mascot: Boolean = true,
+        val details: FocusDetails = FocusDetails.ROUTING,
+        val floating: Boolean = true,
+        val showSpeed: Boolean = true,
+        val showNavLabels: Boolean = false,
+    )
+
+    private val mutableInterfaceTheme = MutableStateFlow(InterfaceTheme.fromPersisted(null))
+    val interfaceTheme = mutableInterfaceTheme.asStateFlow()
+    private val mutableFocusAppearance = MutableStateFlow(FocusAppearance())
+    val focusAppearance = mutableFocusAppearance.asStateFlow()
+
+    fun setInterfaceTheme(context: Context, theme: InterfaceTheme) {
+        if (!theme.available) return
+        context.getSharedPreferences(fileName, Context.MODE_PRIVATE)
+            .edit().putString("interface_theme", theme.name).apply()
+        mutableInterfaceTheme.value = theme
+    }
+
+    fun isFocusTileHidden(context: Context): Boolean =
+        context.getSharedPreferences(fileName, Context.MODE_PRIVATE).getBoolean("focus_tile_hidden", false)
+
+    fun hideFocusTile(context: Context) {
+        context.getSharedPreferences(fileName, Context.MODE_PRIVATE).edit()
+            .putBoolean("focus_tile_hidden", true).apply()
+    }
+
+    fun setFocusAppearance(context: Context, appearance: FocusAppearance) {
+        context.getSharedPreferences(fileName, Context.MODE_PRIVATE).edit()
+            .putBoolean("focus_mascot", appearance.mascot)
+            .putString("focus_details", appearance.details.name)
+            .putBoolean("focus_floating", appearance.floating)
+            .putBoolean("focus_speed", appearance.showSpeed)
+            .putBoolean("focus_tab_labels", appearance.showNavLabels)
+            .apply()
+        mutableFocusAppearance.value = appearance
+    }
+
     enum class FontMode { PXLNET, SYSTEM, CUSTOM }
 
     data class FontSelection(val mode: FontMode, val customFileName: String? = null, val customLabel: String? = null)
@@ -61,6 +118,16 @@ object PxlUiPreferences {
 
     fun initialize(context: Context) {
         val preferences = context.applicationContext.getSharedPreferences(fileName, Context.MODE_PRIVATE)
+        mutableInterfaceTheme.value = InterfaceTheme.fromPersisted(preferences.getString("interface_theme", null))
+        mutableFocusAppearance.value = FocusAppearance(
+            mascot = preferences.getBoolean("focus_mascot", true),
+            details = FocusDetails.entries.firstOrNull {
+                it.name == preferences.getString("focus_details", null)
+            } ?: FocusDetails.ROUTING,
+            floating = preferences.getBoolean("focus_floating", true),
+            showSpeed = preferences.getBoolean("focus_speed", true),
+            showNavLabels = preferences.getBoolean("focus_tab_labels", false),
+        )
         mutableFloatingNavigation.value = preferences.getBoolean(floatingNavigationKey, true)
         mutableNavigationBlur.value = preferences.getBoolean(navigationBlurKey, true)
         mutableFloatingNavigationLabels.value = preferences.getBoolean(floatingNavigationLabelsKey, false)

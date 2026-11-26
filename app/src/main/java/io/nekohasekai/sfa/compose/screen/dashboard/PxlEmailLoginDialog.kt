@@ -82,6 +82,7 @@ fun PxlEmailLoginDialog(
     viewModel: DashboardViewModel,
     onDismiss: () -> Unit,
     onSubscriptionHelp: (() -> Unit)? = null,
+    focus: Boolean = false,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -191,10 +192,11 @@ fun PxlEmailLoginDialog(
             Surface(
                 modifier = Modifier.widthIn(max = 420.dp).fillMaxWidth(),
                 shape = MaterialTheme.shapes.extraLarge,
+                color = if (focus) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.surface,
             ) {
                 Column(
-                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(if (focus) 24.dp else 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(if (focus) 12.dp else 6.dp),
                 ) {
                     Text(
                         stringResource(if (currentChallenge == null) R.string.pxl_email_login else R.string.pxl_email_code),
@@ -209,6 +211,7 @@ fun PxlEmailLoginDialog(
                             enabled = !busy,
                             isError = error == R.string.pxl_email_invalid,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                            shape = MaterialTheme.shapes.large,
                             modifier = Modifier.fillMaxWidth(),
                         )
                     } else {

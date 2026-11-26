@@ -60,7 +60,14 @@ object PxlLocalPreferences {
 
     /** Reopens the guide only. Profiles, account state and VPN settings stay untouched. */
     fun requestOnboarding(context: Context) {
-        preferences(context).edit().putBoolean(KEY_ONBOARDING_COMPLETE, false).apply()
+        preferences(context).edit().putBoolean("onboarding_requested", true).apply()
+    }
+
+    fun consumeOnboardingRequest(context: Context): Boolean {
+        val prefs = preferences(context)
+        if (!prefs.getBoolean("onboarding_requested", false)) return false
+        prefs.edit().remove("onboarding_requested").apply()
+        return true
     }
 
     fun isQuickTileAdded(context: Context): Boolean =

@@ -22,6 +22,7 @@ class HTTPClient : Closeable {
         val omittedXhttpCount: Int = 0,
         val xhttpLinks: List<String> = emptyList(),
         val smartRevisions: SmartRevisions? = null,
+        val profileTitle: String? = null,
     ) {
         override fun toString(): String =
             "HTTPClient.Result(contentLength=${content.length}, subscriptionStatus=$subscriptionStatus, " +
@@ -78,7 +79,7 @@ class HTTPClient : Closeable {
             ) return structured
             if (!canPairSmartResponses(raw, structured)) return structured
             val links = PxlSubscriptionConverter.xhttpLinks(raw.content)
-            return structured.copy(omittedXhttpCount = links.size, xhttpLinks = links)
+            return structured.copy(omittedXhttpCount = links.size, xhttpLinks = links, profileTitle = structured.profileTitle ?: raw.profileTitle)
         }
 
         internal fun withLegacyXhttpLinks(response: Result): Result {
@@ -140,6 +141,7 @@ class HTTPClient : Closeable {
             .takeIf { values -> values.all(String::isNotBlank) }
         return Result(
             content = response.content.unwrap,
+            profileTitle = response.getHeader("profile-title").takeIf(String::isNotBlank),
             subscriptionUserInfo = response.getHeader("subscription-userinfo").takeIf(String::isNotBlank),
             subscriptionStatus = response.getHeader("x-pxlnet-subscription-status").takeIf(String::isNotBlank),
             subscriptionFormat = response.getHeader("x-pxlnet-format").takeIf(String::isNotBlank),

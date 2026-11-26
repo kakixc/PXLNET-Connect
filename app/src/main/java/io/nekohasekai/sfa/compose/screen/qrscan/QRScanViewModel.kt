@@ -14,6 +14,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LifecycleOwner
 import io.nekohasekai.libbox.Libbox
+import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.utils.profileLinkKind
 import io.nekohasekai.sfa.qrs.QRSDecoder
 import io.nekohasekai.sfa.qrs.readIntLE
 import io.nekohasekai.sfa.vendor.Vendor
@@ -27,6 +29,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 sealed class QRScanResult {
     data class RemoteProfile(val uri: Uri) : QRScanResult()
+    data class ProfileLink(val link: String) : QRScanResult()
     data class QRSData(val data: ByteArray) : QRScanResult() {
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
@@ -107,7 +110,6 @@ class QRScanViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun handleScanSuccess(rawValue: String) {
-        Log.d(TAG, "Scanned: ${rawValue.take(100)}...")
         val qrsPayload = extractQRSPayload(rawValue)
         Log.d(TAG, "extractQRSPayload result: ${qrsPayload?.size ?: "null"}")
         if (qrsPayload != null) {
@@ -379,9 +381,14 @@ class QRScanViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun processQRCode(value: String): Boolean {
         try {
-            val uri = Uri.parse(value)
+            val rawLink = value.trim()
+            if (profileLinkKind(rawLink) != null) {
+                _uiState.update { it.copy(result = QRScanResult.ProfileLink(rawLink)) }
+                return true
+            }
+            val uri = Uri.parse(rawLink)
             if (uri.scheme != "sing-box" || uri.host != "import-remote-profile") {
-                _uiState.update { it.copy(errorMessage = "Not a valid sing-box remote profile URI") }
+                _uiState.update { it.copy(errorMessage = getApplication<Application>().getString(R.string.focus_import_invalid_link)) }
                 imageAnalysis?.setAnalyzer(analysisExecutor, imageAnalyzer!!)
                 return false
             }

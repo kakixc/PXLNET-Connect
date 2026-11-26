@@ -361,6 +361,25 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
         ),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        if (rootTab && showIntroduction) item(key = "dns-introduction") {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.pxlnet_dns_intro_title), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.pxlnet_dns_intro_body), style = MaterialTheme.typography.bodyMedium)
+                    TextButton(
+                        onClick = {
+                            PxlDnsProfiles.setIntroSeen(context)
+                            showIntroduction = false
+                        },
+                        modifier = Modifier.align(Alignment.End).pxlPressMotion(),
+                    ) { Text(stringResource(R.string.pxlnet_dns_intro_ack)) }
+                }
+            }
+        }
         if (!settingsOnly) item {
             Card(
                 shape = RoundedCornerShape(28.dp),
@@ -651,7 +670,7 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
     }
     }
 
-    if (showVpnWarning && !showIntroduction) {
+    if (showVpnWarning && (!showIntroduction || rootTab)) {
         AlertDialog(
             onDismissRequest = { showVpnWarning = false },
             title = { Text(stringResource(R.string.pxlnet_dns_title)) },
@@ -665,7 +684,7 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
             dismissButton = { TextButton(onClick = { showVpnWarning = false }) { Text(stringResource(R.string.pxlnet_dns_cancel)) } },
         )
     }
-    if (showIntroduction) {
+    if (showIntroduction && !rootTab) {
         AlertDialog(
             onDismissRequest = {},
             icon = { Icon(Icons.Default.Public, contentDescription = null) },

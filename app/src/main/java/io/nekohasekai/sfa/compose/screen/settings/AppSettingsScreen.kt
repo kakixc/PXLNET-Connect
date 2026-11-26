@@ -57,7 +57,6 @@ import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.NewReleases
 import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Speed
@@ -150,7 +149,7 @@ fun AppSettingsScreen(
 ) {
     OverrideTopBar {
         TopAppBar(
-            title = { Text(stringResource(R.string.title_app_settings)) },
+            title = { Text(stringResource(R.string.focus_version_updates)) },
             navigationIcon = {
                 IconButton(onClick = { navController.navigateUp() }) {
                     Icon(
@@ -656,26 +655,6 @@ fun AppSettingsScreen(
                     ListItemDefaults.colors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     ),
-                )
-
-                ListItem(
-                    headlineContent = {
-                        Text(
-                            stringResource(R.string.pxlnet_settings_appearance),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    },
-                    supportingContent = {
-                        Text(
-                            stringResource(R.string.pxlnet_app_appearance_summary),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    },
-                    leadingContent = {
-                        AppSettingsIcon(Icons.Outlined.Palette)
-                    },
-                    modifier = Modifier.clickable { navController.navigate("settings/app/appearance") },
-                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
                 )
 
                 ListItem(

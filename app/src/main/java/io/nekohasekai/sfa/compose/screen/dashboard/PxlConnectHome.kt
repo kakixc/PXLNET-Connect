@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa.compose.screen.dashboard
 
+import io.nekohasekai.sfa.utils.PxlUiPreferences
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
@@ -9,6 +10,9 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.keyframes
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
@@ -47,7 +51,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.CloudOff
@@ -74,6 +81,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import io.nekohasekai.sfa.compose.component.PxlSwitch as Switch
@@ -113,6 +122,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import io.nekohasekai.sfa.Application
 import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.compose.component.qr.QRScanSheet
+import io.nekohasekai.sfa.compose.screen.configuration.ProfileImportHandler
+import io.nekohasekai.sfa.compose.screen.qrscan.QRScanResult
+import io.nekohasekai.sfa.utils.profileLinkKind
 import io.nekohasekai.sfa.bg.DefaultNetworkMonitor
 import io.nekohasekai.sfa.compose.component.PxlRootTopBar
 import io.nekohasekai.sfa.compose.component.PxlShapeLoadingIndicator
@@ -187,6 +200,36 @@ fun DashboardScreen(
     groupsViewModel: GroupsViewModel? = null,
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val interfaceTheme by PxlUiPreferences.interfaceTheme.collectAsState()
+    val focusAppearance by PxlUiPreferences.focusAppearance.collectAsState()
+    val focus = interfaceTheme != PxlUiPreferences.InterfaceTheme.CLASSIC
+    val trial = interfaceTheme == PxlUiPreferences.InterfaceTheme.TRIAL
+    var trialStarting by remember { mutableStateOf(false) }
+    var trialFailedStart by remember { mutableStateOf(false) }
+    LaunchedEffect(serviceStatus, trial) {
+        if (!trial) {
+            trialStarting = false
+            trialFailedStart = false
+        } else when (serviceStatus) {
+            Status.Starting -> {
+                trialStarting = true
+                trialFailedStart = false
+            }
+            Status.Started -> trialStarting = false
+            Status.Stopped -> {
+                if (trialStarting) trialFailedStart = true
+                trialStarting = false
+            }
+            else -> Unit
+        }
+    }
+    var focusRequestPending by remember { mutableStateOf(false) }
+    LaunchedEffect(focusRequestPending, serviceStatus) {
+        if (focusRequestPending) {
+            if (serviceStatus == Status.Stopped) delay(750)
+            focusRequestPending = false
+        }
+    }
     val context = LocalContext.current
     val catEasterEgg = rememberPxlCatEasterEggState()
     val hapticFeedback = LocalHapticFeedback.current
@@ -198,10 +241,36 @@ fun DashboardScreen(
     val mascotTipsEnabled by PxlMascotSettings.tipsEnabled.collectAsState()
     var showServerPicker by remember { mutableStateOf(false) }
     var showProfilePicker by remember { mutableStateOf(false) }
+    var showImportChoices by remember { mutableStateOf(false) }
+    var showImportScanner by remember { mutableStateOf(false) }
     var pendingDeleteProfileId by remember { mutableLongStateOf(-1L) }
     var pickerProbeRequested by remember { mutableStateOf(false) }
     var showAvailableProfiles by remember { mutableStateOf(false) }
-    var showOnboarding by remember { mutableStateOf(PxlLocalPreferences.shouldShowOnboarding(context)) }
+    var showOnboarding by rememberSaveable { mutableStateOf(false) }
+    var autoGuideHandled by rememberSaveable { mutableStateOf(false) }
+    var autoGuideShowing by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (PxlLocalPreferences.consumeOnboardingRequest(context)) {
+            autoGuideHandled = true
+            autoGuideShowing = false
+            showOnboarding = true
+        }
+    }
+    LaunchedEffect(uiState.profilesLoaded, uiState.profiles.isEmpty(), focus) {
+        if (uiState.profiles.isNotEmpty() && autoGuideShowing) {
+            autoGuideShowing = false
+            showOnboarding = false
+        }
+        if (uiState.profilesLoaded && !autoGuideHandled && !focus) {
+            autoGuideHandled = true
+            if (uiState.profiles.isEmpty() && PxlLocalPreferences.shouldShowOnboarding(context)) {
+                autoGuideShowing = true
+                showOnboarding = true
+                PxlLocalPreferences.finishOnboarding(context)
+            }
+        }
+    }
+    var focusHelpRequested by remember { mutableStateOf(false) }
     var showAccountHelp by remember { mutableStateOf(false) }
     var showXhttpDetails by remember { mutableStateOf(false) }
     var showGuestBanner by remember {
@@ -212,6 +281,7 @@ fun DashboardScreen(
         if (showGuestBanner) PxlLocalPreferences.recordGuestBannerView(context)
     }
     var guardEnabled by remember { mutableStateOf(PxlLocalPreferences.isGuardEnabled(context)) }
+    var focusTileHidden by remember { mutableStateOf(PxlUiPreferences.isFocusTileHidden(context)) }
     var quickTileAdded by remember { mutableStateOf(PxlLocalPreferences.isQuickTileAdded(context)) }
     var pixTapCount by remember { mutableIntStateOf(0) }
     var latencySource by remember { mutableStateOf(PxlLocalPreferences.latencySource(context)) }
@@ -367,7 +437,8 @@ fun DashboardScreen(
         }
     }
 
-    LaunchedEffect(serviceStatus, selector?.tag, selectedServer) {
+    var focusHealthRevision by remember { mutableIntStateOf(0) }
+    LaunchedEffect(serviceStatus, selector?.tag, selectedServer, focusHealthRevision) {
         healthCheckTimedOut = false
         if (serviceStatus == Status.Started && selector != null) {
             // Delay samples can briefly alternate between zero and positive as
@@ -411,13 +482,70 @@ fun DashboardScreen(
         selectedItem?.delay
     }
 
+    val importScope = rememberCoroutineScope()
+    val importHandler = remember(context) { ProfileImportHandler(context) }
+    val openLinkImport: (String?, String?) -> Unit = { name, link ->
+        showImportChoices = false
+        showOnboarding = false
+        onOpenNewProfile(NewProfileArgs(importName = name, importUrl = link, simpleImport = true))
+    }
     val importFromClipboard = {
         val value = clipboard.getText()?.text?.trim().orEmpty()
-        if (value.startsWith("https://") || value.startsWith("http://")) {
-            onOpenNewProfile(NewProfileArgs(importName = "PXLNET", importUrl = value))
-        } else {
-            Toast.makeText(context, R.string.pxlnet_clipboard_no_subscription, Toast.LENGTH_SHORT).show()
+        when {
+            profileLinkKind(value) != null -> openLinkImport(null, value)
+            value.startsWith("sing-box://import-remote-profile") -> {
+                importScope.launch {
+                    val result = importHandler.parseQRCode(value)
+                    if (result is ProfileImportHandler.QRCodeParseResult.RemoteProfile) {
+                        openLinkImport(result.name, result.url)
+                    } else {
+                        Toast.makeText(context, R.string.focus_import_invalid_link, Toast.LENGTH_SHORT).show()
+                    }
+                }
+                Unit
+            }
+            else -> Toast.makeText(context, R.string.focus_import_clipboard_empty, Toast.LENGTH_SHORT).show()
         }
+    }
+
+    if (showImportChoices) {
+        ProfileImportChoices(
+            onDismiss = { showImportChoices = false },
+            onClipboard = importFromClipboard,
+            onManual = { openLinkImport(null, null) },
+            onScan = {
+                showImportChoices = false
+                showImportScanner = true
+            },
+        )
+    }
+
+    if (showImportScanner) {
+        QRScanSheet(
+            onDismiss = { showImportScanner = false },
+            onScanResult = { result ->
+                showImportScanner = false
+                when (result) {
+                    is QRScanResult.ProfileLink -> openLinkImport(null, result.link)
+                    is QRScanResult.RemoteProfile -> importScope.launch {
+                        val parsed = importHandler.parseQRCode(result.uri.toString())
+                        if (parsed is ProfileImportHandler.QRCodeParseResult.RemoteProfile) {
+                            openLinkImport(parsed.name, parsed.url)
+                        } else {
+                            Toast.makeText(context, R.string.focus_import_invalid_link, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    is QRScanResult.QRSData -> importScope.launch {
+                        val parsed = importHandler.parseQRSData(result.data)
+                        if (parsed is ProfileImportHandler.QRSParseResult.Success) {
+                            onOpenNewProfile(NewProfileArgs(importName = parsed.name, qrsData = result.data))
+                        } else {
+                            Toast.makeText(context, R.string.focus_import_invalid_link, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            },
+        )
     }
 
     OverrideTopBar {
@@ -426,11 +554,16 @@ fun DashboardScreen(
             subtitle = "",
             onTitleClick = { catEasterEgg.tap(context) },
             actions = {
-                IconButton(onClick = { showOnboarding = true }) {
+                if (focus && !uiState.hasTelegramSession) {
+                    IconButton(onClick = { showAccountHelp = true }, modifier = Modifier.pxlPressMotion()) {
+                        Icon(Icons.Default.AccountCircle, contentDescription = stringResource(R.string.pxlnet_login_telegram))
+                    }
+                }
+                IconButton(onClick = { if (focus) focusHelpRequested = true else showOnboarding = true }) {
                     Icon(Icons.Default.HelpOutline, contentDescription = stringResource(R.string.pxlnet_how_to_connect))
                 }
-                IconButton(onClick = { onOpenNewProfile(NewProfileArgs()) }) {
-                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.pxlnet_add_subscription))
+                IconButton(onClick = { showImportChoices = true }, modifier = Modifier.pxlPressMotion()) {
+                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.focus_import_title))
                 }
             },
         )
@@ -438,6 +571,18 @@ fun DashboardScreen(
 
     PxlCatEasterEggDialog(catEasterEgg)
 
+    if (focus && focusHelpRequested) {
+        AlertDialog(
+            onDismissRequest = { focusHelpRequested = false },
+            title = { Text(stringResource(R.string.pxlnet_how_to_connect)) },
+            text = { Text(stringResource(R.string.focus_setup_help)) },
+            confirmButton = {
+                TextButton(onClick = { focusHelpRequested = false }) {
+                    Text(stringResource(R.string.ok))
+                }
+            },
+        )
+    }
     if (showOnboarding) {
         PxlOnboardingSheet(
             smartRouting = uiState.smartRoutingEnabled,
@@ -446,7 +591,10 @@ fun DashboardScreen(
             onSmartRoutingChanged = viewModel::setSmartRouting,
             onTelegramLogin = viewModel::startTelegramLogin,
             onImportClipboard = importFromClipboard,
-            onAddLink = { onOpenNewProfile(NewProfileArgs()) },
+            onAddLink = {
+                showOnboarding = false
+                showImportChoices = true
+            },
             onOpenVpnSettings = {
                 context.startActivity(android.content.Intent(android.provider.Settings.ACTION_VPN_SETTINGS))
             },
@@ -454,7 +602,10 @@ fun DashboardScreen(
                 PxlLocalPreferences.finishOnboarding(context)
                 showOnboarding = false
             },
-            onDismiss = { showOnboarding = false },
+            onDismiss = {
+                autoGuideShowing = false
+                showOnboarding = false
+            },
         )
     }
 
@@ -512,7 +663,7 @@ fun DashboardScreen(
             onProfileDelete = { pendingDeleteProfileId = it.id },
             onProfileMove = viewModel::moveProfile,
             onDismiss = { showProfilePicker = false },
-            onAddProfile = { onOpenNewProfile(NewProfileArgs()) },
+            onAddProfile = { showProfilePicker = false; showImportChoices = true },
             showManagementActions = true,
             titleRes = R.string.pxlnet_settings_subscriptions,
         )
@@ -570,7 +721,7 @@ fun DashboardScreen(
                             ConnectionPresentationState.Switching -> stringResource(R.string.pxlnet_vpn_changing)
                             ConnectionPresentationState.Connecting,
                             ConnectionPresentationState.Disconnecting -> stringResource(R.string.pxlnet_vpn_changing)
-                            ConnectionPresentationState.Disconnected -> stringResource(R.string.pxlnet_vpn_off_ping)
+                            ConnectionPresentationState.Disconnected -> stringResource(R.string.pxlnet_status_disconnected)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -589,7 +740,7 @@ fun DashboardScreen(
                 enabled = serviceStatus in setOf(Status.Started, Status.Stopped) && hasProfile && manualChoices.isNotEmpty(),
             ) {
                 Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text(stringResource(R.string.pxlnet_measure_all_servers), modifier = Modifier.padding(start = 8.dp))
+                Text(stringResource(R.string.pxlnet_measure_ping), modifier = Modifier.padding(start = 8.dp))
             }
             Text(
                 stringResource(
@@ -636,6 +787,8 @@ fun DashboardScreen(
                         missingFromSession -> stringResource(R.string.pxlnet_server_not_loaded)
                         probe == ServerProbeDisplay.Unavailable -> stringResource(R.string.pxlnet_server_probe_failed_try)
                         autoBest -> stringResource(R.string.pxlnet_latency_best_found)
+                        focus && probe == null && (item.delay ?: 0) <= 0 ->
+                            stringResource(R.string.focus_unchecked)
                         else -> null
                     },
                 ) {
@@ -647,14 +800,6 @@ fun DashboardScreen(
             }
             if (automaticChoices.isNotEmpty()) {
                 ServerPickerSectionTitle(stringResource(R.string.pxlnet_server_section_auto))
-                if (pickerShowingServerProbes) {
-                    Text(
-                        stringResource(R.string.pxlnet_latency_auto_explanation),
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
                 automaticChoices.forEach { choiceRow(it) }
             }
             if (manualChoices.isNotEmpty()) {
@@ -668,326 +813,441 @@ fun DashboardScreen(
         }
     }
 
-    val topBarInset = LocalPxlTopBarInset.current
-    val floatingNavInset = LocalPxlFloatingNavInset.current
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 20.dp),
-        contentPadding = PaddingValues(top = topBarInset + 16.dp, bottom = floatingNavInset + 32.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        if (hasProfile || uiState.hasTelegramSession) {
-            item {
-                AccessStrip(
-                    profileName = uiState.selectedProfileName,
-                    summary = subscriptionSummary,
-                    accountName = uiState.telegramUsername?.let { "@$it" } ?: uiState.telegramAccountName,
-                    hasAccountSession = uiState.hasTelegramSession,
-                    accountVerified = uiState.accountLastVerifiedAt != null,
-                    accountServiceAvailable = uiState.accountServiceAvailable,
-                    accountActive = uiState.telegramSubscriptionActive,
-                    accountExpiry = formatPxlAccountExpiry(uiState.telegramSubscriptionExpiresAt),
-                    updating = uiState.updatingProfileId != null || uiState.telegramLoginPending,
-                    onRefresh = if (uiState.hasTelegramSession) viewModel::refreshTelegramAccount
-                        else uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }
-                            ?.takeIf { it.typed.remoteURL.isNotBlank() }
-                            ?.let { profile -> { viewModel.updateProfile(profile) } },
-                )
+    val onMascotTap: () -> Unit = {
+        pixTapCount++
+        if (PxlLocalPreferences.isCosmosUnlocked(context)) {
+            if (pixTapCount >= 5) {
+                pixTapCount = 0
+                Toast.makeText(context, R.string.pxlnet_cosmos_already_unlocked, Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            if (pixTapCount >= 5) {
+                PxlLocalPreferences.unlockCosmos(context)
+                pixTapCount = 0
+                Toast.makeText(context, R.string.pxlnet_cosmos_unlocked, Toast.LENGTH_LONG).show()
             }
         }
-        if (uiState.profiles.size > 1) {
-            item {
-                val selectedProfile = uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }
-                Surface(
-                    onClick = { showProfilePicker = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    }
+    val topBarInset = LocalPxlTopBarInset.current
+    val floatingNavInset = LocalPxlFloatingNavInset.current
+    val pinnedControls = trial && (hasProfile || dnsOnlyActive)
+    val liveServer = if (focus && serviceStatus == Status.Started && selector?.selected == selectedServer &&
+        serverRegion(selectedServer) == ServerRegion.AUTO
+    ) {
+        selectedVpnServerNode(groupsState.groups, selectedServer, extraNodeTags = uiState.xhttpServers.keys)
+            ?.let { serverChoice(it, "") }
+    } else null
+    val presentedServer = liveServer ?: selectedItem
+    val consoleProtocol = if (trial) presentedServer?.let { serverProtocol(it.displayTag, it.type) } else null
+    val serverName = if (focus) {
+        presentedServer?.let {
+            val title = serverTitle(context, it.displayTag, it.type)
+            consoleServerName(title, consoleProtocol.orEmpty())
+        } ?: selectedServer.takeIf { it.isNotBlank() }?.let { serverTitle(context, it) }
+    } else null
+    val focusServerTitle = if (liveServer != null && serverName != null) {
+        stringResource(R.string.focus_auto_live, serverName)
+    } else serverName
+    val chooseServer: (() -> Unit)? = if (serverChoices.isNotEmpty()) ({ showServerPicker = true }) else null
+    val focusConnect: () -> Unit = {
+        if (trial && serviceStatus == Status.Stopped) trialFailedStart = false
+        focusRequestPending = true
+        hapticFeedback.performPxlConfirmation()
+        viewModel.toggleService()
+    }
+    Column(Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = (if (pinnedControls) Modifier.weight(1f).fillMaxWidth() else Modifier.fillMaxSize())
+                .background(MaterialTheme.colorScheme.background)
+                .padding(horizontal = 20.dp),
+            contentPadding = PaddingValues(top = topBarInset + 16.dp, bottom = if (pinnedControls) 12.dp else floatingNavInset + 32.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            if (focus) {
+                item(key = "focus-connection") {
+                    FocusHomeControl(
+                        hasProfile = hasProfile,
+                        dnsOnly = dnsOnlyActive,
+                        blocked = subscriptionInactive && serviceStatus == Status.Stopped,
+                        serviceStatus = serviceStatus,
+                        switching = uiState.switchingServerTag != null,
+                        requestPending = focusRequestPending,
+                        reachability = reachability,
+                        server = focusServerTitle,
+                        serverTag = presentedServer?.displayTag ?: selectedServer,
+                        serverProtocol = consoleProtocol,
+                        onChooseServer = chooseServer,
+                        onChooseProfile = if (uiState.profiles.size > 1) ({ showProfilePicker = true }) else null,
+                        onConnect = focusConnect,
+                        onRetry = selector?.tag?.let { { focusHealthRevision++ } },
+                        onOpenDns = onOpenDns,
+                        onImport = { showImportChoices = true },
+                        onLogin = if (!uiState.hasTelegramSession && !uiState.telegramLoginPending) viewModel::startTelegramLogin else null,
+                        pinnedControls = pinnedControls,
+                        mascot = if (focusAppearance.mascot) ({
+                            PxlCatCharacter(connectionState, mascotAnimationsEnabled, onMascotTap, reachability)
+                        }) else null,
+                    )
+                }
+            }
+            if (pinnedControls && uiState.profiles.size > 1 && !dnsOnlyActive) item {
+                TextButton(onClick = { showProfilePicker = true }) {
+                    Text(stringResource(R.string.pxlnet_choose_available_profile))
+                }
+            }
+            if ((!focus || focusAppearance.details == PxlUiPreferences.FocusDetails.SUBSCRIPTION) &&
+                (hasProfile || uiState.hasTelegramSession)
+            ) {
+                item {
+                    AccessStrip(
+                        profileName = uiState.selectedProfileName,
+                        summary = subscriptionSummary,
+                        accountName = uiState.telegramUsername?.let { "@$it" } ?: uiState.telegramAccountName,
+                        hasAccountSession = uiState.hasTelegramSession,
+                        accountVerified = uiState.accountLastVerifiedAt != null,
+                        accountServiceAvailable = uiState.accountServiceAvailable,
+                        accountActive = uiState.telegramSubscriptionActive,
+                        accountExpiry = formatPxlAccountExpiry(uiState.telegramSubscriptionExpiresAt),
+                        updating = uiState.updatingProfileId != null || uiState.telegramLoginPending,
+                        onRefresh = if (uiState.hasTelegramSession) viewModel::refreshTelegramAccount
+                            else uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }
+                                ?.takeIf { it.typed.remoteURL.isNotBlank() }
+                                ?.let { profile -> { viewModel.updateProfile(profile) } },
+                    )
+                }
+            }
+            if (!focus && uiState.profiles.size > 1) {
+                item {
+                    val selectedProfile = uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }
+                    Surface(
+                        onClick = { showProfilePicker = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
                     ) {
-                        Icon(Icons.Default.Description, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                stringResource(R.string.pxlnet_subscription_title),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Text(
-                                selectedProfile?.name ?: stringResource(R.string.pxlnet_choose_available_profile),
-                                style = MaterialTheme.typography.titleSmall,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            selectedProfile?.typed?.remoteURL?.let { url ->
-                                Uri.parse(url).host?.let { host ->
-                                    Text(
-                                        host,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Icon(Icons.Default.Description, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    stringResource(R.string.pxlnet_subscription_title),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Text(
+                                    selectedProfile?.name ?: stringResource(R.string.pxlnet_choose_available_profile),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                selectedProfile?.typed?.remoteURL?.let { url ->
+                                    Uri.parse(url).host?.let { host ->
+                                        Text(
+                                            host,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
                                 }
                             }
+                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
                         }
-                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
                     }
                 }
             }
-        }
-        if (subscriptionInactive) {
-            item {
-                val isPxlManaged = SubscriptionInfoStore.isPxlManagedInactive(connectionAccess)
-                InactiveSubscriptionCard(
-                    isPxlManaged = isPxlManaged,
-                    onChooseProfile = if (availableOtherProfiles.isNotEmpty()) {
-                        { showAvailableProfiles = true }
-                    } else null,
-                    onSecondaryAction = {
-                        if (isPxlManaged) {
-                            context.startActivity(
-                                android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(PxlLinks.TELEGRAM_BOT)),
-                            )
-                        } else {
-                            onOpenNewProfile(NewProfileArgs())
-                        }
+            if (subscriptionInactive) {
+                item {
+                    val isPxlManaged = SubscriptionInfoStore.isPxlManagedInactive(connectionAccess)
+                    InactiveSubscriptionCard(
+                        isPxlManaged = isPxlManaged,
+                        onChooseProfile = if (availableOtherProfiles.isNotEmpty()) {
+                            { showAvailableProfiles = true }
+                        } else null,
+                        onSecondaryAction = {
+                            if (isPxlManaged) {
+                                context.startActivity(
+                                    android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(PxlLinks.TELEGRAM_BOT)),
+                                )
+                            } else {
+                                showImportChoices = true
+                            }
+                        },
+                    )
+                }
+            }
+            if (!focus && dnsOnlyActive) item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                    onClick = onOpenDns,
+                ) {
+                    Text(
+                        stringResource(R.string.pxlnet_dns_home_active),
+                        modifier = Modifier.padding(18.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+            if (!focus) item {
+                ConnectionControl(
+                    serviceStatus = displayedServiceStatus,
+                    state = connectionState,
+                    reachability = reachability,
+                    delay = selectedDisplayedDelay,
+                    enabled = !dnsOnlyActive && (availableOtherProfiles.isNotEmpty() || !subscriptionInactive) && hasProfile && connectionState !in setOf(
+                        ConnectionPresentationState.Connecting,
+                        ConnectionPresentationState.Disconnecting,
+                        ConnectionPresentationState.Switching,
+                    ),
+                    showMascot = mascotEnabled,
+                    animateMascot = mascotAnimationsEnabled,
+                    showMascotTips = mascotTipsEnabled,
+                    hasProfile = hasProfile,
+                    onMascotTap = onMascotTap,
+                    onClick = {
+                        hapticFeedback.performPxlConfirmation()
+                        if (subscriptionInactive) showAvailableProfiles = true else viewModel.toggleService()
                     },
                 )
             }
-        }
-        if (dnsOnlyActive) item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-                onClick = onOpenDns,
-            ) {
-                Text(
-                    stringResource(R.string.pxlnet_dns_home_active),
-                    modifier = Modifier.padding(18.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-        }
-        item {
-            ConnectionControl(
-                serviceStatus = displayedServiceStatus,
-                state = connectionState,
-                reachability = reachability,
-                delay = selectedDisplayedDelay,
-                enabled = !dnsOnlyActive && (availableOtherProfiles.isNotEmpty() || !subscriptionInactive) && hasProfile && connectionState !in setOf(
-                    ConnectionPresentationState.Connecting,
-                    ConnectionPresentationState.Disconnecting,
-                    ConnectionPresentationState.Switching,
-                ),
-                showMascot = mascotEnabled,
-                animateMascot = mascotAnimationsEnabled,
-                showMascotTips = mascotTipsEnabled,
-                hasProfile = hasProfile,
-                onMascotTap = {
-                    pixTapCount++
-                    if (PxlLocalPreferences.isCosmosUnlocked(context)) {
-                        if (pixTapCount >= 5) {
-                            pixTapCount = 0
-                            Toast.makeText(context, R.string.pxlnet_cosmos_already_unlocked, Toast.LENGTH_SHORT).show()
-                        }
-                    } else {
-                        if (pixTapCount >= 5) {
-                            PxlLocalPreferences.unlockCosmos(context)
-                            pixTapCount = 0
-                            Toast.makeText(context, R.string.pxlnet_cosmos_unlocked, Toast.LENGTH_LONG).show()
-                        }
-                    }
-                },
-                onClick = {
-                    hapticFeedback.performPxlConfirmation()
-                    if (subscriptionInactive) showAvailableProfiles = true else viewModel.toggleService()
-                },
-            )
-        }
 
-        if (!hasProfile) {
-            item {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-                    Text(
-                        stringResource(R.string.pxlnet_add_subscription_first),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (PxlLocalPreferences.shouldShowOnboarding(context)) {
+            if (!focus && !hasProfile) {
+                item {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+                        Text(
+                            stringResource(R.string.pxlnet_add_subscription_first),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         TextButton(onClick = { showOnboarding = true }) {
                             Text(stringResource(R.string.pxlnet_continue_setup))
                         }
                     }
                 }
             }
-        }
 
-        item {
-            ServerCard(
-                serverTag = selectedItem?.displayTag ?: selectedServer,
-                serverType = selectedItem?.type.orEmpty(),
-                delay = selectedDisplayedDelay,
-                loading = latencySource == PxlLatencySource.VPN_SERVER && selectedProbe == ServerProbeDisplay.Loading,
-                latencySource = latencySource,
-                enabled = serverChoices.isNotEmpty(),
-                onClick = { if (serverChoices.isNotEmpty()) showServerPicker = true },
-                onMeasurePing = if (hasProfile && manualChoices.isNotEmpty() && serviceStatus in setOf(Status.Started, Status.Stopped)) ({
-                    viewModel.serverProbeCache.clear()
-                    pickerProbeRequested = true
-                    probeRevision++
-                    showServerPicker = true
-                }) else null,
-                onRefresh = if (hasProfile && uiState.updatingProfileId == null &&
-                    uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }?.typed?.remoteURL?.isNotBlank() == true
-                ) ({
-                    uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }?.let(viewModel::updateProfile)
-                }) else null,
-                refreshing = uiState.updatingProfileId != null,
-            )
-        }
+            if (!focus) item {
+                ServerCard(
+                    serverTag = selectedItem?.displayTag ?: selectedServer,
+                    serverType = selectedItem?.type.orEmpty(),
+                    delay = selectedDisplayedDelay,
+                    loading = latencySource == PxlLatencySource.VPN_SERVER && selectedProbe == ServerProbeDisplay.Loading,
+                    latencySource = latencySource,
+                    enabled = serverChoices.isNotEmpty(),
+                    onClick = { if (serverChoices.isNotEmpty()) showServerPicker = true },
+                    onMeasurePing = if (hasProfile && manualChoices.isNotEmpty() && serviceStatus in setOf(Status.Started, Status.Stopped)) ({
+                        viewModel.serverProbeCache.clear()
+                        pickerProbeRequested = true
+                        probeRevision++
+                        showServerPicker = true
+                    }) else null,
+                    onRefresh = if (hasProfile && uiState.updatingProfileId == null &&
+                        uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }?.typed?.remoteURL?.isNotBlank() == true
+                    ) ({
+                        uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }?.let(viewModel::updateProfile)
+                    }) else null,
+                    refreshing = uiState.updatingProfileId != null,
+                )
+            }
 
-        if (unavailableXhttpCount > 0) {
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth().clickable { showXhttpDetails = true },
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                    shape = RoundedCornerShape(16.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+            if (unavailableXhttpCount > 0) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth().clickable { showXhttpDetails = true },
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                        shape = RoundedCornerShape(16.dp),
                     ) {
-                        Icon(
-                            Icons.Default.HelpOutline,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                stringResource(R.string.pxlnet_xhttp_summary, unavailableXhttpCount),
-                                style = MaterialTheme.typography.bodyMedium,
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.HelpOutline,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
                             )
-                            Text(
-                                stringResource(R.string.pxlnet_xhttp_more),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    stringResource(R.string.pxlnet_xhttp_summary, unavailableXhttpCount),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                Text(
+                                    stringResource(R.string.pxlnet_xhttp_more),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                 }
             }
-        }
 
-        if (uiState.accountServiceAvailable == false) {
-            item {
-                Text(
-                    stringResource(if (hasProfile) R.string.pxlnet_saved_profile_offline else R.string.pxlnet_first_setup_offline),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                )
-            }
-        }
-
-        if (uiState.telegramAccountName == null && showGuestBanner) {
-            item {
-                GuestAccountBanner(
-                    onClose = { showGuestBanner = false },
-                    onLearnMore = { showAccountHelp = true },
-                )
-            }
-        }
-
-        item {
-            RoutingCard(
-                smartRouting = uiState.smartRoutingEnabled,
-                appRoutingEnabled = Settings.perAppProxyEnabled,
-                onClick = onOpenAppRouting,
-            )
-        }
-
-        item {
-            GuardCard(
-                guardEnabled = guardEnabled,
-                onGuardChanged = {
-                    guardEnabled = it
-                    PxlLocalPreferences.setGuardEnabled(context, it)
-                },
-            )
-        }
-
-        if (!hasProfile) {
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    OutlinedButton(
-                        onClick = importFromClipboard,
-                        modifier = Modifier.weight(1f).pxlPressMotion(),
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    ) {
-                        Icon(Icons.Default.ContentPaste, contentDescription = null)
-                        Spacer(Modifier.size(8.dp))
-                        Text(stringResource(R.string.pxlnet_from_clipboard))
-                    }
-                    OutlinedButton(
-                        onClick = { onOpenNewProfile(NewProfileArgs()) },
-                        modifier = Modifier.weight(1f).pxlPressMotion(),
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    ) {
-                        Icon(Icons.Default.Description, contentDescription = null)
-                        Spacer(Modifier.size(8.dp))
-                        Text(stringResource(R.string.pxlnet_link_cfg))
-                    }
+            if (!focus && uiState.accountServiceAvailable == false) {
+                item {
+                    Text(
+                        stringResource(if (hasProfile) R.string.pxlnet_saved_profile_offline else R.string.pxlnet_first_setup_offline),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                    )
                 }
             }
-        }
 
-        if (!quickTileAdded) {
-            item {
-                QuickTileCard(
-                    onAdd = {
-                        PxlQuickTile.requestAdd(context) { result ->
-                            if (result == PxlQuickTile.Result.Added || result == PxlQuickTile.Result.AlreadyAdded) {
-                                quickTileAdded = true
-                                PxlLocalPreferences.setQuickTileAdded(context, true)
-                            }
-                            val message = when (result) {
-                                PxlQuickTile.Result.Added -> context.getString(R.string.pxlnet_tile_added)
-                                PxlQuickTile.Result.AlreadyAdded -> context.getString(R.string.pxlnet_tile_already_added)
-                                PxlQuickTile.Result.OpenQuickSettings -> context.getString(R.string.pxlnet_tile_add_manually)
-                                PxlQuickTile.Result.Rejected -> context.getString(R.string.pxlnet_tile_not_added)
-                            }
-                            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-                        }
+            if (!focus && uiState.telegramAccountName == null && showGuestBanner) {
+                item {
+                    GuestAccountBanner(
+                        onClose = { showGuestBanner = false },
+                        onLearnMore = { showAccountHelp = true },
+                    )
+                }
+            }
+
+            if (focus && hasProfile && focusAppearance.details == PxlUiPreferences.FocusDetails.ROUTING) item {
+                FocusTrafficSummary(
+                    smartRouting = uiState.smartRoutingEnabled,
+                    appRules = Settings.perAppProxyEnabled,
+                    dnsEnabled = PxlDnsProfiles.enabled(context),
+                    dnsActive = serviceStatus == Status.Started && PxlDnsProfiles.activeMode(context) != null,
+                    onRouting = onOpenAppRouting,
+                    onDns = onOpenDns,
+                )
+            }
+            if (!focus) item {
+                RoutingCard(
+                    smartRouting = uiState.smartRoutingEnabled,
+                    appRoutingEnabled = Settings.perAppProxyEnabled,
+                    onClick = onOpenAppRouting,
+                )
+            }
+
+            if (!focus) item {
+                GuardCard(
+                    guardEnabled = guardEnabled,
+                    onGuardChanged = {
+                        guardEnabled = it
+                        PxlLocalPreferences.setGuardEnabled(context, it)
                     },
                 )
             }
-        }
 
-        if (serviceStatus == Status.Started) {
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    MetricCard(stringResource(R.string.pxlnet_download), uiState.downlink, Modifier.weight(1f))
-                    MetricCard(stringResource(R.string.pxlnet_upload), uiState.uplink, Modifier.weight(1f))
+            if (!focus && !hasProfile) {
+                item {
+                    OutlinedButton(
+                        onClick = { showImportChoices = true },
+                        modifier = Modifier.fillMaxWidth().pxlPressMotion(),
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Spacer(Modifier.size(8.dp))
+                        Text(stringResource(R.string.focus_import_title))
+                    }
+                }
+            }
+
+            if (!quickTileAdded && (!focus || (!focusTileHidden && !dnsOnlyActive && reachability == ConnectionReachability.Reachable))) {
+                item {
+                    QuickTileCard(
+                        onHide = if (focus) ({
+                            focusTileHidden = true
+                            PxlUiPreferences.hideFocusTile(context)
+                        }) else null,
+                        onAdd = {
+                            PxlQuickTile.requestAdd(context) { result ->
+                                if (result == PxlQuickTile.Result.Added || result == PxlQuickTile.Result.AlreadyAdded) {
+                                    quickTileAdded = true
+                                    PxlLocalPreferences.setQuickTileAdded(context, true)
+                                }
+                                val message = when (result) {
+                                    PxlQuickTile.Result.Added -> context.getString(R.string.pxlnet_tile_added)
+                                    PxlQuickTile.Result.AlreadyAdded -> context.getString(R.string.pxlnet_tile_already_added)
+                                    PxlQuickTile.Result.OpenQuickSettings -> context.getString(R.string.pxlnet_tile_add_manually)
+                                    PxlQuickTile.Result.Rejected -> context.getString(R.string.pxlnet_tile_not_added)
+                                }
+                                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                            }
+                        },
+                    )
+                }
+            }
+
+            if (focus && focusAppearance.showSpeed && serviceStatus == Status.Started && !dnsOnlyActive) {
+                item {
+                    Text(
+                        stringResource(R.string.focus_speed_line, uiState.downlink, uiState.uplink),
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (!focus && serviceStatus == Status.Started) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        MetricCard(stringResource(R.string.pxlnet_download), uiState.downlink, Modifier.weight(1f))
+                        MetricCard(stringResource(R.string.pxlnet_upload), uiState.uplink, Modifier.weight(1f))
+                    }
                 }
             }
         }
+        if (pinnedControls) {
+            TrialConnectionFooter(
+                modifier = Modifier.padding(bottom = floatingNavInset),
+                serviceStatus = serviceStatus,
+                switching = uiState.switchingServerTag != null,
+                requestPending = focusRequestPending,
+                blocked = subscriptionInactive && serviceStatus == Status.Stopped,
+                failedStart = trialFailedStart,
+                dnsOnly = dnsOnlyActive,
+                onOpenDns = onOpenDns,
+                onConnect = focusConnect,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProfileImportChoices(
+    onDismiss: () -> Unit,
+    onClipboard: () -> Unit,
+    onManual: () -> Unit,
+    onScan: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Text(
+            stringResource(R.string.focus_import_title),
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.titleLarge,
+        )
+        ListItem(
+            headlineContent = { Text(stringResource(R.string.pxlnet_from_clipboard)) },
+            leadingContent = { Icon(Icons.Default.ContentPaste, contentDescription = null) },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            modifier = Modifier.clickable(role = Role.Button, onClick = onClipboard),
+        )
+        ListItem(
+            headlineContent = { Text(stringResource(R.string.focus_import_manual)) },
+            leadingContent = { Icon(Icons.Default.Edit, contentDescription = null) },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            modifier = Modifier.clickable(role = Role.Button, onClick = onManual),
+        )
+        ListItem(
+            headlineContent = { Text(stringResource(R.string.profile_add_scan_qr_code)) },
+            leadingContent = { Icon(Icons.Default.QrCodeScanner, contentDescription = null) },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            modifier = Modifier.clickable(role = Role.Button, onClick = onScan),
+        )
+        Spacer(Modifier.height(16.dp))
     }
 }
 
@@ -1144,7 +1404,42 @@ private fun AccessStrip(
 }
 
 @Composable
-private fun PxlCatCharacter(state: ConnectionPresentationState, animationsEnabled: Boolean, onTap: () -> Unit) {
+private fun PxlCatCharacter(
+    state: ConnectionPresentationState,
+    animationsEnabled: Boolean,
+    onTap: () -> Unit,
+    focusReachability: ConnectionReachability? = null,
+) {
+    var reactionCount by remember { mutableIntStateOf(0) }
+    var reactionVisible by remember { mutableStateOf(false) }
+    val pawWave = remember { Animatable(0f) }
+    LaunchedEffect(reactionCount, animationsEnabled) {
+        if (reactionCount > 0) {
+            reactionVisible = true
+            if (reactionCount % 3 == 2 && animationsEnabled) {
+                pawWave.snapTo(0f)
+                pawWave.animateTo(0f, keyframes {
+                    durationMillis = 1100
+                    0f at 0
+                    1f at 190
+                    0.58f at 340
+                    1f at 490
+                    0.58f at 640
+                    1f at 790
+                    0f at 1100
+                })
+            } else {
+                delay(1100)
+            }
+            reactionVisible = false
+        }
+    }
+    val reaction = if (reactionVisible) (reactionCount - 1) % 3 else -1
+    val happy = focusReachability == ConnectionReachability.Reachable && state == ConnectionPresentationState.Connected
+    val puzzled = focusReachability == ConnectionReachability.Unreachable
+    val concentrating = focusReachability == ConnectionReachability.Checking
+    val waving = reaction == 1
+    val surprised = reaction == 2 || (puzzled && reaction < 0)
     val ink = MaterialTheme.colorScheme.primary
     val face = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
     val interactionSource = remember { MutableInteractionSource() }
@@ -1170,7 +1465,10 @@ private fun PxlCatCharacter(state: ConnectionPresentationState, animationsEnable
                 interactionSource = interactionSource,
                 indication = null,
                 onClickLabel = stringResource(R.string.pxlnet_mascot_tap),
-                onClick = onTap,
+                onClick = {
+                    if (focusReachability != null) reactionCount++
+                    onTap()
+                },
             )
             .graphicsLayer { translationY = bob },
     ) {
@@ -1181,7 +1479,7 @@ private fun PxlCatCharacter(state: ConnectionPresentationState, animationsEnable
             cubicTo(
                 size.width * 0.97f, size.height * 0.86f,
                 size.width * 1.02f, size.height * 0.66f,
-                size.width * (0.92f + tail * 0.002f), size.height * 0.58f,
+                size.width * (0.92f + tail * (if (happy) 0.004f else 0.002f)), size.height * (if (happy) 0.50f else 0.58f),
             )
         }
         drawPath(tailPath, ink, style = Stroke(stroke * 4f, cap = StrokeCap.Round))
@@ -1193,6 +1491,19 @@ private fun PxlCatCharacter(state: ConnectionPresentationState, animationsEnable
                 size.width * 0.71f, size.height * 0.61f)
         }
         drawPath(bodyPath, ink, style = Stroke(stroke, cap = StrokeCap.Round))
+        if (waving) {
+            val lift = if (animationsEnabled) pawWave.value else 0.8f
+            val shoulder = androidx.compose.ui.geometry.Offset(size.width * 0.26f, size.height * 0.76f)
+            val paw = androidx.compose.ui.geometry.Offset(size.width * 0.12f, size.height * 0.79f)
+            rotate(90f * lift, pivot = shoulder) {
+                drawLine(ink, shoulder, paw, stroke * 2f, StrokeCap.Round)
+                drawOval(
+                    color = ink,
+                    topLeft = paw.copy(x = paw.x - stroke, y = paw.y - stroke * 1.1f),
+                    size = androidx.compose.ui.geometry.Size(stroke * 2.2f, stroke * 2.4f),
+                )
+            }
+        }
         val headPath = Path().apply {
             moveTo(size.width * 0.19f, size.height * 0.29f)
             lineTo(size.width * 0.24f, size.height * 0.04f)
@@ -1211,12 +1522,19 @@ private fun PxlCatCharacter(state: ConnectionPresentationState, animationsEnable
 
         val leftEye = androidx.compose.ui.geometry.Offset(size.width * 0.37f, size.height * 0.35f)
         val rightEye = androidx.compose.ui.geometry.Offset(size.width * 0.63f, size.height * 0.35f)
-        if (state == ConnectionPresentationState.Error) {
+        if (happy && reaction < 0) {
+            listOf(leftEye, rightEye).forEach { eye ->
+                drawArc(ink, 195f, 150f, false,
+                    topLeft = eye.copy(x = eye.x - 1.6f * stroke, y = eye.y - stroke),
+                    size = androidx.compose.ui.geometry.Size(3.2f * stroke, 2.5f * stroke),
+                    style = Stroke(stroke, cap = StrokeCap.Round))
+            }
+        } else if (state == ConnectionPresentationState.Error && !surprised && reaction < 0) {
             drawLine(ink, leftEye.copy(x = leftEye.x - stroke), leftEye.copy(x = leftEye.x + stroke), stroke, StrokeCap.Round)
             drawLine(ink, rightEye.copy(x = rightEye.x - stroke), rightEye.copy(x = rightEye.x + stroke), stroke, StrokeCap.Round)
         } else {
             drawCircle(ink, radius = stroke * 1.15f, center = leftEye)
-            if (state in setOf(ConnectionPresentationState.Connecting, ConnectionPresentationState.Switching, ConnectionPresentationState.Disconnecting)) {
+            if (reaction == 0 || concentrating || state in setOf(ConnectionPresentationState.Connecting, ConnectionPresentationState.Switching, ConnectionPresentationState.Disconnecting)) {
                 drawLine(ink, rightEye.copy(x = rightEye.x - stroke), rightEye.copy(x = rightEye.x + stroke), stroke, StrokeCap.Round)
             } else {
                 drawCircle(ink, radius = stroke * 1.15f, center = rightEye)
@@ -1225,25 +1543,30 @@ private fun PxlCatCharacter(state: ConnectionPresentationState, animationsEnable
 
         val nose = androidx.compose.ui.geometry.Offset(size.width * 0.50f, size.height * 0.43f)
         drawCircle(ink, radius = stroke * 0.9f, center = nose)
-        drawLine(ink, nose, nose.copy(y = nose.y + stroke * 2.2f), stroke, StrokeCap.Round)
-        drawArc(
-            color = ink,
-            startAngle = 5f,
-            sweepAngle = 170f,
-            useCenter = false,
-            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.38f, size.height * 0.42f),
-            size = androidx.compose.ui.geometry.Size(size.width * 0.12f, size.height * 0.10f),
-            style = Stroke(stroke, cap = StrokeCap.Round),
-        )
-        drawArc(
-            color = ink,
-            startAngle = 5f,
-            sweepAngle = 170f,
-            useCenter = false,
-            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.50f, size.height * 0.42f),
-            size = androidx.compose.ui.geometry.Size(size.width * 0.12f, size.height * 0.10f),
-            style = Stroke(stroke, cap = StrokeCap.Round),
-        )
+        if (surprised) {
+            drawCircle(ink, radius = stroke * 1.4f, center = nose.copy(y = nose.y + stroke * 3.3f),
+                style = Stroke(stroke * 0.7f))
+        } else {
+            drawLine(ink, nose, nose.copy(y = nose.y + stroke * 2.2f), stroke, StrokeCap.Round)
+            drawArc(
+                color = ink,
+                startAngle = 5f,
+                sweepAngle = 170f,
+                useCenter = false,
+                topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.38f, size.height * 0.42f),
+                size = androidx.compose.ui.geometry.Size(size.width * 0.12f, size.height * 0.10f),
+                style = Stroke(stroke, cap = StrokeCap.Round),
+            )
+            drawArc(
+                color = ink,
+                startAngle = 5f,
+                sweepAngle = 170f,
+                useCenter = false,
+                topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.50f, size.height * 0.42f),
+                size = androidx.compose.ui.geometry.Size(size.width * 0.12f, size.height * 0.10f),
+                style = Stroke(stroke, cap = StrokeCap.Round),
+            )
+        }
         listOf(0.43f, 0.48f).forEach { y ->
             drawLine(
                 ink,
@@ -1382,9 +1705,9 @@ private fun ConnectionControl(
         animationSpec = spring(dampingRatio = 0.78f, stiffness = 650f),
         label = "connect-press",
     )
-    // A pressed M3E control becomes slightly more compact; keep the VPN action recognizably square.
-    val buttonScale = 1f - maxOf(pressMotion * 0.035f, tapMotion.value * 0.11f)
-    val buttonCorner = (52f - maxOf(pressMotion * 16f, tapMotion.value * 8f)).dp
+    val buttonMotion = maxOf(pressMotion, tapMotion.value).coerceAtLeast(0f)
+    val buttonScale = 1f - buttonMotion * 0.08f
+    val buttonCorner = (52f - buttonMotion * 23f).dp
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
@@ -1410,8 +1733,8 @@ private fun ConnectionControl(
             Button(
                 onClick = {
                     if (motionEnabled) clickScope.launch {
-                        tapMotion.snapTo(0.22f)
-                        tapMotion.animateTo(0f, spring(dampingRatio = 0.82f, stiffness = 850f))
+                        tapMotion.snapTo(maxOf(buttonMotion, 0.75f))
+                        tapMotion.animateTo(0f, spring(dampingRatio = 0.68f, stiffness = 360f))
                     }
                     onClick()
                 },
@@ -1486,7 +1809,45 @@ private fun ConnectionControl(
 }
 
 @Composable
-private fun QuickTileCard(onAdd: () -> Unit) {
+private fun QuickTileCard(onAdd: () -> Unit, onHide: (() -> Unit)? = null) {
+    if (onHide != null) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Icon(Icons.Default.DashboardCustomize, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Column {
+                        Text(stringResource(R.string.focus_vpn_tile_title), style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            stringResource(R.string.pxlnet_quick_tile_description),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    FilledTonalButton(onClick = onAdd, modifier = Modifier.weight(2f).pxlPressMotion()) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.focus_vpn_tile_add))
+                    }
+                    TextButton(onClick = onHide, modifier = Modifier.weight(1f).pxlPressMotion()) {
+                        Text(stringResource(R.string.focus_hidden))
+                    }
+                }
+            }
+        }
+        return
+    }
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -1943,8 +2304,20 @@ private fun serverTitle(context: Context, tag: String, type: String = ""): Strin
     ServerRegion.OTHER -> cleanServerTag(tag)
 }
 
+private fun consoleServerName(title: String, protocol: String): String {
+    if (protocol.isBlank()) return title
+    val protocolParts = protocol.split(" · ")
+    val titleParts = title.split('\u2022', '\u00b7').map(String::trim)
+    if (titleParts.size <= protocolParts.size ||
+        !titleParts.takeLast(protocolParts.size).zip(protocolParts).all { (name, part) ->
+            name.equals(part, ignoreCase = true)
+        }
+    ) return title
+    return titleParts.dropLast(protocolParts.size).joinToString(" · ")
+}
+
 @Composable
-private fun ServerLocationIcon(tag: String) {
+internal fun ServerLocationIcon(tag: String) {
     when (serverRegion(tag)) {
         ServerRegion.AUTO -> {
             Icon(
