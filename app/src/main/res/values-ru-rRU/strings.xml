@@ -1075,7 +1075,6 @@
     <string name="pxlnet_server_not_responding">Выбранный сервер не отвечает</string>
     <string name="pxlnet_checking_availability">Проверяем доступность…</string>
     <string name="pxlnet_vpn_changing">Меняем состояние VPN…</string>
-    <string name="pxlnet_vpn_off_ping">VPN выключен · можно проверить задержку</string>
     <string name="pxlnet_check_ping">Проверить задержку</string>
     <string name="pxlnet_add_subscription_first">Сначала добавьте ссылку подписки — серверы появятся автоматически.</string>
     <string name="pxlnet_from_clipboard">Из буфера</string>
@@ -1094,7 +1093,7 @@
     <string name="pxlnet_subscription_missing">Подписка не добавлена</string>
     <string name="pxlnet_add_link_hint">Добавьте ссылку или CFG</string>
     <string name="pxlnet_refresh_subscription">Обновить подписку</string>
-    <string name="pxlnet_measure_ping">Измерить пинг</string>
+    <string name="pxlnet_measure_ping">Проверить пинг</string>
     <string name="pxlnet_protected_delay">Защищено · %1$d мс</string>
     <string name="pxlnet_checking_internet">Проверяем интернет…</string>
     <string name="pxlnet_vpn_no_access">VPN запущен · проверка соединения не прошла</string>
@@ -1156,9 +1155,7 @@
     <string name="pxlnet_latency_website_description">Включает загрузку ответа сайта по HTTPS. Legacy AUTO по-прежнему использует эту проверку.</string>
     <string name="pxlnet_latency_server_short">VPN-сервер</string>
     <string name="pxlnet_check_server_delay">Проверить отклик VPN-сервера</string>
-    <string name="pxlnet_measure_all_servers">Измерить все серверы</string>
     <string name="pxlnet_latency_best_found">Лучший найденный до подключения</string>
-    <string name="pxlnet_latency_auto_explanation">AUTO выбирает сервер, но сам не является отдельным VPN-сервером для измерения.</string>
     <string name="pxlnet_error_details_intro">Ой, что-то пошло не так. Подробности ниже помогут понять причину.</string>
     <string name="pxlnet_error_details_label">Технические подробности</string>
     <string name="pxlnet_error_reason_unknown">Приложение не получило точную причину ошибки.</string>

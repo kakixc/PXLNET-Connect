@@ -316,7 +316,14 @@ fun SFANavHost(
             }
         }
 
-        composable(ProfileRoutes.NewProfile) {
+        composable(
+            route = ProfileRoutes.NewProfile,
+            enterTransition = slideInFromRight,
+            exitTransition = slideOutToLeft,
+            popEnterTransition = slideInFromLeft,
+            popExitTransition = slideOutToRight,
+        ) {
+            val simpleImport = newProfileArgs.simpleImport
             DisposableEffect(Unit) {
                 onDispose { onClearNewProfileArgs() }
             }
@@ -324,15 +331,18 @@ fun SFANavHost(
                 importName = newProfileArgs.importName,
                 importUrl = newProfileArgs.importUrl,
                 qrsData = newProfileArgs.qrsData,
+                simpleImport = simpleImport,
                 onNavigateBack = {
                     onClearNewProfileArgs()
                     navController.navigateUp()
                 },
                 onProfileCreated = { profileId ->
                     onClearNewProfileArgs()
-                    navController.navigate(ProfileRoutes.editProfile(profileId)) {
-                        popUpTo(ProfileRoutes.NewProfile) {
-                            inclusive = true
+                    if (simpleImport) {
+                        navController.navigateUp()
+                    } else {
+                        navController.navigate(ProfileRoutes.editProfile(profileId)) {
+                            popUpTo(ProfileRoutes.NewProfile) { inclusive = true }
                         }
                     }
                 },

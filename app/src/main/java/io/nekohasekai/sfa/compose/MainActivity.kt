@@ -1262,7 +1262,7 @@ class MainActivity :
                     LocalPxlTopBarStatusText provides remoteText,
                 ) {
                     if (rootGlass) {
-                        Box(Modifier.fillMaxSize()) {
+                        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                             Box(Modifier.fillMaxSize().hazeSource(hazeState)) { page() }
                             destinationTopBar?.let { bar ->
                                 Box(
@@ -1282,6 +1282,7 @@ class MainActivity :
                     } else {
                         Column(
                             Modifier.fillMaxSize()
+                                .background(MaterialTheme.colorScheme.background)
                                 .windowInsetsPadding(WindowInsets.statusBars)
                                 .padding(bottom = pageBottomInset),
                         ) {
@@ -1682,10 +1683,7 @@ class MainActivity :
                                             .width(tabWidth)
                                             .height(with(LocalDensity.current) { tabContentHeightPx.toDp() })
                                             .clip(RoundedCornerShape(30.dp))
-                                            .background(
-                                                if (interfaceTheme == PxlUiPreferences.InterfaceTheme.TRIAL) MaterialTheme.colorScheme.secondaryContainer
-                                                else MaterialTheme.colorScheme.primaryContainer,
-                                            ),
+                                            .background(MaterialTheme.colorScheme.primaryContainer),
                                     )
                                 }
                                 Row(

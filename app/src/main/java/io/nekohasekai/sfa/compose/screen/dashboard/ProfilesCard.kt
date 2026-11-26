@@ -581,6 +581,7 @@ fun ProfilesCard(
             onScanResult = { result ->
                 showQRScanSheet = false
                 when (result) {
+                    is QRScanResult.ProfileLink -> onOpenNewProfile(NewProfileArgs(importUrl = result.link, simpleImport = true))
                     is QRScanResult.QRSData -> {
                         coroutineScope.launch {
                             when (val parseResult = importHandler.parseQRSData(result.data)) {

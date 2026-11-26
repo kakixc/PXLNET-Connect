@@ -25,9 +25,7 @@
     <string name="focus_dns_only">Работает только DNS</string>
     <string name="focus_probe_failed">Проверочный адрес не ответил</string>
     <string name="focus_retry">Проверить снова</string>
-    <string name="focus_probe">Проверить серверы в этой сети</string>
     <string name="focus_unchecked">Ещё не проверен</string>
-    <string name="focus_selected">Сейчас выбрано: %1$s</string>
     <string name="focus_current_profile">Сейчас используется на телефоне</string>
     <string name="focus_linked">Ссылка на подписку</string>
     <string name="focus_file">Локальный файл</string>
@@ -86,4 +84,12 @@
     <string name="focus_vpn_tile_add">Добавить плитку</string>
     <string name="focus_version_updates">Версия, язык и обновления</string>
     <string name="focus_source_account">Аккаунт PXLNET</string>
+    <string name="focus_import_title">Добавить сервер или подписку</string>
+    <string name="focus_import_manual">Ввести ссылку</string>
+    <string name="focus_import_link">Ссылка на сервер или подписку</string>
+    <string name="focus_import_name">Название (необязательно)</string>
+    <string name="focus_import_name_help">Оставьте пустым, чтобы взять название из ссылки или подписки.</string>
+    <string name="focus_import_loading">Добавляем…</string>
+    <string name="focus_import_invalid_link">Введите ссылку на подписку или на сервер VLESS или Hysteria2.</string>
+    <string name="focus_import_clipboard_empty">В буфере обмена нет ссылки на сервер или подписку.</string>
 </resources>

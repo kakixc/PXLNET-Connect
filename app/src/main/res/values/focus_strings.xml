@@ -25,9 +25,7 @@
     <string name="focus_dns_only">DNS only is active</string>
     <string name="focus_probe_failed">The check address did not respond</string>
     <string name="focus_retry">Check again</string>
-    <string name="focus_probe">Check servers on this network</string>
     <string name="focus_unchecked">Not checked yet</string>
-    <string name="focus_selected">Current selection: %1$s</string>
     <string name="focus_current_profile">Used on this phone</string>
     <string name="focus_linked">Subscription link</string>
     <string name="focus_file">Local file</string>
@@ -86,4 +84,12 @@
     <string name="focus_vpn_tile_add">Add tile</string>
     <string name="focus_version_updates">Version, language and updates</string>
     <string name="focus_source_account">PXLNET account</string>
+    <string name="focus_import_title">Add server or subscription</string>
+    <string name="focus_import_manual">Enter a link</string>
+    <string name="focus_import_link">Server or subscription link</string>
+    <string name="focus_import_name">Name (optional)</string>
+    <string name="focus_import_name_help">Leave blank to use the name from the link or subscription.</string>
+    <string name="focus_import_loading">Adding…</string>
+    <string name="focus_import_invalid_link">Enter a subscription link or a VLESS or Hysteria2 server link.</string>
+    <string name="focus_import_clipboard_empty">No server or subscription link found in the clipboard.</string>
 </resources>

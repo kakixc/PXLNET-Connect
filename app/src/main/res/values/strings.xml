@@ -249,7 +249,6 @@
     <string name="pxlnet_server_not_responding">The selected server is not responding</string>
     <string name="pxlnet_checking_availability">Checking availability…</string>
     <string name="pxlnet_vpn_changing">Changing VPN state…</string>
-    <string name="pxlnet_vpn_off_ping">VPN is off · latency check is available</string>
     <string name="pxlnet_check_ping">Check latency</string>
     <string name="pxlnet_add_subscription_first">Add a subscription link first. Servers will appear automatically.</string>
     <string name="pxlnet_from_clipboard">From clipboard</string>
@@ -1215,9 +1214,7 @@
     <string name="pxlnet_latency_website_description">Includes the website and its HTTPS response. Legacy AUTO still uses this test.</string>
     <string name="pxlnet_latency_server_short">VPN server</string>
     <string name="pxlnet_check_server_delay">Check VPN server response</string>
-    <string name="pxlnet_measure_all_servers">Measure all servers</string>
     <string name="pxlnet_latency_best_found">Best found before connecting</string>
-    <string name="pxlnet_latency_auto_explanation">AUTO chooses a server; it is not a separate VPN server to measure.</string>
     <string name="pxlnet_error_details_intro">Oops, something went wrong. The details below can help identify the cause.</string>
     <string name="pxlnet_error_details_label">Technical details</string>
     <string name="pxlnet_error_reason_unknown">The app did not receive a specific reason.</string>

@@ -12,8 +12,16 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /** Preferences for app appearance and the home widget, never VPN service or profiles. */
 object PxlUiPreferences {
-    enum class InterfaceTheme { CLASSIC, FOCUS, TRIAL;
+    enum class InterfaceTheme {
+        CLASSIC, FOCUS, TRIAL;
+
         val available: Boolean get() = this != TRIAL || BuildConfig.FOCUS_LAB
+
+        companion object {
+            internal fun fromPersisted(value: String?, focusLab: Boolean = BuildConfig.FOCUS_LAB): InterfaceTheme =
+                entries.firstOrNull { it.name == value && (it != TRIAL || focusLab) }
+                    ?: if (focusLab) TRIAL else CLASSIC
+        }
     }
     enum class FocusDetails { ROUTING, SUBSCRIPTION, HIDDEN }
 
@@ -25,7 +33,7 @@ object PxlUiPreferences {
         val showNavLabels: Boolean = false,
     )
 
-    private val mutableInterfaceTheme = MutableStateFlow(InterfaceTheme.CLASSIC)
+    private val mutableInterfaceTheme = MutableStateFlow(InterfaceTheme.fromPersisted(null))
     val interfaceTheme = mutableInterfaceTheme.asStateFlow()
     private val mutableFocusAppearance = MutableStateFlow(FocusAppearance())
     val focusAppearance = mutableFocusAppearance.asStateFlow()
@@ -106,9 +114,7 @@ object PxlUiPreferences {
 
     fun initialize(context: Context) {
         val preferences = context.applicationContext.getSharedPreferences(fileName, Context.MODE_PRIVATE)
-        mutableInterfaceTheme.value = InterfaceTheme.entries.firstOrNull {
-            it.available && it.name == preferences.getString("interface_theme", null)
-        } ?: InterfaceTheme.CLASSIC
+        mutableInterfaceTheme.value = InterfaceTheme.fromPersisted(preferences.getString("interface_theme", null))
         mutableFocusAppearance.value = FocusAppearance(
             mascot = preferences.getBoolean("focus_mascot", true),
             details = FocusDetails.entries.firstOrNull {

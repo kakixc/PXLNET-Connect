@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -61,6 +63,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -68,6 +71,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.base.SelectableMessageDialog
+import io.nekohasekai.sfa.compose.component.pxlPressMotion
 import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -76,6 +80,7 @@ fun NewProfileScreen(
     importName: String? = null,
     importUrl: String? = null,
     qrsData: ByteArray? = null,
+    simpleImport: Boolean = false,
     onNavigateBack: () -> Unit,
     onProfileCreated: (profileId: Long) -> Unit,
     viewModel: NewProfileViewModel = viewModel(),
@@ -83,8 +88,10 @@ fun NewProfileScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    LaunchedEffect(importName, importUrl, qrsData) {
-        if (qrsData != null) {
+    LaunchedEffect(importName, importUrl, qrsData, simpleImport) {
+        if (simpleImport) {
+            viewModel.initializeSimpleImport(importName, importUrl)
+        } else if (qrsData != null) {
             viewModel.initializeFromQRSImport(importName, qrsData)
         } else {
             viewModel.initializeFromQRImport(importName, importUrl)
@@ -140,7 +147,7 @@ fun NewProfileScreen(
 
     OverrideTopBar {
         TopAppBar(
-            title = { Text(stringResource(R.string.title_new_profile)) },
+            title = { Text(stringResource(if (simpleImport) R.string.focus_import_title else R.string.title_new_profile)) },
             navigationIcon = {
                 IconButton(onClick = onNavigateBack) {
                     Icon(
@@ -154,6 +161,11 @@ fun NewProfileScreen(
                 containerColor = MaterialTheme.colorScheme.surface,
             ),
         )
+    }
+
+    if (simpleImport) {
+        LinkImportForm(uiState, viewModel)
+        return
     }
 
     val bottomInset =
@@ -555,6 +567,47 @@ fun NewProfileScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun LinkImportForm(state: NewProfileUiState, viewModel: NewProfileViewModel) {
+    Column(
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).imePadding()
+            .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        OutlinedTextField(
+            value = state.remoteUrl,
+            onValueChange = viewModel::updateRemoteUrl,
+            label = { Text(stringResource(R.string.focus_import_link)) },
+            modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+            singleLine = true,
+            enabled = !state.isSaving,
+            isError = state.remoteUrlError != null,
+            supportingText = state.remoteUrlError?.let { error -> { Text(error) } },
+        )
+        OutlinedTextField(
+            value = state.name,
+            onValueChange = viewModel::updateName,
+            label = { Text(stringResource(R.string.focus_import_name)) },
+            supportingText = { Text(stringResource(R.string.focus_import_name_help)) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            enabled = !state.isSaving,
+        )
+        Button(
+            onClick = { viewModel.validateAndCreateProfile(simpleImport = true) },
+            modifier = Modifier.fillMaxWidth().pxlPressMotion(enabled = !state.isSaving),
+            enabled = !state.isSaving,
+        ) {
+            if (state.isSaving) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.width(8.dp))
+            }
+            Text(stringResource(if (state.isSaving) R.string.focus_import_loading else R.string.pxlnet_add))
         }
     }
 }

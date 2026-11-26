@@ -45,13 +45,13 @@ internal fun FocusHomeControl(
     requestPending: Boolean,
     reachability: ConnectionReachability,
     server: String?,
+    serverTag: String,
     serverProtocol: String?,
     onChooseServer: (() -> Unit)?,
     onChooseProfile: (() -> Unit)?,
     onConnect: () -> Unit,
     onRetry: (() -> Unit)?,
     onOpenDns: () -> Unit,
-    onPaste: () -> Unit,
     onImport: () -> Unit,
     onLogin: (() -> Unit)?,
     mascot: (@Composable () -> Unit)?,
@@ -104,20 +104,19 @@ internal fun FocusHomeControl(
                 }
                 !hasProfile -> {
                     Text(stringResource(R.string.focus_setup_help), style = MaterialTheme.typography.bodyMedium)
-                    Button(onClick = onPaste, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).pxlPressMotion()) {
-                        Text(stringResource(R.string.focus_paste))
+                    Button(onClick = onImport, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).pxlPressMotion()) {
+                        Text(stringResource(R.string.focus_import_title))
                     }
-                    TextButton(onClick = onImport) { Text(stringResource(R.string.pxlnet_link_cfg)) }
                     if (onLogin != null) TextButton(onClick = onLogin) { Text(stringResource(R.string.pxlnet_login_telegram)) }
                 }
                 !pinnedControls -> {
-                    FocusServerSelection(server, onChooseServer)
+                    FocusServerSelection(server, serverTag, onChooseServer)
                     if (!blocked) FocusConnectButton(serviceStatus, switching, requestPending, onConnect)
                     if (onChooseProfile != null) TextButton(onClick = onChooseProfile) {
                         Text(stringResource(R.string.pxlnet_choose_available_profile))
                     }
                 }
-                else -> FocusServerSelection(server, onChooseServer, serverProtocol, embedded = true)
+                else -> FocusServerSelection(server, serverTag, onChooseServer, serverProtocol, embedded = true)
             }
         }
     }
@@ -126,6 +125,7 @@ internal fun FocusHomeControl(
 @Composable
 private fun FocusServerSelection(
     server: String?,
+    serverTag: String,
     onChooseServer: (() -> Unit)?,
     protocol: String? = null,
     embedded: Boolean = false,
@@ -147,7 +147,7 @@ private fun FocusServerSelection(
             },
             supportingContent = protocol?.takeIf(String::isNotBlank)?.let { { Text(it) } },
             overlineContent = { Text(stringResource(R.string.focus_server)) },
-            leadingContent = { Icon(Icons.Default.Dns, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            leadingContent = { ServerLocationIcon(serverTag) },
             trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
             colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
         )

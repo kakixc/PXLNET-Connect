@@ -297,6 +297,11 @@ fun PxlAccountScreen(
                         }
                     }
                 }
+                selectedProfile?.let { profile ->
+                    TextButton(onClick = { viewModel.editProfile(profile) }, modifier = Modifier.pxlPressMotion()) {
+                        Text(stringResource(R.string.focus_edit_profile))
+                    }
+                }
                 if (!hasSession || uiState.selectedProfileId <= 0) {
                     Button(
                         onClick = { onOpenNewProfile(NewProfileArgs()) },
@@ -612,10 +617,9 @@ private fun FocusAccount(
                     OutlinedButton(onClick = { viewModel.updateProfile(profile) }, enabled = uiState.updatingProfileId == null, modifier = Modifier.pxlPressMotion(uiState.updatingProfileId == null)) {
                         Text(stringResource(R.string.pxlnet_refresh))
                     }
-                } else {
-                    OutlinedButton(onClick = { viewModel.editProfile(profile) }, modifier = Modifier.pxlPressMotion()) {
-                        Text(stringResource(R.string.focus_edit_profile))
-                    }
+                }
+                TextButton(onClick = { viewModel.editProfile(profile) }, modifier = Modifier.pxlPressMotion()) {
+                    Text(stringResource(R.string.focus_edit_profile))
                 }
             } else {
                 Button(onClick = onImport, modifier = Modifier.pxlPressMotion()) { Text(stringResource(R.string.pxlnet_add_existing_subscription)) }
