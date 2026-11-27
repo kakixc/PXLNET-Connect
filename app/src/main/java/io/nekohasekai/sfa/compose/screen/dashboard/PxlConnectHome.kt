@@ -199,7 +199,7 @@ fun DashboardScreen(
     onOpenNewProfile: (NewProfileArgs) -> Unit = {},
     onOpenAppRouting: () -> Unit = {},
     onOpenDns: () -> Unit = {},
-    onOpenThemes: () -> Unit = {},
+    onOpenPersonalization: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel(),
     groupsViewModel: GroupsViewModel? = null,
 ) {
@@ -677,25 +677,26 @@ fun DashboardScreen(
         )
     }
 
-    fun openThemes() {
+    fun closeThemeIntroduction() {
         PxlUiPreferences.saveThemeIntroduction(context, PxlUiPreferences.ThemeIntroduction.DONE)
-        onOpenThemes()
     }
     val showUpgradeIntroduction = themeIntroduction == PxlUiPreferences.ThemeIntroduction.OFFER &&
         uiState.profilesLoaded && (focus || autoGuideHandled) && !showOnboarding
     if (themeIntroductionReplay || showUpgradeIntroduction) {
         AlertDialog(
-            onDismissRequest = { PxlUiPreferences.saveThemeIntroduction(context, PxlUiPreferences.ThemeIntroduction.SHORTCUT) },
+            onDismissRequest = ::closeThemeIntroduction,
             title = { Text(stringResource(R.string.pxl_theme_intro_title)) },
             text = { Text(stringResource(R.string.pxl_theme_intro_body)) },
             confirmButton = {
                 Button(onClick = {
-                    PxlUiPreferences.saveThemeIntroduction(context, PxlUiPreferences.ThemeIntroduction.SHORTCUT,
-                        PxlUiPreferences.InterfaceTheme.TRIAL)
+                    PxlUiPreferences.setInterfaceTheme(context, PxlUiPreferences.InterfaceTheme.TRIAL)
                 }) { Text(stringResource(R.string.pxl_theme_intro_apply)) }
             },
             dismissButton = {
-                TextButton(onClick = ::openThemes) { Text(stringResource(R.string.pxl_theme_intro_preview)) }
+                TextButton(onClick = {
+                    closeThemeIntroduction()
+                    onOpenPersonalization()
+                }) { Text(stringResource(R.string.pxl_theme_intro_preview)) }
             },
         )
     }
@@ -917,14 +918,6 @@ fun DashboardScreen(
                         mascot = if (focusAppearance.mascot) ({
                             PxlCatCharacter(connectionState, mascotAnimationsEnabled, onMascotTap, reachability)
                         }) else null,
-                    )
-                }
-            }
-            if (themeIntroduction == PxlUiPreferences.ThemeIntroduction.SHORTCUT) item {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    androidx.compose.material3.AssistChip(
-                        onClick = ::openThemes,
-                        label = { Text(stringResource(R.string.pxl_theme_intro_shortcut)) },
                     )
                 }
             }

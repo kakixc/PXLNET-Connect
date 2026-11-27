@@ -96,7 +96,6 @@
     <string name="pxl_theme_intro_body">В «Пульте» кнопка VPN всегда внизу, а сервер и профиль можно выбрать прямо на главном экране. Тему можно сменить в любое время.</string>
     <string name="pxl_theme_intro_apply">Перейти на «Пульт»</string>
     <string name="pxl_theme_intro_preview">Посмотреть темы</string>
-    <string name="pxl_theme_intro_shortcut">Темы</string>
     <string name="pxl_theme_intro_replay">Показать знакомство с «Пультом»</string>
     <string name="pxl_theme_intro_replay_summary">Открыть карточку выбора темы, которая появляется после обновления.</string>
     <string name="pxl_home_current_profile">Текущий профиль</string>

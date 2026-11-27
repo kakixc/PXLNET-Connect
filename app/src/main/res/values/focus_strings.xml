@@ -96,7 +96,6 @@
     <string name="pxl_theme_intro_body">Console keeps the VPN button at the bottom and puts the server and profile controls on the main screen. You can change themes anytime.</string>
     <string name="pxl_theme_intro_apply">Switch to Console</string>
     <string name="pxl_theme_intro_preview">View themes</string>
-    <string name="pxl_theme_intro_shortcut">Themes</string>
     <string name="pxl_theme_intro_replay">Show the Console introduction</string>
     <string name="pxl_theme_intro_replay_summary">Open the theme prompt shown after updating.</string>
     <string name="pxl_home_current_profile">Current profile</string>

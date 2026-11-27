@@ -27,7 +27,7 @@ object PxlUiPreferences {
                     ?: if (focusLab && defaultToConsole) TRIAL else CLASSIC
         }
     }
-    enum class ThemeIntroduction { OFFER, SHORTCUT, DONE }
+    enum class ThemeIntroduction { OFFER, DONE }
 
     internal data class ThemeDefaults(val theme: InterfaceTheme, val introduction: ThemeIntroduction)
 
@@ -147,7 +147,9 @@ object PxlUiPreferences {
         val preferences = context.applicationContext.getSharedPreferences(fileName, Context.MODE_PRIVATE)
         val explicitTheme = preferences.getString("interface_theme", null)
         var defaultTheme = preferences.getString("interface_theme_default", null)
-        var introduction = ThemeIntroduction.entries.firstOrNull { it.name == preferences.getString("theme_introduction", null) }
+        var introduction = preferences.getString("theme_introduction", null)?.let {
+            if (it == ThemeIntroduction.OFFER.name) ThemeIntroduction.OFFER else ThemeIntroduction.DONE
+        }
         if (defaultTheme == null) {
             @Suppress("DEPRECATION")
             val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
