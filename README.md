@@ -1,107 +1,57 @@
-# PXLNet Connect
+# PXLNET Connect
 
-## 📥 Скачать PXLNET Connect
+[Русская версия](README.ru.md) · [Official website](https://kakixc.github.io/PXLNET-Connect/) · [Release notes](https://github.com/kakixc/PXLNET-Connect/releases)
 
-[![Universal](https://img.shields.io/badge/Download-Universal-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/kakixc/PXLNET-Connect/releases/download/v0.7.0/PXLNET-Connect-0.7.0-universal.apk)
+[![Latest release](https://img.shields.io/github/v/release/kakixc/PXLNET-Connect)](https://github.com/kakixc/PXLNET-Connect/releases/latest)
+[![Android 7.0+](https://img.shields.io/badge/Android-7.0%2B-3DDC84?logo=android)](#download)
+[![GPLv3 or later](https://img.shields.io/badge/License-GPLv3%2B-blue)](LICENSE)
 
-[![ARM64-v8a](https://img.shields.io/badge/Download-ARM64--v8a-181717?style=for-the-badge&logo=android&logoColor=white)](https://github.com/kakixc/PXLNET-Connect/releases/download/v0.7.0/PXLNET-Connect-0.7.0-arm64-v8a.apk)
+PXLNET Connect is an Android VPN client for the PXLNET service. Sign in with PXL ID to load your linked subscription, or import a server or subscription link without an account.
 
-**Universal** — выбирайте, если не знаете архитектуру устройства.  
-**ARM64-v8a** — для большинства современных Android-смартфонов, сборка немного компактнее.
+## Download
 
-[Все релизы](https://github.com/kakixc/PXLNET-Connect/releases)
+| PXLNET Connect 0.7.0 | Choose this build if… |
+| --- | --- |
+| [ARM64-v8a APK](https://github.com/kakixc/PXLNET-Connect/releases/download/v0.7.0/PXLNET-Connect-0.7.0-arm64-v8a.apk) | Your Android device uses ARM64, as most modern phones do. |
+| [Universal APK](https://github.com/kakixc/PXLNET-Connect/releases/download/v0.7.0/PXLNET-Connect-0.7.0-universal.apk) | You are unsure which architecture to choose or need another supported ABI. |
 
-**PXLNet Connect** — Android VPN-клиент на базе sing-box для сервиса PXLNet.
+The standard APK requires **Android 7.0 or later**. See the [latest release](https://github.com/kakixc/PXLNET-Connect/releases/latest) for other builds and SHA-256 checksums. If Connect is already installed, check for updates in the app.
 
-Поддерживает VLESS, Hysteria2, Smart Routing, автоматический выбор серверов,
-мониторинг состояния узлов и интеграцию с аккаунтом PXLNet.
+## Screenshots
 
-## Что уже работает
+| Console | PXLNET account | Expressive DNS |
+| :---: | :---: | :---: |
+| <img src="docs/assets/screenshots/connect-070-home.webp" width="220" alt="Console home screen with the selected server and profile"> | <img src="docs/assets/screenshots/connect-070-account.webp" width="220" alt="Account screen with email and Telegram sign-in"> | <img src="docs/assets/screenshots/connect-070-dns.webp" width="220" alt="Expressive DNS screen with a demo profile"> |
 
-- настоящий VPN-туннель на базе sing-box;
-- добавление удалённой подписки по URL без Telegram-входа;
-- обычные и Base64-подписки с `vless://`, `hysteria2://` и `hy2://`;
-- VLESS + TLS/Reality/uTLS и Hysteria2 + TLS/obfs;
-- автоматическая группировка серверов, режим AUTO и ручной выбор узла;
-- флаги Германии и Финляндии по названию сервера;
-- замер задержки узлов, текущая скорость и объём трафика;
-- чтение лимита и срока подписки из заголовка `subscription-userinfo`;
-- автообновление подписки в фоне;
-- вход в PXL ID по почте с одноразовым кодом. Вход через Telegram и привязка существующей подписки через Telegram доступны на экране аккаунта;
-- гостевой режим по обычной ссылке подписки без обязательного аккаунта;
-- единый раздел экосистемы: аккаунт, тариф, продление, новости, состояние сервисов и поддержка;
-- отображение аккаунта, активности и срока подписки с автоматической синхронизацией профиля;
-- PXL Guard: повторная проверка сбоя и переключение на доступный сервер при отказе выбранного узла;
-- локальный экран состояния серверов и задержки, инструкция Always-on VPN;
-- обезличенная отправка диагностики в Telegram с удалением UUID, токенов и адресов;
-- быстрая проверка типовых ошибок и подготовка отчёта для поддержки;
-- проверка новых версий через релизы PXLNET Connect на GitHub;
-- простой пользовательский режим; Логи, Инструменты и расширенные настройки скрыты до включения режима разработчика;
-- Smart Routing: локальная сеть, российские IP/домены и государственные сайты напрямую;
-- три понятных режима: весь трафик через VPN, Smart Routing и только выбранные приложения;
-- Expressive DNS с собственными DNS-профилями, отдельно или вместе с VPN;
-- три темы интерфейса в разделе **Настройки → Персонализация** — «Классика», «Фокус» и «Пульт». Новая установка открывается в теме «Пульт»;
-- поиск приложений, массовый выбор, локальные исключения и хранение списка только на устройстве;
-- контекстный главный экран: действия импорта и добавления плитки скрываются, когда уже не нужны;
-- русский интерфейс для экранов PXLNET и английский fallback для остальных системных языков;
-- фирменная монохромная иконка PXLNET в системном VPN-уведомлении;
-- импорт нативной конфигурации sing-box сохранён для расширенного режима.
+Actual screens from 0.7.0 with demo profiles.
 
-## Быстрый тест на телефоне
+## Features
 
-1. Скачать ARM64-v8a или Universal APK кнопкой выше и установить поверх прежней бета-версии.
-2. Открыть «Аккаунт» и войти по почте, чтобы загрузить подписку из PXL ID.
-3. Для гостевого подключения нажать **«+»**, вставить ссылку на сервер или подписку и сохранить.
-4. Нажать большую кнопку запуска и подтвердить системный запрос Android на создание VPN.
-5. Открыть «Выбор сервера». Для ручного узла можно проверить отклик VPN-сервера до подключения; AUTO остаётся автоматическим выбором и не имеет отдельного серверного пинга.
+- **Account and profiles.** Sign in using a one-time email code or Telegram. Use a linked PXL ID subscription, or import a link as a guest. Connect can refresh remote profiles in the background.
+- **Connection controls.** Select a server manually or use AUTO. See the selected profile, connection status and transfer rates. PXL Guard can check a failure again and switch to an available server.
+- **Smart Routing.** Route all traffic, use Smart Routing rules, or select individual apps for the VPN.
+- **Expressive DNS.** Pick your own DNS service, check whether it responds and create profiles with domain or app rules. Use it on its own or alongside the VPN.
+- **Appearance.** Choose Classic, Focus or Console in **Settings → Personalization**. New installs open in Console.
 
-Официальные release APK устанавливаются поверх существующей версии Connect, если подпись совпадает и код уже установленной версии не выше кода скачанного APK. Ссылки подписок в исходники и APK не вшиваются.
+## Supported protocols
 
-## Сборка
+| Protocol | Engine | Supported options |
+| --- | --- | --- |
+| VLESS | sing-box | Configurations supported by the bundled sing-box, including TLS and REALITY. |
+| VLESS with XHTTP | Xray | TLS or REALITY in the standard Android 7.0+ build. |
+| Hysteria2 | sing-box | TLS and optional obfuscation. Links use `hysteria2://` or `hy2://`. |
 
-Для сборки на Windows нужны Android SDK (API 37.1), NDK 28.0.13004108, JDK 21 и PowerShell 7. Для libbox используется Go 1.25.12. Нативные библиотеки для универсального APK собираются для четырёх ABI — armeabi-v7a, arm64-v8a, x86 и x86_64.
+Connect accepts server links, plain or Base64 subscriptions and native sing-box JSON in advanced mode. The `otherLegacy` source-build flavor targets Android 5–6 and packages libbox without Xray.
 
-Из корня репозитория инициализируйте подмодуль Termux и соберите libbox из sing-box `v1.14.0-beta.7`.
+## Build and contribute
 
-```powershell
-git submodule update --init --recursive
-git clone --branch v1.14.0-beta.7 https://github.com/SagerNet/sing-box.git third_party/sing-box
-git -C third_party/sing-box apply ../../patches/sing-box-pxlnet.patch
-git -C third_party/sing-box apply ../../patches/sing-box-server-probe.patch
-git -C third_party/sing-box apply ../../patches/sing-box-preconnect-probe.patch
-$env:GOROOT = 'путь-к-Go-1.25.12'
-$env:ANDROID_HOME = 'путь-к-Android-SDK'
-$env:ANDROID_NDK_HOME = Join-Path $env:ANDROID_HOME 'ndk/28.0.13004108'
-$env:JAVA_HOME = 'путь-к-JDK-21'
-$env:GOPATH = Join-Path (Get-Location).Path '.build-tools/gopath'
-$env:GOCACHE = Join-Path (Get-Location).Path '.build-tools/gocache'
-$env:GOTELEMETRY = 'off'
-$env:GOTOOLCHAIN = 'local'
-$env:PATH = "$env:GOROOT\bin;$env:GOPATH\bin;$env:PATH"
-& "$env:GOROOT\bin\go.exe" install github.com/sagernet/gomobile/cmd/gomobile@v0.1.12 github.com/sagernet/gomobile/cmd/gobind@v0.1.12
-.\scripts\build-libbox.ps1
-```
+- [Build from source on Windows](BUILDING.md)
+- [Contribution guide](CONTRIBUTING.md)
+- [Report a bug or request a feature](https://github.com/kakixc/PXLNET-Connect/issues/new/choose)
+- [Report a security issue](SECURITY.md)
 
-Для VLESS с транспортом XHTTP сборки `other` и `play` на Android 7.0+ используют Xray. Обычные подключения по-прежнему работают через sing-box. Сборка `otherLegacy` для Android 5 и 6 использует libbox без Xray.
+## License and credits
 
-Перед сборкой `other` или `play` соберите и положите Xray AAR в `app/libs`. Скрипт сборки Xray выбирает Go 1.26.0.
+PXLNET Connect is based on [sing-box for Android](https://github.com/SagerNet/sing-box-for-android). The project uses **GPLv3 or later**. See the [upstream notice and naming restriction](LICENSE), the [full GPLv3 text](LICENSES/GPL-3.0.txt) and [third-party credits](THIRD_PARTY_NOTICES.md). Connect is an independent project.
 
-```powershell
-pwsh -File .\third_party\xray\build-xray-aar.ps1 -GoExe "$env:GOROOT\bin\go.exe" -RunName connect-xray
-Copy-Item .\.build-tools\xray-build\connect-xray\out\pxlnet-xray.aar .\app\libs\
-```
-
-Для локальной проверки соберите debug APK и запустите unit-тесты.
-
-```powershell
-.\gradlew.bat :app:testOtherDebugUnitTest
-.\gradlew.bat :app:assembleOtherDebug
-```
-
-## Происхождение и лицензия
-
-PXLNET Connect — переработанный и переименованный форк официального [sing-box for Android](https://github.com/SagerNet/sing-box-for-android) с ядром [sing-box](https://github.com/SagerNet/sing-box). Пользовательский интерфейс и часть продуктовых идей вдохновлены открытым проектом [Happ Android](https://github.com/Happ-proxy/happ-android); PXLNET Connect не является официальной сборкой Happ и не заявляет связь с его авторами. Исходные проекты и этот форк распространяются по GPLv3; полный текст и дополнительное ограничение на использование исходного имени находятся в `LICENSE`. PXLNET Connect не заявляет связь или одобрение со стороны SagerNet.
-
-Новости сервиса публикуются в [Telegram-канале @pxlnet](https://t.me/pxlnet), поддержка и вход в аккаунт доступны через [@pxlnet_bot](https://t.me/pxlnet_bot).
-
-В PXLNET Connect отсутствуют функции сокрытия VPN от других приложений и сервисов. Xposed/VPN-hide компоненты исходного форка удалены из кода и сборки.
+[News on Telegram](https://t.me/pxlnet) · [PXLNET support](https://t.me/pxlnet_bot)

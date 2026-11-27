@@ -1,0 +1,29 @@
+name: Feature request / Предложение
+description: Suggest a feature or improvement for PXLNET Connect.
+title: '[Feature] '
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Reports in English and Russian are welcome. / Можно писать на русском или английском.
+
+        Use example data in descriptions and mockups. / Используйте вымышленные данные в примерах.
+  - type: textarea
+    id: goal
+    attributes:
+      label: What would you like to do? / Что вы хотите сделать?
+      description: Describe the task and what makes it difficult today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed improvement / Как можно улучшить?
+      description: Explain what should happen in the app and when.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Workaround or examples / Обходной вариант или примеры
+      description: Optional. Include an example or a related issue if it helps.

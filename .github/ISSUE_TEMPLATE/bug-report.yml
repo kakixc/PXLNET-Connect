@@ -1,0 +1,36 @@
+name: Bug report / Ошибка
+description: Report an issue in PXLNET Connect or a regression after updating.
+title: '[Bug] '
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Reports in English and Russian are welcome. / Можно писать на русском или английском.
+
+        This report is public. Remove subscription URLs, tokens, credentials, email addresses, private server data and other identifying details from logs and screenshots. For vulnerabilities, follow the [security policy](https://github.com/kakixc/PXLNET-Connect/blob/main/SECURITY.md).
+  - type: input
+    id: environment
+    attributes:
+      label: Connect version and device / Версия и устройство
+      placeholder: '0.7.0, Android 15, Pixel 7'
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened? / Что произошло?
+      description: Include what you expected instead. / Укажите ожидаемый результат.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / Как повторить
+      description: Describe the network type and selected mode if they matter. Use a demo profile if possible.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted diagnostics or screenshots / Обезличенные логи или скриншоты
+      description: Optional. Review attachments before submitting. / Проверьте, что во вложениях нет приватных данных.
