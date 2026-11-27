@@ -1,11 +1,11 @@
 {
-  "name": "PXLNet Connect",
-  "short_name": "PXLNet",
+  "name": "PXLNET Connect",
+  "short_name": "PXLNET Connect",
   "icons": [
     { "src": "assets/icons/favicon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "assets/icons/favicon-512.png", "sizes": "512x512", "type": "image/png" }
   ],
-  "theme_color": "#08080d",
-  "background_color": "#08080d",
+  "theme_color": "#101116",
+  "background_color": "#101116",
   "display": "standalone"
 }

@@ -1,476 +1,164 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PXLNet Connect — Android VPN-клиент</title>
-<meta name="description" content="PXLNet Connect — Android-клиент на базе sing-box с VLESS, Hysteria2, Smart Routing и автоматическим выбором серверов.">
-<link rel="canonical" href="https://kakixc.github.io/PXLNET-Connect/">
-
-<!-- Favicons -->
-<link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32x32.png">
-<link rel="icon" type="image/png" sizes="16x16" href="assets/icons/favicon-16x16.png">
-<link rel="icon" type="image/png" sizes="192x192" href="assets/icons/favicon-192.png">
-<link rel="apple-touch-icon" sizes="180x180" href="assets/icons/apple-touch-icon.png">
-<link rel="manifest" href="site.webmanifest">
-<meta name="theme-color" content="#08080d">
-
-<!-- Open Graph -->
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="PXLNet Connect">
-<meta property="og:title" content="PXLNet Connect — Android VPN-клиент">
-<meta property="og:description" content="Android-клиент PXLNet на базе sing-box: VLESS, Hysteria2, Smart Routing и автоматический выбор серверов в едином аккаунте PXLNet.">
-<meta property="og:url" content="https://kakixc.github.io/PXLNET-Connect/">
-<meta property="og:image" content="https://kakixc.github.io/PXLNET-Connect/assets/og-image.png">
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
-<meta property="og:locale" content="ru_RU">
-
-<!-- Twitter -->
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="PXLNet Connect — Android VPN-клиент">
-<meta name="twitter:description" content="Android-клиент PXLNet на базе sing-box: VLESS, Hysteria2, Smart Routing и автоматический выбор серверов.">
-<meta name="twitter:image" content="https://kakixc.github.io/PXLNET-Connect/assets/og-image.png">
-
-<link rel="stylesheet" href="style.css">
-
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "SoftwareApplication",
-  "name": "PXLNet Connect",
-  "operatingSystem": "Android",
-  "applicationCategory": "UtilitiesApplication",
-  "description": "Android-клиент PXLNet на базе sing-box с поддержкой VLESS, Hysteria2 и Smart Routing.",
-  "url": "https://kakixc.github.io/PXLNET-Connect/",
-  "downloadUrl": "https://github.com/kakixc/PXLNET-Connect/releases/latest",
-  "softwareVersion": "Beta"
-}
-</script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PXLNET Connect — VPN для Android</title>
+  <meta name="description" content="PXLNET Connect для Android. Вход по почте через PXL ID, Smart Routing, VLESS XHTTP и Expressive DNS.">
+  <meta name="theme-color" content="#101116">
+  <link rel="canonical" href="https://kakixc.github.io/PXLNET-Connect/">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32x32.png">
+  <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="PXLNET Connect">
+  <meta property="og:title" content="PXLNET Connect — VPN для Android">
+  <meta property="og:description" content="Вход по почте, новый «Пульт», VLESS XHTTP и Expressive DNS.">
+  <meta property="og:url" content="https://kakixc.github.io/PXLNET-Connect/">
+  <meta property="og:image" content="https://kakixc.github.io/PXLNET-Connect/assets/connect-070-social.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="style.css">
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "PXLNET Connect",
+      "applicationCategory": "UtilitiesApplication",
+      "operatingSystem": "Android",
+      "softwareVersion": "0.7.0",
+      "url": "https://kakixc.github.io/PXLNET-Connect/",
+      "downloadUrl": "https://github.com/kakixc/PXLNET-Connect/releases/latest"
+    }
+  </script>
 </head>
 <body>
-
-<canvas id="network-canvas" aria-hidden="true"></canvas>
-<div class="bg-glow" aria-hidden="true"></div>
-
-<a href="#main" class="visually-hidden">Перейти к содержимому</a>
-
-<header class="site-header">
-  <div class="container">
-    <a href="#top" class="brand">
-      <img src="assets/logo-mark.png" alt="" width="26" height="26">
-      <span>PXLNet Connect</span>
-      <span class="badge beta-badge"><span class="dot" aria-hidden="true"></span>Beta</span>
-    </a>
-
-    <nav class="nav-links" aria-label="Основная навигация">
-      <a href="#features">Возможности</a>
-      <a href="#privacy">Приватность</a>
-      <a href="#interface">Интерфейс</a>
-      <a href="#download">Скачать</a>
-      <a href="#opensource">Open source</a>
-      <a href="#resources">Документация</a>
-    </nav>
-
-    <div class="header-actions">
-      <a class="btn btn-secondary btn-sm" href="https://github.com/kakixc/PXLNET-Connect" target="_blank" rel="noopener">
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.73.5.75 5.48.75 11.75c0 5.02 3.26 9.28 7.78 10.78.57.1.78-.25.78-.55 0-.27-.01-1.17-.02-2.12-3.16.69-3.83-1.34-3.83-1.34-.52-1.31-1.26-1.66-1.26-1.66-1.03-.7.08-.69.08-.69 1.14.08 1.74 1.17 1.74 1.17 1.01 1.73 2.65 1.23 3.3.94.1-.73.4-1.23.72-1.51-2.52-.29-5.17-1.26-5.17-5.6 0-1.24.44-2.25 1.17-3.04-.12-.29-.51-1.45.11-3.02 0 0 .96-.31 3.14 1.16a10.9 10.9 0 0 1 5.72 0c2.18-1.47 3.14-1.16 3.14-1.16.62 1.57.23 2.73.11 3.02.73.79 1.17 1.8 1.17 3.04 0 4.35-2.65 5.31-5.18 5.59.41.35.77 1.04.77 2.11 0 1.52-.01 2.75-.01 3.12 0 .3.2.66.79.55 4.51-1.51 7.77-5.76 7.77-10.78C23.25 5.48 18.27.5 12 .5Z"/></svg>
-        GitHub
-      </a>
-      <a class="btn btn-primary btn-sm" href="https://github.com/kakixc/PXLNET-Connect/releases/latest" target="_blank" rel="noopener">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v13"/><path d="m6 11 6 6 6-6"/><path d="M5 21h14"/></svg>
-        Скачать
-      </a>
-      <button class="nav-toggle" aria-expanded="false" aria-controls="mobile-nav" id="navToggle" aria-label="Открыть меню">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
-      </button>
+  <a class="skip" href="#main">К содержанию</a>
+  <header class="site-header" id="top">
+    <div class="shell header-inner">
+      <a class="brand" href="#top"><img src="assets/logo-mark@2x.png" alt="" width="32" height="32">PXLNET Connect</a>
+      <nav class="menu" aria-label="Навигация по странице">
+        <a href="#features">Возможности</a>
+        <a href="#interface">Интерфейс</a>
+        <a href="#quickstart">Установка</a>
+      </nav>
+      <a class="button button-outline header-download" href="#download">Скачать <span aria-hidden="true">↓</span></a>
     </div>
-  </div>
-</header>
+  </header>
 
-<nav id="mobile-nav" class="mobile-nav" aria-label="Мобильная навигация">
-  <a href="#features">Возможности</a>
-  <a href="#privacy">Приватность</a>
-  <a href="#interface">Интерфейс</a>
-  <a href="#download">Скачать</a>
-  <a href="#opensource">Open source</a>
-  <a href="#resources">Документация</a>
-  <a class="btn btn-primary btn-block" href="https://github.com/kakixc/PXLNET-Connect/releases/latest" target="_blank" rel="noopener">Скачать последнюю версию</a>
-</nav>
-
-<main id="main">
-
-  <!-- HERO -->
-  <section class="hero" id="top" style="border-top:none;">
-    <div class="container hero-inner">
-      <div class="hero-logo">
-        <img src="assets/logo-mark@2x.png" alt="Логотип PXLNet" width="88" height="88">
-      </div>
-      <div class="hero-divider" aria-hidden="true"></div>
-      <div class="hero-content">
-        <div class="eyebrow">
-          <span class="badge"><span class="dot" aria-hidden="true"></span>Beta</span>
-          <span class="eyebrow-text">Android · sing-box</span>
+  <main id="main">
+    <section class="shell hero" aria-labelledby="product-name">
+      <div class="hero-copy">
+        <a class="release-link" href="https://github.com/kakixc/PXLNET-Connect/releases/tag/v0.7.0">Версия 0.7.0 <span aria-hidden="true">↗</span></a>
+        <h1 id="product-name">PXLNET <span>Connect</span></h1>
+        <p class="hero-lead">VPN-клиент для Android с выбором сервера, профиля и маршрутизации.</p>
+        <div class="actions">
+          <a class="button button-primary" href="https://github.com/kakixc/PXLNET-Connect/releases/download/v0.7.0/PXLNET-Connect-0.7.0-universal.apk">Скачать APK <span aria-hidden="true">↓</span></a>
+          <a class="text-link" href="#download">Выбрать сборку <span aria-hidden="true">↘</span></a>
         </div>
-        <h1>PXLNet <span class="accent">Connect</span></h1>
-        <p class="hero-subtitle">Android-клиент PXLNet на базе sing-box</p>
-        <p class="hero-desc">VLESS, Hysteria2, Smart Routing, автоматический выбор серверов и единый аккаунт PXLNet — всё в одном приложении.</p>
-
-        <div class="hero-actions">
-          <a class="btn btn-primary" href="https://github.com/kakixc/PXLNET-Connect/releases/latest" target="_blank" rel="noopener">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v13"/><path d="m6 11 6 6 6-6"/><path d="M5 21h14"/></svg>
-            Скачать последнюю версию
-          </a>
-          <a class="btn btn-secondary" href="https://github.com/kakixc/PXLNET-Connect" target="_blank" rel="noopener">
-            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.73.5.75 5.48.75 11.75c0 5.02 3.26 9.28 7.78 10.78.57.1.78-.25.78-.55 0-.27-.01-1.17-.02-2.12-3.16.69-3.83-1.34-3.83-1.34-.52-1.31-1.26-1.66-1.26-1.66-1.03-.7.08-.69.08-.69 1.14.08 1.74 1.17 1.74 1.17 1.01 1.73 2.65 1.23 3.3.94.1-.73.4-1.23.72-1.51-2.52-.29-5.17-1.26-5.17-5.6 0-1.24.44-2.25 1.17-3.04-.12-.29-.51-1.45.11-3.02 0 0 .96-.31 3.14 1.16a10.9 10.9 0 0 1 5.72 0c2.18-1.47 3.14-1.16 3.14-1.16.62 1.57.23 2.73.11 3.02.73.79 1.17 1.8 1.17 3.04 0 4.35-2.65 5.31-5.18 5.59.41.35.77 1.04.77 2.11 0 1.52-.01 2.75-.01 3.12 0 .3.2.66.79.55 4.51-1.51 7.77-5.76 7.77-10.78C23.25 5.48 18.27.5 12 .5Z"/></svg>
-            GitHub
-          </a>
-        </div>
-
-        <div class="hero-protocols">
-          <span class="protocol-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h8l-1 8 10-12h-8l1-8Z"/></svg>VLESS</span>
-          <span class="protocol-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>Hysteria2</span>
-          <span class="protocol-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8.3 6h7.2M8.3 6 16 16"/></svg>Smart Routing</span>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- FEATURES -->
-  <section id="features">
-    <div class="container">
-      <div class="section-head reveal">
-        <span class="section-eyebrow">Возможности</span>
-        <h2>Всё нужное для стабильного подключения</h2>
-        <p>PXLNet Connect берёт на себя выбор сервера, маршрутизацию трафика и контроль состояния — вручную настраивать почти ничего не нужно.</p>
+        <p class="compatibility">Для Android 7.0 и новее</p>
       </div>
 
+      <div class="hero-visual">
+        <div class="hero-dns" aria-hidden="true"></div>
+        <img class="hero-phone" src="assets/screenshots/connect-070-home.webp" width="720" height="1498" fetchpriority="high" alt="Главный экран «Пульт» с выбором сервера, профиля и кнопкой VPN">
+      </div>
+    </section>
+
+    <section id="features" class="shell section">
+      <div class="section-heading">
+        <h2>Подключение в одном приложении</h2>
+        <p>Войти в аккаунт, настроить DNS или выбрать, какой трафик пойдёт через VPN.</p>
+      </div>
       <div class="feature-grid">
-        <article class="feature-card reveal">
-          <div class="feature-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><circle cx="7" cy="7.5" r="1"/><circle cx="7" cy="16.5" r="1"/></svg>
+        <article class="feature feature-account">
+          <div class="feature-copy">
+            <h3>PXL ID</h3>
+            <p>Вход по почте с одноразовым кодом. Можно войти через Telegram, привязать существующую подписку или импортировать её по ссылке.</p>
           </div>
-          <h3>Smart Server</h3>
-          <p>Автоматически выбирает подходящий сервер, ориентируясь на задержку и доступность.</p>
+          <img src="assets/screenshots/connect-070-account.webp" width="720" height="1498" loading="lazy" alt="Экран аккаунта с кнопками входа по почте и через Telegram">
         </article>
-
-        <article class="feature-card reveal">
-          <div class="feature-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8.3 6h7.2M18 8.5V16"/></svg>
+        <article class="feature feature-dns">
+          <div class="feature-copy">
+            <h3>Expressive DNS</h3>
+            <p>Свои DNS-профили, правила для доменов и приложений, проверка сервера. Можно использовать отдельно или вместе с VPN.</p>
           </div>
-          <h3>Smart Routing</h3>
-          <p>Направляет трафик по правилам и оставляет локальные или нужные направления напрямую.</p>
+          <img src="assets/screenshots/connect-070-dns.webp" width="720" height="1498" loading="lazy" alt="Expressive DNS с выбранным демонстрационным профилем и проверкой сервера">
         </article>
-
-        <article class="feature-card reveal">
-          <div class="feature-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h8l-1 8 10-12h-8l1-8Z"/></svg>
+        <article class="feature feature-routing" id="modes">
+          <div class="feature-copy">
+            <h3>Smart Routing</h3>
+            <p>Выберите, какой трафик проходит через VPN.</p>
           </div>
-          <h3>VLESS &amp; Hysteria2</h3>
-          <p>Поддержка современных протоколов подключения с упором на скорость и устойчивость.</p>
-        </article>
-
-        <article class="feature-card reveal">
-          <div class="feature-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
-          </div>
-          <h3>Server Status</h3>
-          <p>Состояние серверов и задержка отображаются прямо в приложении в реальном времени.</p>
-        </article>
-
-        <article class="feature-card reveal">
-          <div class="feature-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20c1.5-4 4.2-6 7.5-6s6 2 7.5 6"/></svg>
-          </div>
-          <h3>PXLNet Account</h3>
-          <p>Аккаунт, подписка, устройства и состояние сервисов — в одном интерфейсе.</p>
-        </article>
-
-        <article class="feature-card reveal">
-          <div class="feature-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4.5 6v6c0 4.5 3.1 7.4 7.5 9 4.4-1.6 7.5-4.5 7.5-9V6L12 3Z"/><path d="m9.5 12 1.8 1.8L15 10.2"/></svg>
-          </div>
-          <h3>PXL Guard</h3>
-          <p>Повторно проверяет сбои и автоматически переключает на доступный сервер.</p>
-        </article>
-      </div>
-    </div>
-  </section>
-
-  <!-- TRAFFIC MODES -->
-  <section id="modes">
-    <div class="container">
-      <div class="section-head reveal">
-        <span class="section-eyebrow">Маршрутизация</span>
-        <h2>Три режима — под любую задачу</h2>
-        <p>Можно направить через VPN весь трафик устройства, довериться Smart Routing или выбрать приложения вручную — выбор сохраняется локально на устройстве.</p>
-      </div>
-
-      <div class="feature-grid">
-        <article class="feature-card reveal">
-          <div class="feature-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12h8"/></svg>
-          </div>
-          <h3>Весь трафик</h3>
-          <p>Все подключения устройства идут через VPN — самый простой и предсказуемый режим.</p>
-        </article>
-
-        <article class="feature-card reveal">
-          <div class="feature-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8.3 6h7.2M18 8.5V16"/></svg>
-          </div>
-          <h3>Smart Routing</h3>
-          <p>Направляет трафик по правилам и оставляет локальные или нужные направления напрямую.</p>
-        </article>
-
-        <article class="feature-card reveal">
-          <div class="feature-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="14" y="4" width="7" height="7" rx="1.5"/><rect x="3" y="15" width="7" height="7" rx="1.5"/><rect x="14" y="15" width="7" height="7" rx="1.5"/></svg>
-          </div>
-          <h3>Выбранные приложения</h3>
-          <p>Через VPN идут только выбранные вами приложения — с поиском по списку и исключениями, которые хранятся локально на устройстве.</p>
-        </article>
-      </div>
-    </div>
-  </section>
-
-  <!-- PRIVACY -->
-  <section id="privacy">
-    <div class="container">
-      <div class="section-head reveal">
-        <span class="section-eyebrow">Приватность</span>
-        <h2>Приватность и доверие</h2>
-        <p>PXLNet Connect не скрывает наличие VPN от других приложений и не требует пароля — только то, что нужно для стабильной и прозрачной работы.</p>
-      </div>
-
-      <div class="feature-grid">
-        <article class="feature-card reveal">
-          <div class="feature-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4.5 6v6c0 4.5 3.1 7.4 7.5 9 4.4-1.6 7.5-4.5 7.5-9V6L12 3Z"/></svg>
-          </div>
-          <h3>Обезличенная диагностика</h3>
-          <p>Отчёты об ошибках очищаются от UUID, токенов и адресов перед отправкой в поддержку — вручную и по вашему запросу.</p>
-        </article>
-
-        <article class="feature-card reveal">
-          <div class="feature-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
-          </div>
-          <h3>Без скрытия VPN</h3>
-          <p>Приложение не пытается спрятать факт подключения от других приложений или системы — работа остаётся прозрачной.</p>
-        </article>
-
-        <article class="feature-card reveal">
-          <div class="feature-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20c1.5-4 4.2-6 7.5-6s6 2 7.5 6"/></svg>
-          </div>
-          <h3>Вход без пароля</h3>
-          <p>Авторизация через <strong style="color:var(--text-primary);font-weight:500;">@pxlnet_bot</strong> в Telegram — без пароля и без токена внутри APK.</p>
-        </article>
-      </div>
-    </div>
-  </section>
-
-  <!-- ONE SUBSCRIPTION -->
-  <section class="sub-band">
-    <div class="container">
-      <div class="sub-card reveal">
-        <h2>Одна подписка. Весь <span class="accent" style="background:var(--accent-gradient);-webkit-background-clip:text;background-clip:text;color:transparent;">PXLNet</span>.</h2>
-        <p>Одна подписка открывает доступ ко всем доступным серверам и основным функциям PXLNet Connect. Новые обычные функции и серверные локации не требуют покупки отдельных пакетов.</p>
-        <p style="margin-top: var(--space-4); font-size: 14px; color: var(--text-tertiary);">Для входа не обязательно заводить аккаунт — можно продолжить в гостевом режиме по ссылке подписки, а синхронизировать с аккаунтом PXLNet позже, через <strong style="color:var(--text-secondary);font-weight:500;">@pxlnet_bot</strong>.</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- SCREENSHOTS -->
-  <section id="interface">
-    <div class="container">
-      <div class="section-head reveal">
-        <span class="section-eyebrow">Интерфейс</span>
-        <h2>Как выглядит приложение</h2>
-        <p>Несколько экранов PXLNet Connect: подключение, аккаунт и параметры.</p>
-      </div>
-      <div class="screenshots-grid">
-        <figure class="screenshot-frame reveal">
-          <img src="assets/screenshots/screen-onboarding.jpg" alt="Экран добавления подписки: вход через Telegram или гостевой режим по ссылке" loading="lazy">
-          <figcaption>Добавление подписки</figcaption>
-        </figure>
-        <figure class="screenshot-frame reveal">
-          <img src="assets/screenshots/screen-home.jpg" alt="Главный экран: кнопка подключения, автовыбор сервера и маршрутизация приложений" loading="lazy">
-          <figcaption>Главный экран</figcaption>
-        </figure>
-        <figure class="screenshot-frame reveal">
-          <img src="assets/screenshots/screen-account.jpg" alt="Экран аккаунта PXLNet: статус подписки и экосистема PXLNet" loading="lazy">
-          <figcaption>Аккаунт PXLNet</figcaption>
-        </figure>
-        <figure class="screenshot-frame reveal">
-          <img src="assets/screenshots/screen-settings.jpg" alt="Экран параметров: Always-on VPN, диагностика и режим разработчика" loading="lazy">
-          <figcaption>Параметры</figcaption>
-        </figure>
-      </div>
-    </div>
-  </section>
-
-  <!-- QUICK START -->
-  <section id="quickstart">
-    <div class="container">
-      <div class="section-head reveal">
-        <span class="section-eyebrow">Быстрый старт</span>
-        <h2>От установки до подключения</h2>
-        <p>Так же, как устроен первый запуск в самом приложении — четыре шага, без лишних настроек.</p>
-      </div>
-
-      <div class="feature-grid cols-4">
-        <article class="feature-card reveal">
-          <div class="feature-icon" style="background:transparent;border-color:var(--border-strong);"><span style="font-family:var(--font-mono);color:var(--accent-blue);font-weight:600;">01</span></div>
-          <h3>Установите APK</h3>
-          <p>Скачайте последнюю версию из GitHub Releases и установите на Android 11–16.</p>
-        </article>
-        <article class="feature-card reveal">
-          <div class="feature-icon" style="background:transparent;border-color:var(--border-strong);"><span style="font-family:var(--font-mono);color:var(--accent-blue);font-weight:600;">02</span></div>
-          <h3>Добавьте подписку</h3>
-          <p>Войдите через <strong style="color:var(--text-primary);font-weight:500;">@pxlnet_bot</strong> для автосинхронизации или продолжите в гостевом режиме по ссылке.</p>
-        </article>
-        <article class="feature-card reveal">
-          <div class="feature-icon" style="background:transparent;border-color:var(--border-strong);"><span style="font-family:var(--font-mono);color:var(--accent-blue);font-weight:600;">03</span></div>
-          <h3>Выберите режим</h3>
-          <p>Оставьте автовыбор сервера и Smart Routing или настройте маршрутизацию приложений вручную.</p>
-        </article>
-        <article class="feature-card reveal">
-          <div class="feature-icon" style="background:transparent;border-color:var(--border-strong);"><span style="font-family:var(--font-mono);color:var(--accent-blue);font-weight:600;">04</span></div>
-          <h3>Подключитесь</h3>
-          <p>Нажмите кнопку подключения — PXL Guard сам переключит сервер при сбое.</p>
-        </article>
-      </div>
-    </div>
-  </section>
-
-  <!-- DOWNLOAD -->
-  <section id="download" class="download-section">
-    <div class="container">
-      <div class="download-panel reveal">
-        <span class="section-eyebrow">Скачать</span>
-        <h2>Скачать PXLNet Connect</h2>
-        <p style="margin-top: var(--space-3); color: var(--text-secondary); font-size: 15.5px;">Актуальная сборка публикуется в GitHub Releases сразу после выхода.</p>
-        <a class="btn btn-primary" href="https://github.com/kakixc/PXLNET-Connect/releases/latest" target="_blank" rel="noopener">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v13"/><path d="m6 11 6 6 6-6"/><path d="M5 21h14"/></svg>
-          Последний GitHub Release
-        </a>
-        <div class="download-meta">
-          <span class="download-meta-item">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg>
-            Android 11–16
-          </span>
-          <span class="download-meta-item">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 12 2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
-            Beta-канал
-          </span>
-        </div>
-      </div>
-
-      <div class="download-steps reveal">
-        <div class="download-step">
-          <span class="download-step-index">01</span>
-          <p><strong>Откройте GitHub Releases</strong>Перейдите по кнопке выше — вы попадёте на страницу с последней версией.</p>
-        </div>
-        <div class="download-step">
-          <span class="download-step-index">02</span>
-          <p><strong>Скачайте APK</strong>Загрузите файл релиза на устройство с Android 11–16.</p>
-        </div>
-        <div class="download-step">
-          <span class="download-step-index">03</span>
-          <p><strong>Войдите в аккаунт PXLNet</strong>Используйте существующую подписку PXLNet — новая покупка не нужна.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- OPEN SOURCE -->
-  <section id="opensource">
-    <div class="container oss-grid">
-      <div class="oss-copy reveal">
-        <span class="section-eyebrow">Open source</span>
-        <h2 style="margin-bottom: var(--space-3);">Открытый код на GitHub</h2>
-        <p>PXLNet Connect — форк <strong style="color:var(--text-primary);font-weight:500;">sing-box-for-android</strong>, вдохновлённый Happ Android, распространяется под лицензией <strong style="color:var(--text-primary);font-weight:500;">GPLv3</strong>.</p>
-        <p>Исходный код, релизы и историю изменений можно посмотреть напрямую в репозитории.</p>
-        <div class="oss-actions">
-          <a class="btn btn-secondary" href="https://github.com/kakixc/PXLNET-Connect" target="_blank" rel="noopener">Source Code</a>
-          <a class="btn btn-secondary" href="https://github.com/kakixc/PXLNET-Connect/releases" target="_blank" rel="noopener">Releases</a>
-          <a class="btn btn-secondary" href="https://github.com/kakixc/PXLNET-Connect/commits/main" target="_blank" rel="noopener">Changelog</a>
-          <a class="btn btn-secondary" href="https://github.com/kakixc/PXLNET-Connect/blob/main/LICENSE" target="_blank" rel="noopener">License</a>
-        </div>
-      </div>
-
-      <div class="oss-links reveal" id="resources">
-        <a class="link-card" href="#">
-          <span class="link-card-text">
-            <strong>Documentation</strong>
-            <span>Инструкции по установке и использованию</span>
-          </span>
-          <span class="link-card-arrow" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M8 7h9v9"/></svg>
-          </span>
-        </a>
-        <a class="link-card" href="#">
-          <span class="link-card-text">
-            <strong>Service Status</strong>
-            <span>Состояние инфраструктуры PXLNet</span>
-          </span>
-          <span class="link-card-arrow" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M8 7h9v9"/></svg>
-          </span>
-        </a>
-        <a class="link-card" href="https://github.com/kakixc/PXLNET-Connect/issues" target="_blank" rel="noopener">
-          <span class="link-card-text">
-            <strong>Issues</strong>
-            <span>Сообщить о проблеме или предложить улучшение</span>
-          </span>
-          <span class="link-card-arrow" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M8 7h9v9"/></svg>
-          </span>
-        </a>
-      </div>
-    </div>
-  </section>
-
-</main>
-
-<footer class="site-footer">
-  <div class="container">
-    <div class="footer-top">
-      <div>
-        <div class="footer-brand">
-          <img src="assets/logo-mark.png" alt="" width="22" height="22">
-          <span>PXLNet Connect</span>
-        </div>
-        <p class="footer-tagline">Android-клиент PXLNet на базе sing-box.</p>
-      </div>
-
-      <div class="footer-links">
-        <div class="footer-col">
-          <h4>Проект</h4>
-          <ul>
-            <li><a href="https://github.com/kakixc/PXLNET-Connect" target="_blank" rel="noopener">GitHub</a></li>
-            <li><a href="https://github.com/kakixc/PXLNET-Connect/releases" target="_blank" rel="noopener">Releases</a></li>
+          <ul class="route-list">
+            <li>Весь трафик</li>
+            <li>Умная маршрутизация</li>
+            <li>Только выбранные приложения</li>
           </ul>
+        </article>
+        <article class="feature feature-servers">
+          <div class="feature-copy">
+            <h3>Выбор сервера</h3>
+            <p>Выбирайте узел вручную или доверьте выбор режиму AUTO. PXL Guard повторно проверяет сбой и переключается на доступный сервер.</p>
+          </div>
+          <p class="protocols">VLESS <span>·</span> XHTTP <span>·</span> Hysteria2</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="shell section interface" id="interface">
+      <div class="section-heading">
+        <h2>Три варианта интерфейса</h2>
+        <p>Выберите «Классику», «Фокус» или «Пульт» в разделе <strong>Настройки → Персонализация</strong>.</p>
+      </div>
+      <figure class="gallery">
+        <a href="assets/screenshots/connect-070-home.webp"><img src="assets/screenshots/connect-070-home.webp" width="720" height="1498" loading="lazy" alt="Пульт: экран подключения и текущий профиль"></a>
+        <a href="assets/screenshots/connect-070-account.webp"><img src="assets/screenshots/connect-070-account.webp" width="720" height="1498" loading="lazy" alt="Аккаунт: способы входа и профиль"></a>
+        <a href="assets/screenshots/connect-070-dns.webp"><img src="assets/screenshots/connect-070-dns.webp" width="720" height="1498" loading="lazy" alt="Expressive DNS: профиль и управление DNS"></a>
+        <figcaption>«Пульт», экран аккаунта и Expressive DNS в PXLNET Connect 0.7.0.</figcaption>
+      </figure>
+    </section>
+
+    <section class="shell section download" id="download">
+      <div class="download-inner">
+        <div class="download-intro">
+          <h2>Скачать для Android</h2>
+          <p>Официальные APK версии 0.7.0. Если Connect уже установлен, обновление можно проверить в приложении.</p>
+          <a class="text-link" href="https://github.com/kakixc/PXLNET-Connect/releases/tag/v0.7.0">Что изменилось в 0.7.0 <span aria-hidden="true">↗</span></a>
         </div>
-        <div class="footer-col">
-          <h4>Сообщество</h4>
-          <ul>
-            <li><a href="https://t.me/pxlnet" target="_blank" rel="noopener">Telegram</a></li>
-            <li><a href="https://t.me/pxlnet_bot" target="_blank" rel="noopener">Support</a></li>
-          </ul>
+        <div class="download-options">
+          <a href="https://github.com/kakixc/PXLNET-Connect/releases/download/v0.7.0/PXLNET-Connect-0.7.0-arm64-v8a.apk"><span><strong>ARM64-v8a</strong><small>Для большинства современных телефонов</small></span><span aria-hidden="true">↓</span></a>
+          <a href="https://github.com/kakixc/PXLNET-Connect/releases/download/v0.7.0/PXLNET-Connect-0.7.0-universal.apk"><span><strong>Universal</strong><small>Если не знаете архитектуру устройства</small></span><span aria-hidden="true">↓</span></a>
+          <a class="text-link" href="https://github.com/kakixc/PXLNET-Connect/releases/latest">Все APK и контрольные суммы <span aria-hidden="true">↗</span></a>
         </div>
       </div>
-    </div>
+    </section>
 
-    <div class="footer-bottom">
-      <p class="footer-disclaimer">PXLNet Connect is not affiliated with or endorsed by SagerNet.</p>
-      <p>© <span id="year"></span> PXLNet</p>
-    </div>
-  </div>
-</footer>
+    <section class="shell section quickstart" id="quickstart">
+      <div class="section-heading"><h2>Как подключиться</h2></div>
+      <ol class="steps">
+        <li><h3>Установите APK</h3><p>Откройте скачанный файл и подтвердите установку в Android.</p></li>
+        <li><h3>Добавьте подписку</h3><p>Войдите в PXL ID или вставьте ссылку на подписку или сервер.</p></li>
+        <li><h3>Включите VPN</h3><p>Выберите сервер или AUTO и подтвердите создание VPN в Android.</p></li>
+      </ol>
+    </section>
 
-<script src="script.js"></script>
+    <section class="shell project" id="opensource">
+      <div id="privacy"><h2>Диагностика и исходники</h2><p>Перед отправкой отчёта диагностики Connect удаляет из него ключи и адреса. Исходный код приложения опубликован под лицензией GPLv3.</p></div>
+      <nav id="resources" aria-label="Ссылки проекта">
+        <a href="https://github.com/kakixc/PXLNET-Connect">Исходники <span aria-hidden="true">↗</span></a>
+        <a href="https://github.com/kakixc/PXLNET-Connect/blob/main/LICENSE">Лицензия GPLv3 <span aria-hidden="true">↗</span></a>
+        <a href="https://github.com/kakixc/PXLNET-Connect/issues">Сообщить о проблеме <span aria-hidden="true">↗</span></a>
+      </nav>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="shell footer-inner">
+      <a class="brand" href="#top"><img src="assets/logo-mark@2x.png" alt="" width="28" height="28">PXLNET Connect</a>
+      <div class="footer-links"><a href="https://t.me/pxlnet">Канал Telegram</a><a href="https://t.me/pxlnet_bot">Поддержка</a></div>
+    </div>
+  </footer>
 </body>
 </html>
