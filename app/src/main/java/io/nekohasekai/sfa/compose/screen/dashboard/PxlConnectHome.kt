@@ -165,7 +165,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
-internal val PxlGreen = Color(0xFF277A4A)
 
 private data class ServerChoice(
     val tag: String,
@@ -1688,16 +1687,16 @@ private fun ConnectionControl(
         ConnectionPresentationState.Disconnected -> stringResource(R.string.pxlnet_connect)
     }
     val containerColor = when (state) {
-        ConnectionPresentationState.Connected -> PxlGreen
         ConnectionPresentationState.Error -> MaterialTheme.colorScheme.errorContainer
+        ConnectionPresentationState.Connected,
         ConnectionPresentationState.Connecting,
         ConnectionPresentationState.Switching,
         ConnectionPresentationState.Disconnecting -> MaterialTheme.colorScheme.secondaryContainer
         ConnectionPresentationState.Disconnected -> MaterialTheme.colorScheme.primary
     }
     val contentColor = when (state) {
-        ConnectionPresentationState.Connected -> Color.White
         ConnectionPresentationState.Error -> MaterialTheme.colorScheme.onErrorContainer
+        ConnectionPresentationState.Connected,
         ConnectionPresentationState.Connecting,
         ConnectionPresentationState.Switching,
         ConnectionPresentationState.Disconnecting -> MaterialTheme.colorScheme.onSecondaryContainer

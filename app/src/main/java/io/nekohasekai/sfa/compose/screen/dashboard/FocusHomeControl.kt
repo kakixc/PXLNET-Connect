@@ -195,8 +195,8 @@ private fun FocusConnectButton(
         },
         enabled = enabled,
         colors = ButtonDefaults.buttonColors(
-            containerColor = if (running) PxlGreen else MaterialTheme.colorScheme.primary,
-            contentColor = if (running) Color.White else MaterialTheme.colorScheme.onPrimary,
+            containerColor = if (running) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.primary,
+            contentColor = if (running) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onPrimary,
         ),
         interactionSource = interactions,
         shape = RoundedCornerShape((restingRadius - 15f * motion).dp),
