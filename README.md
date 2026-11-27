@@ -2,9 +2,9 @@
 
 ## 📥 Скачать PXLNET Connect
 
-[![Universal](https://img.shields.io/badge/Download-Universal-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/kakixc/PXLNET-Connect/releases/download/v0.6.9-beta/PXLNET-Connect-0.6.9-beta-universal.apk)
+[![Universal](https://img.shields.io/badge/Download-Universal-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/kakixc/PXLNET-Connect/releases/download/v0.7.0/PXLNET-Connect-0.7.0-universal.apk)
 
-[![ARM64-v8a](https://img.shields.io/badge/Download-ARM64--v8a-181717?style=for-the-badge&logo=android&logoColor=white)](https://github.com/kakixc/PXLNET-Connect/releases/download/v0.6.9-beta/PXLNET-Connect-0.6.9-beta-arm64-v8a.apk)
+[![ARM64-v8a](https://img.shields.io/badge/Download-ARM64--v8a-181717?style=for-the-badge&logo=android&logoColor=white)](https://github.com/kakixc/PXLNET-Connect/releases/download/v0.7.0/PXLNET-Connect-0.7.0-arm64-v8a.apk)
 
 **Universal** — выбирайте, если не знаете архитектуру устройства.  
 **ARM64-v8a** — для большинства современных Android-смартфонов, сборка немного компактнее.
