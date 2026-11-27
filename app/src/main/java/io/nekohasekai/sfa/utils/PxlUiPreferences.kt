@@ -21,11 +21,22 @@ object PxlUiPreferences {
             internal fun fromPersisted(
                 value: String?,
                 focusLab: Boolean = BuildConfig.FOCUS_LAB,
-                defaultToConsole: Boolean = BuildConfig.DEBUG,
+                defaultToConsole: Boolean = true,
             ): InterfaceTheme =
                 entries.firstOrNull { it.name == value && (it != TRIAL || focusLab) }
                     ?: if (focusLab && defaultToConsole) TRIAL else CLASSIC
         }
+    }
+    enum class ThemeIntroduction { OFFER, SHORTCUT, DONE }
+
+    internal data class ThemeDefaults(val theme: InterfaceTheme, val introduction: ThemeIntroduction)
+
+    internal fun themeDefaults(upgrade: Boolean, explicit: String?, focusLab: Boolean): ThemeDefaults {
+        val hasChoice = InterfaceTheme.entries.any { it.name == explicit && (it != InterfaceTheme.TRIAL || focusLab) }
+        return ThemeDefaults(
+            InterfaceTheme.fromPersisted(null, focusLab, defaultToConsole = !upgrade),
+            if (upgrade && !hasChoice && focusLab) ThemeIntroduction.OFFER else ThemeIntroduction.DONE,
+        )
     }
     enum class FocusDetails { ROUTING, SUBSCRIPTION, HIDDEN }
 
@@ -39,14 +50,23 @@ object PxlUiPreferences {
 
     private val mutableInterfaceTheme = MutableStateFlow(InterfaceTheme.fromPersisted(null))
     val interfaceTheme = mutableInterfaceTheme.asStateFlow()
+    private val mutableThemeIntroduction = MutableStateFlow(ThemeIntroduction.DONE)
+    val themeIntroduction = mutableThemeIntroduction.asStateFlow()
     private val mutableFocusAppearance = MutableStateFlow(FocusAppearance())
     val focusAppearance = mutableFocusAppearance.asStateFlow()
 
-    fun setInterfaceTheme(context: Context, theme: InterfaceTheme) {
-        if (!theme.available) return
+    fun setInterfaceTheme(context: Context, theme: InterfaceTheme) =
+        saveThemeIntroduction(context, ThemeIntroduction.DONE, theme)
+
+    fun saveThemeIntroduction(context: Context, introduction: ThemeIntroduction, theme: InterfaceTheme? = null) {
+        if (theme != null && !theme.available) return
         context.getSharedPreferences(fileName, Context.MODE_PRIVATE)
-            .edit().putString("interface_theme", theme.name).apply()
-        mutableInterfaceTheme.value = theme
+            .edit().apply {
+                putString("theme_introduction", introduction.name)
+                if (theme != null) putString("interface_theme", theme.name)
+            }.apply()
+        if (theme != null) mutableInterfaceTheme.value = theme
+        mutableThemeIntroduction.value = introduction
     }
 
     fun isFocusTileHidden(context: Context): Boolean =
@@ -118,7 +138,20 @@ object PxlUiPreferences {
 
     fun initialize(context: Context) {
         val preferences = context.applicationContext.getSharedPreferences(fileName, Context.MODE_PRIVATE)
-        mutableInterfaceTheme.value = InterfaceTheme.fromPersisted(preferences.getString("interface_theme", null))
+        val explicitTheme = preferences.getString("interface_theme", null)
+        var defaultTheme = preferences.getString("interface_theme_default", null)
+        var introduction = ThemeIntroduction.entries.firstOrNull { it.name == preferences.getString("theme_introduction", null) }
+        if (defaultTheme == null) {
+            @Suppress("DEPRECATION")
+            val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            val defaults = themeDefaults(packageInfo.lastUpdateTime > packageInfo.firstInstallTime, explicitTheme, BuildConfig.FOCUS_LAB)
+            defaultTheme = defaults.theme.name
+            introduction = introduction ?: defaults.introduction
+            preferences.edit().putString("interface_theme_default", defaultTheme)
+                .putString("theme_introduction", introduction.name).apply()
+        }
+        mutableInterfaceTheme.value = InterfaceTheme.fromPersisted(explicitTheme ?: defaultTheme)
+        mutableThemeIntroduction.value = introduction ?: ThemeIntroduction.DONE
         mutableFocusAppearance.value = FocusAppearance(
             mascot = preferences.getBoolean("focus_mascot", true),
             details = FocusDetails.entries.firstOrNull {

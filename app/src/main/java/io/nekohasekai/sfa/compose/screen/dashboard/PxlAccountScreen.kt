@@ -170,8 +170,8 @@ fun PxlAccountScreen(
     }
     val summaryRevision by SubscriptionInfoStore.summaryRevision.collectAsState()
     val selectedProfile = uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }
-    val profileFromAccount = remember(selectedProfile?.id, selectedProfile?.typed?.remoteURL, summaryRevision) {
-        selectedProfile?.let { SubscriptionInfoStore.hasAccountSource(context, it.id, it.typed.remoteURL) } == true
+    val profileFromAccount = remember(selectedProfile?.id, summaryRevision) {
+        SubscriptionInfoStore.hasAccountSource(context, uiState.selectedProfileId)
     }
     val linkSummary = remember(uiState.selectedProfileId, summaryRevision) {
         SubscriptionInfoStore.summary(context, uiState.selectedProfileId)
@@ -332,7 +332,6 @@ fun PxlAccountScreen(
                     )
                     TextButton(
                         onClick = viewModel::logoutTelegram,
-                        enabled = !uiState.telegramLoginPending && !uiState.ecosystemCheckPending,
                         modifier = Modifier.align(Alignment.End),
                     ) {
                         Text(stringResource(R.string.pxlnet_sign_out))
@@ -911,7 +910,6 @@ private fun FocusAccount(
                             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.pxlnet_sign_out)) },
-                                    enabled = !uiState.telegramLoginPending && !uiState.ecosystemCheckPending,
                                     onClick = {
                                         menuOpen = false
                                         viewModel.logoutTelegram()

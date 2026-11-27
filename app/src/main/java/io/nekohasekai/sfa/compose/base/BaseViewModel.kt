@@ -25,7 +25,9 @@ abstract class BaseViewModel<State, Event> : ViewModel() {
         get() = _uiState.value
 
     protected fun updateState(reducer: State.() -> State) {
-        _uiState.value = _uiState.value.reducer()
+        synchronized(_uiState) {
+            _uiState.value = _uiState.value.reducer()
+        }
     }
 
     /**

@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -48,7 +49,6 @@ internal fun FocusHomeControl(
     serverTag: String,
     serverProtocol: String?,
     onChooseServer: (() -> Unit)?,
-    onChooseProfile: (() -> Unit)?,
     onConnect: () -> Unit,
     onRetry: (() -> Unit)?,
     onOpenDns: () -> Unit,
@@ -112,9 +112,6 @@ internal fun FocusHomeControl(
                 !pinnedControls -> {
                     FocusServerSelection(server, serverTag, onChooseServer)
                     if (!blocked) FocusConnectButton(serviceStatus, switching, requestPending, onConnect)
-                    if (onChooseProfile != null) TextButton(onClick = onChooseProfile) {
-                        Text(stringResource(R.string.pxlnet_choose_available_profile))
-                    }
                 }
                 else -> FocusServerSelection(server, serverTag, onChooseServer, serverProtocol, embedded = true)
             }
@@ -197,6 +194,10 @@ private fun FocusConnectButton(
             onConnect()
         },
         enabled = enabled,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (running) PxlGreen else MaterialTheme.colorScheme.primary,
+            contentColor = if (running) Color.White else MaterialTheme.colorScheme.onPrimary,
+        ),
         interactionSource = interactions,
         shape = RoundedCornerShape((restingRadius - 15f * motion).dp),
         modifier = Modifier.fillMaxWidth().heightIn(min = if (pinned) 64.dp else 68.dp)
@@ -206,7 +207,11 @@ private fun FocusConnectButton(
             },
     ) {
         if (moving || requestPending) ConnectLoadingIndicator(Modifier.size(28.dp), LocalContentColor.current)
-        else Icon(Icons.Default.PowerSettingsNew, contentDescription = null, modifier = Modifier.size(28.dp))
+        else Icon(
+            if (running) Icons.Default.Shield else Icons.Default.PowerSettingsNew,
+            contentDescription = null,
+            modifier = Modifier.size(28.dp),
+        )
         Spacer(Modifier.width(10.dp))
         Text(stringResource(when {
             switching -> R.string.pxlnet_vpn_changing

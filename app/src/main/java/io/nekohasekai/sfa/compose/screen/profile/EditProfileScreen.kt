@@ -72,6 +72,7 @@ import io.nekohasekai.sfa.compose.util.ProfileIcons
 import io.nekohasekai.sfa.compose.util.RelativeTimeFormatter
 import io.nekohasekai.sfa.compose.util.icons.MaterialIconsLibrary
 import io.nekohasekai.sfa.database.TypedProfile
+import io.nekohasekai.sfa.utils.SubscriptionInfoStore
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -216,6 +217,22 @@ fun EditProfileScreen(
                     .padding(bottom = bottomBarPadding),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
+                val originalProfile = uiState.profile
+                if (originalProfile?.typed?.type == TypedProfile.Type.Remote &&
+                    SubscriptionInfoStore.hasAccountSource(context, originalProfile.id)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                    ) {
+                        Text(
+                            stringResource(R.string.pxl_account_profile_edit_hint),
+                            Modifier.fillMaxWidth().padding(16.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
                 // Basic Information Card
                 Card(
                     modifier = Modifier.fillMaxWidth(),

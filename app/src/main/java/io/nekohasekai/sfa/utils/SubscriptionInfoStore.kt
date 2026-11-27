@@ -10,7 +10,6 @@ import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.widget.PxlConnectWidgetProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.security.MessageDigest
 import java.text.DateFormat
 import java.time.Instant
 import java.time.LocalDate
@@ -140,23 +139,20 @@ object SubscriptionInfoStore {
         PxlConnectWidgetProvider.updateAll(context)
     }
 
-    fun recordAccountSource(context: Context, profileId: Long, url: String) {
-        if (profileId <= 0 || url.isBlank()) return
+    fun recordAccountSource(context: Context, profileId: Long) {
+        if (profileId <= 0) return
         val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
         val key = "$profileId$ACCOUNT_SOURCE_SUFFIX"
-        val fingerprint = accountSourceFingerprint(url)
-        if (preferences.getString(key, null) == fingerprint) return
-        preferences.edit().putString(key, fingerprint).apply()
+        if (preferences.contains(key)) return
+        preferences.edit().putBoolean(key, true).apply()
         _summaryRevision.value += 1
     }
 
-    fun hasAccountSource(context: Context, profileId: Long, url: String): Boolean =
-        profileId > 0 && url.isNotBlank() &&
+    // Previous builds stored a URL hash at the same key. Ownership survives link edits and rotation.
+    fun hasAccountSource(context: Context, profileId: Long): Boolean =
+        profileId > 0 &&
             context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-                .getString("$profileId$ACCOUNT_SOURCE_SUFFIX", null) == accountSourceFingerprint(url)
-
-    private fun accountSourceFingerprint(url: String): String =
-        MessageDigest.getInstance("SHA-256").digest(url.toByteArray()).joinToString("") { "%02x".format(it) }
+                .contains("$profileId$ACCOUNT_SOURCE_SUFFIX")
 
     fun save(context: Context, profileId: Long, header: String?) {
         if (profileId <= 0) return

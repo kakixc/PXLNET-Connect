@@ -162,7 +162,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
-private val PxlGreen = Color(0xFF277A4A)
+internal val PxlGreen = Color(0xFF277A4A)
 
 private data class ServerChoice(
     val tag: String,
@@ -196,11 +196,13 @@ fun DashboardScreen(
     onOpenNewProfile: (NewProfileArgs) -> Unit = {},
     onOpenAppRouting: () -> Unit = {},
     onOpenDns: () -> Unit = {},
+    onOpenThemes: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel(),
     groupsViewModel: GroupsViewModel? = null,
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val interfaceTheme by PxlUiPreferences.interfaceTheme.collectAsState()
+    val themeIntroduction by PxlUiPreferences.themeIntroduction.collectAsState()
     val focusAppearance by PxlUiPreferences.focusAppearance.collectAsState()
     val focus = interfaceTheme != PxlUiPreferences.InterfaceTheme.CLASSIC
     val trial = interfaceTheme == PxlUiPreferences.InterfaceTheme.TRIAL
@@ -656,7 +658,7 @@ fun DashboardScreen(
         )
     }
 
-    if (showProfilePicker && uiState.profiles.size > 1) {
+    if (showProfilePicker && uiState.profiles.isNotEmpty()) {
         ProfilePickerSheet(
             profiles = uiState.profiles,
             selectedProfileId = uiState.selectedProfileId,
@@ -667,7 +669,30 @@ fun DashboardScreen(
             onDismiss = { showProfilePicker = false },
             onAddProfile = { showProfilePicker = false; showImportChoices = true },
             showManagementActions = true,
-            titleRes = R.string.pxlnet_settings_subscriptions,
+            titleRes = R.string.pxl_home_profiles,
+        )
+    }
+
+    fun openThemes() {
+        PxlUiPreferences.saveThemeIntroduction(context, PxlUiPreferences.ThemeIntroduction.DONE)
+        onOpenThemes()
+    }
+    if (themeIntroduction == PxlUiPreferences.ThemeIntroduction.OFFER &&
+        uiState.profilesLoaded && (focus || autoGuideHandled) && !showOnboarding
+    ) {
+        AlertDialog(
+            onDismissRequest = { PxlUiPreferences.saveThemeIntroduction(context, PxlUiPreferences.ThemeIntroduction.SHORTCUT) },
+            title = { Text(stringResource(R.string.pxl_theme_intro_title)) },
+            text = { Text(stringResource(R.string.pxl_theme_intro_body)) },
+            confirmButton = {
+                Button(onClick = {
+                    PxlUiPreferences.saveThemeIntroduction(context, PxlUiPreferences.ThemeIntroduction.SHORTCUT,
+                        PxlUiPreferences.InterfaceTheme.TRIAL)
+                }) { Text(stringResource(R.string.pxl_theme_intro_apply)) }
+            },
+            dismissButton = {
+                TextButton(onClick = ::openThemes) { Text(stringResource(R.string.pxl_theme_intro_preview)) }
+            },
         )
     }
 
@@ -879,7 +904,6 @@ fun DashboardScreen(
                         serverTag = presentedServer?.displayTag ?: selectedServer,
                         serverProtocol = consoleProtocol,
                         onChooseServer = chooseServer,
-                        onChooseProfile = if (uiState.profiles.size > 1) ({ showProfilePicker = true }) else null,
                         onConnect = focusConnect,
                         onRetry = selector?.tag?.let { { focusHealthRevision++ } },
                         onOpenDns = onOpenDns,
@@ -892,9 +916,12 @@ fun DashboardScreen(
                     )
                 }
             }
-            if (pinnedControls && uiState.profiles.size > 1 && !dnsOnlyActive) item {
-                TextButton(onClick = { showProfilePicker = true }) {
-                    Text(stringResource(R.string.pxlnet_choose_available_profile))
+            if (themeIntroduction == PxlUiPreferences.ThemeIntroduction.SHORTCUT) item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    androidx.compose.material3.AssistChip(
+                        onClick = ::openThemes,
+                        label = { Text(stringResource(R.string.pxl_theme_intro_shortcut)) },
+                    )
                 }
             }
             if ((!focus || focusAppearance.details == PxlUiPreferences.FocusDetails.SUBSCRIPTION) &&
@@ -918,7 +945,7 @@ fun DashboardScreen(
                     )
                 }
             }
-            if (!focus && uiState.profiles.size > 1) {
+            if (uiState.profiles.isNotEmpty()) {
                 item {
                     val selectedProfile = uiState.profiles.firstOrNull { it.id == uiState.selectedProfileId }
                     Surface(
@@ -936,7 +963,7 @@ fun DashboardScreen(
                             Icon(Icons.Default.Description, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                             Column(Modifier.weight(1f)) {
                                 Text(
-                                    stringResource(R.string.pxlnet_subscription_title),
+                                    stringResource(R.string.pxl_home_current_profile),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )

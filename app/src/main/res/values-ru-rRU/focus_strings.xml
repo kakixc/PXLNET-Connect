@@ -92,4 +92,12 @@
     <string name="focus_import_loading">Добавляем…</string>
     <string name="focus_import_invalid_link">Введите ссылку на подписку или на сервер VLESS или Hysteria2.</string>
     <string name="focus_import_clipboard_empty">В буфере обмена нет ссылки на сервер или подписку.</string>
+    <string name="pxl_theme_intro_title">Попробуйте новый интерфейс «Пульт»</string>
+    <string name="pxl_theme_intro_body">В «Пульте» кнопка VPN всегда внизу, а сервер и профиль можно выбрать прямо на главном экране. Тему можно сменить в любое время.</string>
+    <string name="pxl_theme_intro_apply">Перейти на «Пульт»</string>
+    <string name="pxl_theme_intro_preview">Посмотреть темы</string>
+    <string name="pxl_theme_intro_shortcut">Темы</string>
+    <string name="pxl_home_current_profile">Текущий профиль</string>
+    <string name="pxl_home_profiles">Выбрать профиль</string>
+    <string name="pxl_account_profile_edit_hint">Этот профиль загружен из аккаунта PXLNET. Вы можете изменить имя и иконку. Изменение ссылки или других настроек может нарушить VPN-соединение.</string>
 </resources>

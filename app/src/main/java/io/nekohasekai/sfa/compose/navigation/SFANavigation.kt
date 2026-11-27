@@ -197,6 +197,7 @@ fun SFANavHost(
                     onOpenNewProfile = onOpenNewProfile,
                     onOpenAppRouting = { navController.navigate("pxlnet/app_routing") { launchSingleTop = true } },
                     onOpenDns = { navController.openRootTab(Screen.Dns) },
+                    onOpenThemes = { navController.navigate("settings/app/appearance/theme") { launchSingleTop = true } },
                     viewModel = dashboardViewModel,
                     groupsViewModel = groupsViewModel,
                 )
@@ -207,6 +208,7 @@ fun SFANavHost(
                     showStatusBar = showStatusBar,
                     onOpenNewProfile = onOpenNewProfile,
                     onOpenAppRouting = { navController.navigate("pxlnet/app_routing") { launchSingleTop = true } },
+                    onOpenThemes = { navController.navigate("settings/app/appearance/theme") { launchSingleTop = true } },
                     groupsViewModel = groupsViewModel,
                 )
             }

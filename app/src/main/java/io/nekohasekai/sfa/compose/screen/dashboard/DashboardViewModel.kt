@@ -21,6 +21,8 @@ import io.nekohasekai.sfa.utils.CommandClient
 import io.nekohasekai.sfa.utils.CommandTarget
 import io.nekohasekai.sfa.utils.HTTPClient
 import io.nekohasekai.sfa.utils.PxlAuthClient
+import io.nekohasekai.sfa.utils.PxlDnsProfiles
+import io.nekohasekai.sfa.utils.PxlDnsTileMode
 import io.nekohasekai.sfa.utils.PxlRoutingPreferences
 import io.nekohasekai.sfa.utils.PxlServerProbeCache
 import io.nekohasekai.sfa.utils.PxlSecureTokenStore
@@ -32,13 +34,20 @@ import io.nekohasekai.sfa.utils.RemoteControlManager
 import io.nekohasekai.sfa.utils.SubscriptionInfoStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONException
@@ -170,6 +179,9 @@ class DashboardViewModel :
     val serverProbeCache = PxlServerProbeCache()
     private val _serviceStatus = MutableStateFlow(Status.Stopped)
     val serviceStatus: StateFlow<Status> = _serviceStatus.asStateFlow()
+    private val accountMutation = Mutex()
+    private var accountRequest: Job? = null
+    private var logoutJob: Job? = null
 
     internal val commandClient =
         CommandClient(
@@ -510,7 +522,7 @@ class DashboardViewModel :
     fun startTelegramLogin() {
         if (currentState.telegramLoginPending || currentState.hasTelegramSession || currentState.ecosystemCheckPending) return
         updateState { copy(telegramLoginPending = true, telegramLoginError = null) }
-        viewModelScope.launch(Dispatchers.IO) {
+        accountRequest = viewModelScope.launch(Dispatchers.IO) {
             try {
                 val client = PxlAuthClient()
                 val session = client.createLoginSession()
@@ -527,10 +539,14 @@ class DashboardViewModel :
                 check(!accessToken.isNullOrBlank()) {
                     Application.application.getString(R.string.pxlnet_login_timeout)
                 }
-                PxlSecureTokenStore.save(Application.application, accessToken)
-                updateState { copy(hasTelegramSession = true, hasTelegramIdentity = true) }
+                accountMutation.withLock {
+                    ensureActive()
+                    PxlSecureTokenStore.save(Application.application, accessToken)
+                    updateState { copy(hasTelegramSession = true, hasTelegramIdentity = true) }
+                }
                 loadAccount(client, accessToken)
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 updateState {
                     copy(
                         telegramLoginPending = false,
@@ -538,7 +554,7 @@ class DashboardViewModel :
                     )
                 }
             } finally {
-                updateState { copy(telegramLoginPending = false) }
+                if (isActive) updateState { copy(telegramLoginPending = false) }
             }
         }
     }
@@ -554,11 +570,11 @@ class DashboardViewModel :
             val token = withContext(Dispatchers.IO) { PxlAuthClient().verifyEmail(email, challengeId, code) }
             PxlSecureTokenStore.save(Application.application, token, emailLogin = true)
             updateState { copy(hasTelegramSession = true, signedInByEmail = true, verifiedEmail = email) }
-            viewModelScope.launch(Dispatchers.IO) {
+            accountRequest = viewModelScope.launch(Dispatchers.IO) {
                 try {
                     loadAccount(PxlAuthClient(), token)
                 } finally {
-                    updateState { copy(telegramLoginPending = false) }
+                    if (isActive) updateState { copy(telegramLoginPending = false) }
                 }
             }
         } catch (error: Exception) {
@@ -568,34 +584,67 @@ class DashboardViewModel :
     }
 
     fun logoutTelegram() {
-        if (currentState.telegramLoginPending || currentState.ecosystemCheckPending) return
-        updateState { copy(telegramLoginPending = true) }
-        viewModelScope.launch(Dispatchers.IO) {
+        if (!currentState.hasTelegramSession || logoutJob?.isActive == true) return
+        val previousRequest = accountRequest
+        accountRequest = null
+        previousRequest?.cancel()
+        updateState { copy(telegramLoginPending = true, ecosystemCheckPending = false, telegramLoginError = null) }
+        logoutJob = viewModelScope.launch(Dispatchers.IO) {
             val context = Application.application
-            val token = PxlSecureTokenStore.read(context)
-            clearAccount()
-            updateState { copy(telegramLoginPending = false, telegramLoginError = null) }
-            if (token != null) runCatching { PxlAuthClient().logout(token) }
+            val token = try {
+                accountMutation.withLock {
+                    val session = PxlSecureTokenStore.read(context)
+                    val removal = accountProfilesToRemove(ProfileManager.list(), Settings.selectedProfile) {
+                        SubscriptionInfoStore.hasAccountSource(context, it.id)
+                    }
+                    if (removal.replacementId != null) {
+                        if (_serviceStatus.value in listOf(Status.Starting, Status.Started) &&
+                            PxlDnsProfiles.activeMode(context) != PxlDnsTileMode.DNS_ONLY
+                        ) BoxService.stop()
+                        Settings.selectedProfile = removal.replacementId
+                    }
+                    if (removal.profiles.isNotEmpty()) {
+                        ProfileManager.delete(removal.profiles)
+                        UpdateProfileWork.reconfigureUpdater()
+                    }
+                    clearAccount()
+                    session
+                }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                sendError(error)
+                null
+            } finally {
+                updateState { copy(telegramLoginPending = false) }
+                loadProfiles()
+            }
+            if (token != null) viewModelScope.launch(Dispatchers.IO) {
+                runCatching { PxlAuthClient().logout(token) }
+            }
         }
     }
 
     suspend fun linkTelegramToEmailAccount(code: String) {
         check(currentState.hasTelegramSession && currentState.signedInByEmail &&
             !currentState.telegramLoginPending && !currentState.ecosystemCheckPending)
+        val request = currentCoroutineContext()[Job]
+        accountRequest = request
         updateState { copy(telegramLoginPending = true, telegramLoginError = null) }
         try {
             withContext(Dispatchers.IO) {
                 val context = Application.application
                 val token = checkNotNull(PxlSecureTokenStore.read(context))
                 val client = PxlAuthClient()
-                val currentToken = client.linkTelegram(token, code) { replacement ->
-                    // The server has already revoked the previous token.
-                    PxlSecureTokenStore.save(context, replacement, emailLogin = true, durable = true)
+                val currentToken = accountMutation.withLock {
+                    client.linkTelegram(token, code) { replacement ->
+                        // The server has already revoked the previous token.
+                        PxlSecureTokenStore.save(context, replacement, emailLogin = true, durable = true)
+                    }
                 }
                 loadAccount(client, currentToken, refreshSubscription = true)
             }
         } finally {
-            updateState { copy(telegramLoginPending = false) }
+            if (accountRequest === request) updateState { copy(telegramLoginPending = false) }
         }
     }
 
@@ -637,17 +686,20 @@ class DashboardViewModel :
         val context = Application.application
         if (!PxlSecureTokenStore.hasStoredToken(context)) return
         updateState { copy(telegramLoginPending = true, telegramLoginError = null) }
-        viewModelScope.launch(Dispatchers.IO) {
+        accountRequest = viewModelScope.launch(Dispatchers.IO) {
             try {
-                val emailLogin = PxlSecureTokenStore.isEmailLogin(context)
-                updateState {
-                    copy(
-                        hasTelegramSession = true,
-                        signedInByEmail = emailLogin,
-                        hasTelegramIdentity = !emailLogin || hasTelegramIdentity,
-                    )
+                val token = accountMutation.withLock {
+                    ensureActive()
+                    val emailLogin = PxlSecureTokenStore.isEmailLogin(context)
+                    updateState {
+                        copy(
+                            hasTelegramSession = true,
+                            signedInByEmail = emailLogin,
+                            hasTelegramIdentity = !emailLogin || hasTelegramIdentity,
+                        )
+                    }
+                    PxlSecureTokenStore.read(context)
                 }
-                val token = PxlSecureTokenStore.read(context)
                 if (token == null) {
                     updateState {
                         copy(telegramLoginError = context.getString(R.string.pxlnet_account_refresh_failed))
@@ -656,7 +708,7 @@ class DashboardViewModel :
                 }
                 loadAccount(PxlAuthClient(), token)
             } finally {
-                updateState { copy(telegramLoginPending = false) }
+                if (isActive) updateState { copy(telegramLoginPending = false) }
             }
         }
     }
@@ -664,15 +716,16 @@ class DashboardViewModel :
     fun refreshEcosystem() {
         if (currentState.ecosystemCheckPending || currentState.telegramLoginPending) return
         updateState { copy(ecosystemCheckPending = true, telegramLoginError = null) }
-        viewModelScope.launch(Dispatchers.IO) {
+        accountRequest = viewModelScope.launch(Dispatchers.IO) {
             try {
                 val client = PxlAuthClient()
                 val available = runCatching { client.health() }.getOrDefault(false)
+                ensureActive()
                 updateState { copy(accountServiceAvailable = available) }
                 if (available) PxlSecureTokenStore.read(Application.application)?.let { loadAccount(client, it) }
                 loadProfiles()
             } finally {
-                updateState { copy(ecosystemCheckPending = false, ecosystemLastCheckedAt = System.currentTimeMillis()) }
+                if (isActive) updateState { copy(ecosystemCheckPending = false, ecosystemLastCheckedAt = System.currentTimeMillis()) }
             }
         }
     }
@@ -683,27 +736,33 @@ class DashboardViewModel :
             client.account(token)
         } catch (error: Exception) {
             if (error is CancellationException) throw error
-            if (error is PxlAuthClient.ApiError && error.status == 401) clearAccount()
-            updateState {
-                copy(accountServiceAvailable = false,
-                    telegramLoginError = accountErrorMessage(error, R.string.pxlnet_account_refresh_failed))
+            accountMutation.withLock {
+                currentCoroutineContext().ensureActive()
+                if (error is PxlAuthClient.ApiError && error.status == 401) clearAccount()
+                updateState {
+                    copy(accountServiceAvailable = false,
+                        telegramLoginError = accountErrorMessage(error, R.string.pxlnet_account_refresh_failed))
+                }
             }
             return
         }
-        SubscriptionInfoStore.saveAccountExpiry(context, account.subscriptionExpiresAt)
-        updateState {
-            copy(
-                telegramAccountName = account.displayName.takeIf { it.isNotBlank() },
-                telegramUsername = account.username.takeIf { it.isNotBlank() },
-                telegramSubscriptionActive = account.subscriptionActive,
-                telegramSubscriptionExpiresAt = account.subscriptionExpiresAt,
-                accountHasSubscription = account.hasSubscription,
-                accountLastVerifiedAt = System.currentTimeMillis(),
-                accountServiceAvailable = true,
-                verifiedEmail = account.verifiedEmail ?: verifiedEmail,
-                hasTelegramIdentity = !signedInByEmail || account.hasTelegramIdentity,
-                accountSubscriptionLoadFailed = false,
-            )
+        accountMutation.withLock {
+            currentCoroutineContext().ensureActive()
+            SubscriptionInfoStore.saveAccountExpiry(context, account.subscriptionExpiresAt)
+            updateState {
+                copy(
+                    telegramAccountName = account.displayName.takeIf { it.isNotBlank() },
+                    telegramUsername = account.username.takeIf { it.isNotBlank() },
+                    telegramSubscriptionActive = account.subscriptionActive,
+                    telegramSubscriptionExpiresAt = account.subscriptionExpiresAt,
+                    accountHasSubscription = account.hasSubscription,
+                    accountLastVerifiedAt = System.currentTimeMillis(),
+                    accountServiceAvailable = true,
+                    verifiedEmail = account.verifiedEmail ?: verifiedEmail,
+                    hasTelegramIdentity = !signedInByEmail || account.hasTelegramIdentity,
+                    accountSubscriptionLoadFailed = false,
+                )
+            }
         }
         if (account.subscriptionActive || refreshSubscription ||
             (currentState.signedInByEmail && !account.hasTelegramIdentity)
@@ -713,20 +772,23 @@ class DashboardViewModel :
                 if (account.subscriptionActive) installAuthenticatedSubscription(subscriptionUrl)
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
-                if (error is PxlAuthClient.ApiError) {
-                    when {
-                        error.status == 401 -> { clearAccount(); return }
-                        error.code == "subscription_not_linked" -> {
-                            updateState { copy(accountHasSubscription = false, telegramSubscriptionActive = false) }
-                            return
-                        }
-                        error.code == "subscription_inactive" -> {
-                            updateState { copy(telegramSubscriptionActive = false) }
-                            return
+                accountMutation.withLock {
+                    currentCoroutineContext().ensureActive()
+                    if (error is PxlAuthClient.ApiError) {
+                        when {
+                            error.status == 401 -> { clearAccount(); return }
+                            error.code == "subscription_not_linked" -> {
+                                updateState { copy(accountHasSubscription = false, telegramSubscriptionActive = false) }
+                                return
+                            }
+                            error.code == "subscription_inactive" -> {
+                                updateState { copy(telegramSubscriptionActive = false) }
+                                return
+                            }
                         }
                     }
+                    updateState { copy(accountSubscriptionLoadFailed = true) }
                 }
-                updateState { copy(accountSubscriptionLoadFailed = true) }
             }
         }
         loadProfiles()
@@ -737,8 +799,19 @@ class DashboardViewModel :
             Application.application.getString(R.string.pxlnet_unsafe_subscription_url)
         }
         val response = HTTPClient().use { it.get(url) }
+        accountMutation.withLock {
+            currentCoroutineContext().ensureActive()
+            // Keep the ownership marker and persisted profile together if logout cancels this request.
+            withContext(NonCancellable) { saveAuthenticatedSubscription(url, response) }
+        }
+    }
+
+    private suspend fun saveAuthenticatedSubscription(url: String, response: HTTPClient.Result) {
+        val context = Application.application
         val profiles = ProfileManager.list()
-        val existing = findAuthenticatedProfile(profiles, url)
+        val existing = findAuthenticatedProfile(profiles, url) {
+            SubscriptionInfoStore.hasAccountSource(context, it.id)
+        }
         val selectAccountProfile = shouldSelectAuthenticatedProfile(profiles, Settings.selectedProfile)
         if (existing != null && SubscriptionInfoStore.recordExplicitInactiveResponse(
                 Application.application, existing.id, response.subscriptionStatus,
@@ -777,7 +850,7 @@ class DashboardViewModel :
             ProfileManager.update(profile)
             if (selectAccountProfile) Settings.selectedProfile = profile.id
         }
-        SubscriptionInfoStore.recordAccountSource(Application.application, profile.id, url)
+        SubscriptionInfoStore.recordAccountSource(Application.application, profile.id)
         SubscriptionInfoStore.save(Application.application, profile.id, response.subscriptionUserInfo)
         SubscriptionInfoStore.saveSmartStatus(Application.application, profile.id, response.subscriptionStatus)
         SubscriptionInfoStore.saveSkippedXhttp(Application.application, profile.id, conversion.skippedXhttpCount)
