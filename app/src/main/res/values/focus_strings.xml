@@ -97,6 +97,8 @@
     <string name="pxl_theme_intro_apply">Switch to Console</string>
     <string name="pxl_theme_intro_preview">View themes</string>
     <string name="pxl_theme_intro_shortcut">Themes</string>
+    <string name="pxl_theme_intro_replay">Show the Console introduction</string>
+    <string name="pxl_theme_intro_replay_summary">Open the theme prompt shown after updating.</string>
     <string name="pxl_home_current_profile">Current profile</string>
     <string name="pxl_home_profiles">Choose profile</string>
     <string name="pxl_account_profile_edit_hint">This profile comes from your PXLNET account. You can change its name and icon. Changing the link or other settings can break the VPN connection.</string>

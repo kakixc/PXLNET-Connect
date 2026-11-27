@@ -7,6 +7,9 @@ import android.net.Network
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.togetherWith
+import io.nekohasekai.sfa.compose.util.ProfileIcons
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Animatable
@@ -203,6 +206,7 @@ fun DashboardScreen(
     val uiState by viewModel.uiState.collectAsState()
     val interfaceTheme by PxlUiPreferences.interfaceTheme.collectAsState()
     val themeIntroduction by PxlUiPreferences.themeIntroduction.collectAsState()
+    val themeIntroductionReplay by PxlUiPreferences.themeIntroductionReplay.collectAsState()
     val focusAppearance by PxlUiPreferences.focusAppearance.collectAsState()
     val focus = interfaceTheme != PxlUiPreferences.InterfaceTheme.CLASSIC
     val trial = interfaceTheme == PxlUiPreferences.InterfaceTheme.TRIAL
@@ -677,9 +681,9 @@ fun DashboardScreen(
         PxlUiPreferences.saveThemeIntroduction(context, PxlUiPreferences.ThemeIntroduction.DONE)
         onOpenThemes()
     }
-    if (themeIntroduction == PxlUiPreferences.ThemeIntroduction.OFFER &&
+    val showUpgradeIntroduction = themeIntroduction == PxlUiPreferences.ThemeIntroduction.OFFER &&
         uiState.profilesLoaded && (focus || autoGuideHandled) && !showOnboarding
-    ) {
+    if (themeIntroductionReplay || showUpgradeIntroduction) {
         AlertDialog(
             onDismissRequest = { PxlUiPreferences.saveThemeIntroduction(context, PxlUiPreferences.ThemeIntroduction.SHORTCUT) },
             title = { Text(stringResource(R.string.pxl_theme_intro_title)) },
@@ -960,28 +964,47 @@ fun DashboardScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            Icon(Icons.Default.Description, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    stringResource(R.string.pxl_home_current_profile),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Text(
-                                    selectedProfile?.name ?: stringResource(R.string.pxlnet_choose_available_profile),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                selectedProfile?.typed?.remoteURL?.let { url ->
-                                    Uri.parse(url).host?.let { host ->
+                            AnimatedContent(
+                                targetState = selectedProfile,
+                                modifier = Modifier.weight(1f),
+                                transitionSpec = {
+                                    fadeIn(tween(150, delayMillis = 60)) togetherWith fadeOut(tween(90))
+                                },
+                                contentKey = { it?.id },
+                                label = "selected-profile",
+                            ) { profile ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    Icon(
+                                        ProfileIcons.getIconById(profile?.icon) ?: Icons.Default.Description,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                    Column(Modifier.weight(1f)) {
                                         Text(
-                                            host,
-                                            style = MaterialTheme.typography.labelSmall,
+                                            stringResource(R.string.pxl_home_current_profile),
+                                            style = MaterialTheme.typography.labelMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        Text(
+                                            profile?.name ?: stringResource(R.string.pxlnet_choose_available_profile),
+                                            style = MaterialTheme.typography.titleSmall,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                         )
+                                        profile?.typed?.remoteURL?.let { url ->
+                                            Uri.parse(url).host?.let { host ->
+                                                Text(
+                                                    host,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }

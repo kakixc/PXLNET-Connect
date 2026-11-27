@@ -91,6 +91,8 @@ import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.update.UpdateState
 import io.nekohasekai.sfa.vendor.UpdateNotification
 import io.nekohasekai.sfa.utils.PxlDeveloperMode
+import io.nekohasekai.sfa.compose.navigation.Screen
+import io.nekohasekai.sfa.compose.navigation.openRootTab
 import io.nekohasekai.sfa.utils.PxlDiagnostics
 import io.nekohasekai.sfa.utils.PxlDnsProfiles
 import io.nekohasekai.sfa.utils.PxlDnsTileMode
@@ -531,6 +533,17 @@ fun SettingsScreen(navController: NavController, section: FocusSettingsSection? 
                     )
 
                     if (developerMode) {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.pxl_theme_intro_replay)) },
+                            supportingContent = { Text(stringResource(R.string.pxl_theme_intro_replay_summary)) },
+                            leadingContent = { PxlSettingsIcon(Icons.Outlined.Palette) },
+                            modifier = Modifier.clickable {
+                                PxlUiPreferences.replayThemeIntroduction()
+                                navController.openRootTab(Screen.Dashboard)
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        )
+
                         ListItem(
                             headlineContent = { Text(stringResource(R.string.pxlnet_update_test_notification_setting)) },
                             supportingContent = { Text(stringResource(R.string.pxlnet_update_test_notification_setting_summary)) },

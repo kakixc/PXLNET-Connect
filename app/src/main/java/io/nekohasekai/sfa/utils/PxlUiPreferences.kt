@@ -52,6 +52,12 @@ object PxlUiPreferences {
     val interfaceTheme = mutableInterfaceTheme.asStateFlow()
     private val mutableThemeIntroduction = MutableStateFlow(ThemeIntroduction.DONE)
     val themeIntroduction = mutableThemeIntroduction.asStateFlow()
+    private val mutableThemeIntroductionReplay = MutableStateFlow(false)
+    val themeIntroductionReplay = mutableThemeIntroductionReplay.asStateFlow()
+
+    fun replayThemeIntroduction() {
+        mutableThemeIntroductionReplay.value = true
+    }
     private val mutableFocusAppearance = MutableStateFlow(FocusAppearance())
     val focusAppearance = mutableFocusAppearance.asStateFlow()
 
@@ -67,6 +73,7 @@ object PxlUiPreferences {
             }.apply()
         if (theme != null) mutableInterfaceTheme.value = theme
         mutableThemeIntroduction.value = introduction
+        mutableThemeIntroductionReplay.value = false
     }
 
     fun isFocusTileHidden(context: Context): Boolean =
