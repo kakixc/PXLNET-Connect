@@ -49,6 +49,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CheckCircle
@@ -128,6 +129,7 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
     val scope = rememberCoroutineScope()
     var revision by remember { mutableIntStateOf(0) }
     var showIntroduction by remember { mutableStateOf(!settingsOnly && !PxlDnsProfiles.introSeen(context)) }
+    var showDnsHelp by remember { mutableStateOf(false) }
     val profiles = remember(revision) { PxlDnsProfiles.all(context) }
     val selected = remember(revision) { PxlDnsProfiles.selected(context) }
     var editing by remember { mutableStateOf<PxlDnsProfile?>(null) }
@@ -343,8 +345,13 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
                 }
             },
             actions = {
-                if (rootTab) IconButton(onClick = { navController.navigate("dns/settings") }) {
-                    Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.pxlnet_dns_settings))
+                if (rootTab) {
+                    IconButton(onClick = { showDnsHelp = true }) {
+                        Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = stringResource(R.string.pxlnet_dns_intro_title))
+                    }
+                    IconButton(onClick = { navController.navigate("dns/settings") }) {
+                        Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.pxlnet_dns_settings))
+                    }
                 }
             },
         )
@@ -684,9 +691,9 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
             dismissButton = { TextButton(onClick = { showVpnWarning = false }) { Text(stringResource(R.string.pxlnet_dns_cancel)) } },
         )
     }
-    if (showIntroduction && !rootTab) {
+    if (showDnsHelp || (showIntroduction && !rootTab)) {
         AlertDialog(
-            onDismissRequest = {},
+            onDismissRequest = { showDnsHelp = false },
             icon = { Icon(Icons.Default.Public, contentDescription = null) },
             title = { Text(stringResource(R.string.pxlnet_dns_intro_title)) },
             text = { Text(stringResource(R.string.pxlnet_dns_intro_body)) },
@@ -694,6 +701,7 @@ fun PxlDnsScreen(navController: NavController, serviceStatus: Status, confirmTil
                 Button(onClick = {
                     PxlDnsProfiles.setIntroSeen(context)
                     showIntroduction = false
+                    showDnsHelp = false
                 }, modifier = Modifier.pxlPressMotion()) { Text(stringResource(R.string.pxlnet_dns_intro_ack)) }
             },
             shape = RoundedCornerShape(32.dp),
