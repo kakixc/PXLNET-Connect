@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <symbol id="download" viewBox="0 0 24 24">
+    <path d="M12 3v12m-4-4 4 4 4-4M5 16v4h14v-4"/>
+  </symbol>
+  <symbol id="arrow-right" viewBox="0 0 24 24">
+    <path d="M4 12h15m-6-6 6 6-6 6"/>
+  </symbol>
+  <symbol id="external" viewBox="0 0 24 24">
+    <path d="M13 5h6v6m0-6-9 9m7-1v6H5V7h6"/>
+  </symbol>
+  <symbol id="chevron-down" viewBox="0 0 24 24">
+    <path d="m6 9 6 6 6-6"/>
+  </symbol>
+</svg>
